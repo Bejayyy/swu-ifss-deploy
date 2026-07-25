@@ -136,7 +136,27 @@ export async function createStaffUserByEmailInvite({
   if (!validation.valid) throw new Error(validation.message);
 
   const normalized = normalizeEmail(email);
-  const docId = `invite_${normalized}`;
+  
+  // Generate a temporary password
+  const tempPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+  
+  // Import required functions
+  const { createAuthUserWithEmail } = await import('../firebase/secondaryAuth');
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('../firebase/firebase');
+  
+  // Create Firebase Auth user with temporary password
+  let authUser;
+  try {
+    authUser = await createAuthUserWithEmail(normalized, tempPassword);
+  } catch (error) {
+    if (error.code === 'auth/email-already-in-use') {
+      throw new Error('This email is already registered in the system.');
+    }
+    throw error;
+  }
+  
+  const uid = authUser.uid;
   
   // GSD and Student Life don't have departments or colleges
   const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
@@ -150,10 +170,9 @@ export async function createStaffUserByEmailInvite({
     department: shouldIncludeDepartment ? (department?.trim() || '') : '',
     college: shouldIncludeCollege ? (college?.trim() || '') : '',
     initials: getInitials(name, normalized),
-    authProviders: ['google'],
+    authProviders: ['password'],
     mustSetPassword: true,
-    passwordEnabled: false,
-    invited: true,
+    passwordEnabled: true,
     createdBy: createdBy || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -163,7 +182,24 @@ export async function createStaffUserByEmailInvite({
   if (permissions?.length) payload.permissions = permissions;
   if (navKeys?.length) payload.navKeys = navKeys;
 
-  await setDoc(doc(db, COLLECTIONS.USERS, docId), payload, { merge: true });
+  await setDoc(doc(db, COLLECTIONS.USERS, uid), payload, { merge: true });
+  
+  // Send welcome email via Cloud Function
+  try {
+    const sendWelcomeEmail = httpsCallable(functions, 'sendStaffWelcomeEmail');
+    await sendWelcomeEmail({
+      email: normalized,
+      displayName: name.trim(),
+      role: roleValue,
+      password: tempPassword,
+    });
+    console.log('Welcome email sent to:', normalized);
+  } catch (emailError) {
+    console.error('Failed to send welcome email:', emailError);
+    // Don't throw error - account was created successfully, email is optional
+  }
+  
+  return uid;
 }
 
 export async function updateStaffUser({
@@ -222,17 +258,15 @@ export async function deleteStaffUser(uid) {
   
   const userData = userSnap.data();
   
-  // Only allow deletion of invited users (not yet logged in)
-  // or set status to 'deleted' for logged-in users
-  if (userData.invited || !userData.lastLoginAt) {
-    // Delete the invite document
-    await deleteDoc(userRef);
-  } else {
-    // Mark as deleted instead of removing (for audit trail)
-    await updateDoc(userRef, {
-      status: 'deleted',
-      deletedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  // Call Cloud Function to delete Auth user and Firestore document
+  try {
+    const { httpsCallable } = await import('firebase/functions');
+    const { functions } = await import('../firebase/firebase');
+    const deleteAuthUser = httpsCallable(functions, 'deleteStaffAuthUser');
+    await deleteAuthUser({ uid });
+    console.log('Successfully deleted staff user:', uid);
+  } catch (error) {
+    console.error('Error deleting staff user via Cloud Function:', error);
+    throw new Error('Failed to delete user account: ' + error.message);
   }
 }
