@@ -24,3 +24,9 @@ build
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase
+.firebase/
+.runtimeconfig.json
+functions/node_modules/
+functions/.env

@@ -90,6 +90,9 @@ export function buildUserProfilePayload({
   department = '',
   phone = '',
   createdBy = null,
+  mustSetPassword = false,
+  passwordEnabled = false,
+  authProviders = [],
 }) {
   const normalized = normalizeEmail(email);
   return {
@@ -102,6 +105,9 @@ export function buildUserProfilePayload({
     phone: phone.trim(),
     initials: getInitials(displayName, normalized),
     createdBy,
+    mustSetPassword,
+    passwordEnabled,
+    authProviders,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lastLoginAt: null,

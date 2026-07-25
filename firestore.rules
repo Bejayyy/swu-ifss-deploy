@@ -116,7 +116,7 @@ service cloud.firestore {
           isDeveloper()
           && isPhinmaedEmail()
           && request.resource.data.role == 'registrar'
-          && request.resource.data.email.matches('.*@phinmaedcom$')
+          && request.resource.data.email.matches('.*@phinmaed\\.com$')
           && request.resource.data.status in ['active', 'inactive']
         )
         || (

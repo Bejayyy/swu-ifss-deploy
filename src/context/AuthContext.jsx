@@ -85,7 +85,7 @@ export function AuthProvider({ children }) {
       }
 
       setProfile(userProfile);
-      setRequiresPasswordSetup(Boolean(userProfile.mustSetPassword && !userProfile.passwordEnabled));
+      setRequiresPasswordSetup(Boolean(userProfile.mustSetPassword));
       return userProfile;
     },
     [clearSession],
@@ -135,6 +135,12 @@ export function AuthProvider({ children }) {
         const credential = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
         const userProfile = await loadProfileForUser(credential.user, { updateLogin: true });
         setFirebaseUser(credential.user);
+        
+        // Check if user must set a password on first login
+        if (userProfile.mustSetPassword) {
+          return { redirectTo: '/set-password' };
+        }
+        
         return { redirectTo: getRedirectForRole(userProfile.role) };
       } catch (err) {
         const message = mapAuthError(err);
@@ -155,7 +161,7 @@ export function AuthProvider({ children }) {
       const userProfile = await loadProfileForUser(credential.user, { updateLogin: true });
       setFirebaseUser(credential.user);
       return {
-        redirectTo: userProfile.mustSetPassword && !userProfile.passwordEnabled
+        redirectTo: userProfile.mustSetPassword
           ? '/set-password'
           : getRedirectForRole(userProfile.role),
       };
@@ -179,10 +185,18 @@ export function AuthProvider({ children }) {
 
     await updatePassword(auth.currentUser, newPassword);
     if (auth.currentUser.uid) {
+      // Get current auth providers to preserve them
+      const currentProfile = await fetchUserProfile(auth.currentUser.uid);
+      const currentProviders = currentProfile?.authProviders || [];
+      
+      // Add 'password' and 'google' if user signed in with Google
+      const hasGoogle = auth.currentUser.providerData?.some(p => p.providerId === 'google.com');
+      const updatedProviders = [...new Set([...currentProviders, 'password', ...(hasGoogle ? ['google'] : [])])];
+      
       await upsertUserProfile(auth.currentUser.uid, {
         mustSetPassword: false,
         passwordEnabled: true,
-        authProviders: ['google', 'password'],
+        authProviders: updatedProviders,
       });
       const refreshed = await fetchUserProfile(auth.currentUser.uid);
       setProfile(refreshed);

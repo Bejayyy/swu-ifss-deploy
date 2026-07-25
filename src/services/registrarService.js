@@ -12,7 +12,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth, db } from '../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../firebase/firebase';
 import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
 import { getInitials, normalizeEmail, validateInstitutionalEmail } from '../firebase/authHelpers';
 import { createAuthUserWithEmail } from '../firebase/secondaryAuth';
@@ -74,6 +75,9 @@ export async function createRegistrarAccount(
     department,
     phone,
     createdBy: createdByUid,
+    mustSetPassword: true, // Force password change on first login
+    passwordEnabled: true, // Account has a password
+    authProviders: ['password'], // Initially only password auth
   });
 
   await upsertUserProfile(uid, profile);
@@ -91,6 +95,20 @@ export async function createRegistrarAccount(
     },
     createdByUid,
   );
+
+  // Send welcome email via Cloud Function
+  try {
+    const sendWelcomeEmail = httpsCallable(functions, 'sendRegistrarWelcomeEmail');
+    await sendWelcomeEmail({
+      email: normalized,
+      displayName: displayName.trim(),
+      password, // Include password in email
+    });
+    console.log('Welcome email sent to:', normalized);
+  } catch (emailError) {
+    console.error('Failed to send welcome email:', emailError);
+    // Don't throw error - account was created successfully, email is optional
+  }
 
   return uid;
 }
@@ -129,9 +147,15 @@ export async function setRegistrarStatus(uid, status, managedByUid) {
 }
 
 export async function deleteRegistrarAccount(uid) {
-  await deleteDoc(doc(db, COLLECTIONS.USERS, uid));
-  await deleteDoc(doc(db, COLLECTIONS.REGISTRAR_MANAGEMENT, uid));
-  // Firebase Auth user deletion requires Admin SDK (see functions/index.js).
+  // Call Cloud Function to delete Auth user first
+  try {
+    const deleteAuthUser = httpsCallable(functions, 'deleteRegistrarAuthUser');
+    await deleteAuthUser({ uid });
+    console.log('Successfully deleted registrar auth user and Firestore data:', uid);
+  } catch (error) {
+    console.error('Error deleting registrar via Cloud Function:', error);
+    throw new Error('Failed to delete registrar account: ' + error.message);
+  }
 }
 
 export async function resetRegistrarPassword(email) {
