@@ -40,7 +40,7 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
         )}
         <div className="min-w-0">
           <h1 className="text-white font-bold text-lg sm:text-xl leading-tight truncate">{title}</h1>
-          {subtitle && <p className="text-blue-100 text-xs font-normal mt-0.5">{subtitle}</p>}
+          {subtitle && <p className="text-blule-100 text-xs font-normal mt-0.5">{subtitle}</p>}
         </div>
       </div>
 
@@ -51,16 +51,16 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
           className="flex items-center gap-2 hover:bg-white/10 px-2 py-1.5 rounded-lg transition-colors"
         >
           <div
-            className="w-9 h-9 flex items-center justify-center font-black text-sm text-[#1e3a5f]"
-            style={{ background: '#93c5fd', borderRadius: 10 }}
+            className="w-9 h-9 flex items-center justify-center font-black text-sm text-[#2B3235]"
+            style={{ background: '#FFC107', borderRadius: 10 }}
           >
             {initials}
           </div>
           <div className="text-left hidden sm:block">
             <p className="text-white text-xs font-bold leading-tight">{profile?.displayName || 'Developer'}</p>
-            <p className="text-blue-200 text-[10px] font-medium">System Developer</p>
+            <p className="text-red-100 text-[10px] font-medium">System Developer</p>
           </div>
-          <ChevronDown size={14} className="text-blue-200 hidden sm:block" />
+          <ChevronDown size={14} className="text-red-100 hidden sm:block" />
         </button>
 
         {showProfile && (
@@ -68,7 +68,7 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
             className="absolute right-0 top-14 w-52 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden rounded-xl"
           >
             <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-              <User size={14} style={{ color: '#1e3a5f' }} />
+              <User size={14} style={{ color: '#800000' }} />
               <div className="min-w-0">
                 <p className="text-xs font-bold truncate" style={{ color: '#2B3235' }}>{profile?.displayName}</p>
                 <p className="text-[10px] truncate" style={{ color: '#2B3235', opacity: 0.55 }}>{profile?.email}</p>

@@ -45,9 +45,8 @@ export default function ScheduleMaintenanceModal({
         return;
       }
 
-      const startDateTime = new Date(`${startDate}T${startTime}`);
-      const endDateTime = new Date(startDateTime.getTime() + hours * 60 * 60 * 1000);
-      
+      // Use the date string directly (YYYY-MM-DD format from date input)
+      // Do NOT convert to Date object to avoid timezone issues
       finalStartDate = startDate;
       finalEndDate = startDate; // Same day for quick fixes
     } else {
@@ -62,6 +61,7 @@ export default function ScheduleMaintenanceModal({
         return;
       }
 
+      // Use date strings directly (YYYY-MM-DD format)
       finalStartDate = startDate;
       finalEndDate = endDate;
     }
@@ -74,6 +74,9 @@ export default function ScheduleMaintenanceModal({
     setIsLoading(true);
 
     try {
+      console.log('[ScheduleMaintenanceModal] Current user:', profile);
+      console.log('[ScheduleMaintenanceModal] Original dates from form - start:', startDate, 'end:', endDate);
+      
       const scheduleData = {
         startDate: finalStartDate,
         endDate: finalEndDate,
@@ -84,13 +87,17 @@ export default function ScheduleMaintenanceModal({
           durationHours: parseInt(durationHours),
         }),
       };
+      
+      console.log('[ScheduleMaintenanceModal] Schedule data to be saved:', scheduleData);
 
       if (existingSchedule) {
         // Update existing schedule
+        console.log('[ScheduleMaintenanceModal] Updating schedule:', existingSchedule.id);
         await updateMaintenanceSchedule(existingSchedule.id, scheduleData);
       } else {
         // Create new schedule
-        await scheduleRoomMaintenance({
+        console.log('[ScheduleMaintenanceModal] Creating new schedule for room:', room);
+        const newSchedule = await scheduleRoomMaintenance({
           roomId: room.id,
           roomDocId: room.docId || room.id, // Pass the Firestore document ID
           roomName: room.name || room.id,
@@ -101,6 +108,7 @@ export default function ScheduleMaintenanceModal({
           scheduledByName: profile?.displayName || profile?.email || 'GSD',
           reportId, // Link to the maintenance report if scheduling from a report
         });
+        console.log('[ScheduleMaintenanceModal] Schedule created successfully:', newSchedule);
       }
 
       if (onSuccess) {

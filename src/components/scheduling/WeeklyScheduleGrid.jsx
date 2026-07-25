@@ -237,9 +237,10 @@ export default function WeeklyScheduleGrid({
               const hour = slotIndexToHour(slotIndex);
               const hInt = Math.floor(hour);
               const isHalf = hour % 1 !== 0;
+              const minutes = isHalf ? 30 : 0;
               const ampm = hInt >= 12 ? 'PM' : 'AM';
               const displayH = hInt % 12 || 12;
-              const label = isHalf ? '' : `${displayH.toString().padStart(2, '0')}:00 ${ampm}`;
+              const label = `${displayH.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
               return (
                 <div
                   key={slotIndex}
@@ -287,7 +288,7 @@ export default function WeeklyScheduleGrid({
                     return (
                       <div
                         key={sched.id}
-                        className="absolute left-1 right-1 rounded-lg p-2 pointer-events-auto overflow-hidden"
+                        className="absolute left-1 right-1 pointer-events-auto overflow-hidden"
                         onMouseDown={(e) => e.stopPropagation()}
                         style={{
                           top: topPx,
@@ -295,6 +296,9 @@ export default function WeeklyScheduleGrid({
                           maxHeight: gridHeight - topPx,
                           background: colors.bg,
                           border: `1.5px solid ${colors.border}`,
+                          boxSizing: 'border-box',
+                          padding: '8px',
+                          borderRadius: '8px',
                         }}
                       >
                         <p className="text-[10px] font-black truncate" style={{ color: colors.text }}>{sched.title}</p>

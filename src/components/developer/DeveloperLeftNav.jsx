@@ -26,31 +26,33 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
       )}
 
       <aside
-        className={`fixed left-0 top-0 bottom-0 flex flex-col overflow-hidden transition-transform duration-300 ease-out ${
+        className={`fixed left-0 top-0 bottom-0 flex flex-col bg-white overflow-hidden transition-transform duration-300 ease-out ${
           isDesktop ? 'z-50 translate-x-0' : `z-50 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
         }`}
-        style={{ width: NAV_WIDTH_PX, background: '#0f2744', borderRight: '1px solid #1a3658' }}
+        style={{ width: NAV_WIDTH_PX, borderRight: '1px solid #f0f0f0' }}
       >
         <header
           className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
-          style={{ minHeight: TOP_NAV_HEIGHT_PX, borderBottom: '1px solid #1a3658' }}
+          style={{ minHeight: TOP_NAV_HEIGHT_PX, borderBottom: '1px solid #f0f0f0' }}
         >
-          <img src={systemLogo} alt="SWU-IFSS logo" className="h-12 w-auto object-contain flex-shrink-0 brightness-110" />
+          <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
           <div className="min-w-0">
-            <p className="font-bold text-lg leading-tight truncate text-white">SWU-IFSS</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-200/80">Developer Portal</p>
+            <p className="font-bold text-xl leading-tight truncate" style={{ color: '#800000' }}>SWU-IFSS</p>
+            <p className="text-[11px] font-medium leading-tight truncate" style={{ color: '#2B3235', opacity: 0.75 }}>
+              Developer Portal
+            </p>
           </div>
         </header>
 
         <section className="px-3 py-4 flex-shrink-0">
           <div
             className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
-            style={{ background: 'rgba(255,255,255,0.08)' }}
+            style={{ background: '#FFF0F0' }}
           >
-            <Code2 size={16} className="text-blue-300 flex-shrink-0" />
+            <Code2 size={16} className="text-[#800000] flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-white leading-tight">Account management only</p>
-              <p className="text-[10px] text-blue-200/70 leading-tight mt-0.5">
+              <p className="text-[11px] font-bold leading-tight" style={{ color: '#800000' }}>Account management only</p>
+              <p className="text-[10px] leading-tight mt-0.5" style={{ color: '#2B3235', opacity: 0.75 }}>
                 No scheduling or registrar system features
               </p>
             </div>
@@ -70,20 +72,20 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
                 }}
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 mb-1 rounded-lg transition-colors"
                 style={{
-                  background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-                  color: active ? '#fff' : 'rgba(255,255,255,0.75)',
+                  background: active ? '#FFF0F0' : 'transparent',
+                  color: active ? '#800000' : '#2B3235',
                 }}
               >
-                <Icon size={17} style={{ color: active ? '#93c5fd' : undefined }} />
+                <Icon size={17} style={{ color: active ? '#800000' : undefined }} />
                 <span className="text-[13px] font-semibold">{label}</span>
-                {active && <Shield size={12} className="ml-auto text-blue-300" />}
+                {active && <Shield size={12} className="ml-auto text-[#800000]" />}
               </button>
             );
           })}
         </nav>
 
-        <footer className="px-4 py-4 border-t flex-shrink-0" style={{ borderColor: '#1a3658' }}>
-          <p className="text-[10px] text-blue-200/50 leading-relaxed">
+        <footer className="px-4 py-4 border-t flex-shrink-0" style={{ borderColor: '#f0f0f0' }}>
+          <p className="text-[10px] leading-relaxed" style={{ color: '#2B3235', opacity: 0.55 }}>
             Manage Registrar accounts, permissions, and access. Institutional email: @phinmaed.com
           </p>
         </footer>

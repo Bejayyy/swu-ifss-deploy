@@ -99,23 +99,9 @@ export async function scheduleRoomMaintenance({
     }
   }
 
-  // Update room status if maintenance is starting now or in the past
-  const now = new Date().toISOString().split('T')[0];
-  const actualRoomDocId = roomDocId || roomId;
-  if (startDate <= now && endDate >= now) {
-    await updateRoomMaintenanceStatus(actualRoomDocId, {
-      maintenanceStatus: 'under-maintenance',
-      maintenanceStartDate: startDate,
-      maintenanceEndDate: endDate,
-      maintenanceReason: reason?.trim() || 'Scheduled maintenance',
-      maintenanceScheduleId: scheduleRef.id,
-      maintenanceDurationType: durationType,
-      ...(durationType === 'hours' && {
-        maintenanceStartTime: startTime,
-        maintenanceDurationHours: durationHours,
-      }),
-    });
-  }
+  // Note: Room status update is skipped here to avoid permission issues
+  // GSD can create maintenance schedules, but updating room status requires registrar/buildings.manage permission
+  // The maintenance schedule itself is sufficient to block the room in the schedule view
 
   return { id: scheduleRef.id, ...schedule };
 }
@@ -370,6 +356,8 @@ export function subscribeMaintenanceSchedules(onData, onError, filters = {}) {
         id: doc.id,
         ...doc.data(),
       }));
+      
+      console.log('[subscribeMaintenanceSchedules] Fetched schedules:', schedules.length);
       onData(schedules);
     },
     onError

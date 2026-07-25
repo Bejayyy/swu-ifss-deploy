@@ -22,7 +22,7 @@ export default function DeveloperLayout({ children, title, subtitle }) {
   }, []);
 
   return (
-    <div className="min-h-screen" style={{ background: '#f0f2f5' }}>
+    <div className="min-h-screen" style={{ background: '#f4f5f7' }}>
       <DeveloperLeftNav
         isDesktop={isDesktop}
         isOpen={isNavOpen}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getInitialWeekStart } from '../utils/academicCalendarUtils';
+import { getInitialWeekStart, getSemesterForDate, getMondayOfWeek } from '../utils/academicCalendarUtils';
 import { addDays } from '../constants/scheduleGrid';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
@@ -154,12 +154,18 @@ export default function RoomDetails() {
   useEffect(() => {
     if (!displayRoom?.docId) return;
     
+    console.log('[RoomDetails] Subscribing to maintenance schedules');
+    
     const unsubscribe = subscribeMaintenanceSchedules(
       (schedules) => {
+        console.log('[RoomDetails] Received maintenance schedules:', schedules);
         setMaintenanceSchedules(schedules);
       },
       (error) => console.error('Error loading maintenance schedules:', error),
-      { roomId: displayRoom.docId }
+      { 
+        roomId: displayRoom.docId,
+        // No semester filter - maintenance is date-based, not semester-based
+      }
     );
 
     return () => unsubscribe();
@@ -167,11 +173,20 @@ export default function RoomDetails() {
 
   // Convert reservations, course schedules, and maintenance schedules to schedule blocks for the current week
   const scheduleBlocks = useMemo(() => {
+    // Use timezone-safe date formatting to avoid off-by-one errors
+    const formatDateLocal = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    
     const weekDates = Array.from({ length: 7 }, (_, i) => {
       const date = addDays(weekStartDate, i);
-      return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+      return formatDateLocal(date); // Use local date formatting instead of toISOString()
     });
 
+    console.log('[RoomDetails] Week start date:', weekStartDate, 'Day of week:', weekStartDate.getDay());
     console.log('[RoomDetails] Building schedule blocks for week:', weekDates);
     console.log('[RoomDetails] Course schedules:', courseSchedules);
     console.log('[RoomDetails] Approved reservations:', approvedReservations);
@@ -266,14 +281,20 @@ export default function RoomDetails() {
     });
 
     // Add maintenance blocks
+    console.log('[RoomDetails] Processing maintenance schedules:', maintenanceSchedules);
     maintenanceSchedules.forEach((schedule) => {
+      console.log('[RoomDetails] Checking maintenance schedule:', schedule);
+      
       // Only show active/scheduled maintenance
       if (schedule.status === 'cancelled' || schedule.status === 'completed') {
+        console.log('[RoomDetails] Skipping maintenance - status:', schedule.status);
         return;
       }
 
       const startDate = schedule.startDate; // YYYY-MM-DD
       const endDate = schedule.endDate; // YYYY-MM-DD
+
+      console.log('[RoomDetails] Maintenance dates:', { startDate, endDate, weekStartDate, weekDates });
 
       // Check if this week overlaps with the maintenance period
       const maintenanceStart = new Date(startDate + 'T00:00:00');
@@ -281,15 +302,21 @@ export default function RoomDetails() {
       const weekEnd = addDays(weekStartDate, 6);
 
       if (maintenanceEnd < weekStartDate || maintenanceStart > weekEnd) {
+        console.log('[RoomDetails] Maintenance does not overlap with current week');
         return; // No overlap
       }
 
+      console.log('[RoomDetails] Maintenance overlaps with current week, adding blocks...');
+
       // For each day in the week that overlaps with maintenance
       weekDates.forEach((dateStr, dayIndex) => {
-        const currentDate = new Date(dateStr + 'T00:00:00');
+        // Use string comparison to avoid timezone issues
+        // dateStr and startDate/endDate are all in YYYY-MM-DD format
+        const isInMaintenancePeriod = dateStr >= startDate && dateStr <= endDate;
         
-        // Check if this day is within maintenance period
-        if (currentDate >= maintenanceStart && currentDate <= maintenanceEnd) {
+        console.log(`[RoomDetails] Checking date ${dateStr}: startDate=${startDate}, endDate=${endDate}, inPeriod=${isInMaintenancePeriod}, dayIndex=${dayIndex}`);
+        
+        if (isInMaintenancePeriod) {
           // Determine if this is a quick fix (hours) or multi-day
           const isQuickFix = schedule.durationType === 'hours' && schedule.isQuickFix;
 
@@ -304,6 +331,7 @@ export default function RoomDetails() {
             const startHour = timeToHour(schedule.startTime || '08:00');
             const endHour = startHour + (schedule.durationHours || 2);
 
+            console.log(`[RoomDetails] Adding quick fix maintenance block for ${dateStr} at day ${dayIndex}, startHour=${startHour}, endHour=${endHour}`);
             blocks.push({
               id: `maintenance-${schedule.id}-${dayIndex}`,
               day: dayIndex,
@@ -316,8 +344,10 @@ export default function RoomDetails() {
               roomCode: displayRoom.id || displayRoom.roomCode,
               isMaintenance: true,
             });
-          } else {
+          } else if (!isQuickFix || dateStr === startDate) {
             // Multi-day or regular maintenance - block entire day (7 AM to 8 PM)
+            // For multi-day quick fixes that aren't on start date, skip them
+            console.log(`[RoomDetails] Adding full-day maintenance block for ${dateStr} at day ${dayIndex}`);
             blocks.push({
               id: `maintenance-${schedule.id}-${dayIndex}`,
               day: dayIndex,
@@ -541,7 +571,7 @@ export default function RoomDetails() {
           {/* Week Navigation */}
           <button
             type="button"
-            onClick={() => setWeekStartDate((d) => addDays(d, -7))}
+            onClick={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, -7)))}
             className="px-3 py-2 rounded-lg text-xs font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50"
           >
             ← Previous Week
@@ -585,7 +615,7 @@ export default function RoomDetails() {
 
           <button
             type="button"
-            onClick={() => setWeekStartDate((d) => addDays(d, 7))}
+            onClick={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, 7)))}
             className="px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 hover:bg-gray-50"
             style={{ color: '#7A0808' }}
           >
@@ -614,8 +644,8 @@ export default function RoomDetails() {
         onSemesterChange={setSemesterTab}
         schoolYearLabel="SY 2025-2026"
         weekStartDate={weekStartDate}
-        onPrevWeek={() => setWeekStartDate((d) => addDays(d, -7))}
-        onNextWeek={() => setWeekStartDate((d) => addDays(d, 7))}
+        onPrevWeek={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, -7)))}
+        onNextWeek={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, 7)))}
         readOnly
         showControls={false}
         showLegend={true}

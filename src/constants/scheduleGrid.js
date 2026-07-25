@@ -7,7 +7,7 @@ export const SCHEDULE_TYPE_COLORS = {
 export const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
 export const SCHEDULE_CELL_HEIGHT = 48;
-export const SCHEDULE_START_HOUR = 7;
+export const SCHEDULE_START_HOUR = 6;
 export const SCHEDULE_END_HOUR = 20;
 export const SCHEDULE_SLOT_COUNT = (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2;
 
@@ -40,11 +40,23 @@ export function gridTotalHeightPx() {
 }
 
 export function blockTopPx(startHour) {
-  return (startHour - SCHEDULE_START_HOUR) * SCHEDULE_CELL_HEIGHT * 2;
+  // Convert hour to number of 30-minute slots, then multiply by cell height
+  // For startHour=8: (8-6) * 2 slots/hour = 4 slots
+  // 4 slots * 48px/slot = 192px ✓
+  const slotsFromStart = (startHour - SCHEDULE_START_HOUR) * 2;
+  return slotsFromStart * SCHEDULE_CELL_HEIGHT;
 }
 
 export function blockHeightPx(startHour, endHour) {
-  return Math.max((endHour - startHour) * SCHEDULE_CELL_HEIGHT * 2, SCHEDULE_CELL_HEIGHT / 2);
+  // Calculate the number of 30-minute slots needed
+  const hours = endHour - startHour;
+  const slots = hours * 2; // 2 slots per hour
+  
+  // Add one full slot height (48px) to make blocks reach the end time
+  // This accounts for the visual offset between slot boundaries and time labels
+  const heightPx = slots * SCHEDULE_CELL_HEIGHT + SCHEDULE_CELL_HEIGHT;
+  
+  return Math.max(heightPx, SCHEDULE_CELL_HEIGHT / 2);
 }
 
 export function clampScheduleHours(startHour, endHour) {
