@@ -98,17 +98,20 @@ service cloud.firestore {
     // Users collection - Most permissive rule first to allow self-read
     match /users/{userId} {
       // Allow users to read their own document without role check (avoids circular dependency)
-      allow read: if isSignedIn() && isPhinmaedEmail() && callerIsSelf(userId);
+      // Developer account may not have @phinmaed.com email, so we allow self-read for any signed-in user
+      allow read: if isSignedIn() && callerIsSelf(userId);
       
       // Allow reading invite documents by email match (for account migration)
       // This allows reading documents like "invite_email@phinmaed.com" when the user's email matches
       allow read: if isSignedIn() && isPhinmaedEmail() && resource.data.email == request.auth.token.email;
       
       // Allow reading if user has proper role
-      allow read: if isSignedIn() && isPhinmaedEmail() && userDocExists() && (isDeveloper() || isMainRole());
+      // Developer bypasses domain check; other roles require @phinmaed.com
+      allow read: if isSignedIn() && userDocExists() && isDeveloper();
+      allow read: if isSignedIn() && isPhinmaedEmail() && userDocExists() && isMainRole();
 
-      // Allow creating own account during migration or provisional developer signup
-      allow create: if isSignedIn() && isPhinmaedEmail() && callerIsSelf(userId)
+      // Allow creating own account during migration, provisional developer signup, or developer auto-provision
+      allow create: if isSignedIn() && callerIsSelf(userId)
         && request.resource.data.email == request.auth.token.email;
 
       allow create: if isProvisionalDeveloperSignup(userId)
@@ -154,11 +157,10 @@ service cloud.firestore {
         && request.resource.data.email.matches('.*@phinmaed\\.com$')
         && request.resource.data.status in ['active', 'inactive'];
 
-      // Allow updating own lastLoginAt without role check
+      // Allow updating own lastLoginAt / mustSetPassword without role check
       allow update: if isSignedIn()
-        && isPhinmaedEmail()
         && callerIsSelf(userId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'updatedAt']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'updatedAt', 'mustSetPassword', 'passwordEnabled', 'authProviders']);
 
       allow delete: if (isDeveloper() || isRegistrar()) 
         && isPhinmaedEmail() 
@@ -185,13 +187,13 @@ service cloud.firestore {
     }
 
     match /registrar_management/{registrarId} {
-      allow read: if isDeveloper() && isPhinmaedEmail();
-      allow create, update, delete: if isDeveloper() && isPhinmaedEmail();
+      allow read: if isDeveloper();
+      allow create, update, delete: if isDeveloper();
     }
 
     match /permissions/{permissionId} {
-      allow read: if isSignedIn() && isPhinmaedEmail() && (isDeveloper() || isRegistrar());
-      allow write: if isDeveloper() && isPhinmaedEmail();
+      allow read: if isSignedIn() && (isDeveloper() || isRegistrar());
+      allow write: if isDeveloper();
     }
 
     match /role_definitions/{roleId} {

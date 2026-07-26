@@ -3,8 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import systemLogo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
-import { INSTITUTIONAL_EMAIL_DOMAIN, isDevSignupEnabled } from '../firebase/constants';
-import { validateInstitutionalEmail } from '../firebase/authHelpers';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -18,9 +16,8 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    const validation = validateInstitutionalEmail(email);
-    if (!validation.valid) {
-      setError(validation.message);
+    if (!email.trim()) {
+      setError('Email is required.');
       return;
     }
     setLoading(true);
@@ -70,7 +67,6 @@ export default function Login() {
         <div className="flex flex-col items-center mb-7">
           <img src={systemLogo} alt="SWU-IFSS logo" className="h-20 w-auto object-contain mb-3" />
           <p className="text-xs text-gray-400">Southwestern University PHINMA</p>
-          <p className="text-[10px] text-gray-400 mt-1">@{INSTITUTIONAL_EMAIL_DOMAIN} accounts only</p>
         </div>
 
         <form onSubmit={handleLogin}>
@@ -80,11 +76,11 @@ export default function Login() {
             </p>
           )}
           <div className="mb-4">
-            <label className="form-label">Institutional email</label>
+            <label className="form-label">Email</label>
             <input
               className="form-input"
               type="email"
-              placeholder={`you@${INSTITUTIONAL_EMAIL_DOMAIN}`}
+              placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -144,16 +140,6 @@ export default function Login() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Registrar accounts must be created by a Developer before first login.
-        </p>
-        {isDevSignupEnabled() && (
-          <p className="text-center text-xs mt-3">
-            <Link to="/developer-signup" className="font-semibold" style={{ color: '#1e3a5f' }}>
-              Temporary Developer sign-up
-            </Link>
-          </p>
-        )}
-        <p className="text-center text-xs text-gray-400 mt-2">
           © {new Date().getFullYear()} Southwestern University PHINMA. All rights reserved.
         </p>
       </div>

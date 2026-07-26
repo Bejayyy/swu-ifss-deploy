@@ -183,8 +183,9 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     // Don't fetch buildings until user profile is loaded
-    if (!isReady) {
-      setBuildingsLoading(authLoading); // Show loading only if auth is loading
+    // Developer doesn't need buildings data (and doesn't have Firestore access)
+    if (!isReady || profile?.role === 'developer') {
+      setBuildingsLoading(authLoading);
       return undefined;
     }
 
@@ -208,8 +209,9 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     // Don't fetch reservations until user profile is loaded
-    if (!isReady) {
-      setRequestsLoading(authLoading); // Show loading only if auth is loading
+    // Developer doesn't need reservations data (and doesn't have Firestore access)
+    if (!isReady || profile?.role === 'developer') {
+      setRequestsLoading(authLoading);
       return undefined;
     }
 

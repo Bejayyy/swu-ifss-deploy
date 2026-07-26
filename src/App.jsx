@@ -7,7 +7,6 @@ import { DeveloperRoute, PasswordSetupRoute, PublicOnlyRoute, RegistrarRoute } f
 
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
-import DeveloperSignup from './pages/DeveloperSignup';
 import DeveloperDashboard from './pages/developer/DeveloperDashboard';
 import PasswordSetup from './pages/PasswordSetup';
 import Dashboard from './pages/Dashboard';
@@ -55,14 +54,6 @@ export default function App() {
               element={
                 <PublicOnlyRoute>
                   <ForgotPassword />
-                </PublicOnlyRoute>
-              }
-            />
-            <Route
-              path="/developer-signup"
-              element={
-                <PublicOnlyRoute>
-                  <DeveloperSignup />
                 </PublicOnlyRoute>
               }
             />

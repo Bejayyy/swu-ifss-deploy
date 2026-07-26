@@ -20,8 +20,9 @@ export function RoleConfigProvider({ children }) {
 
   useEffect(() => {
     // Don't fetch role definitions until user profile is loaded
-    if (!isReady) {
-      setLoading(authLoading); // Show loading only if auth is loading
+    // Developer doesn't need role definitions (and doesn't have Firestore access)
+    if (!isReady || profile?.role === 'developer') {
+      setLoading(authLoading);
       return undefined;
     }
 

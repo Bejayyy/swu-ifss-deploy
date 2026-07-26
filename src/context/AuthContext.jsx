@@ -3,20 +3,25 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
   updatePassword,
 } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db, googleProvider } from '../firebase/firebase';
 import {
   DEVELOPER_ROUTE_PREFIX,
   REGISTRAR_HOME,
   ROLES,
   MAIN_APP_ROLES,
+  COLLECTIONS,
+  USER_STATUS,
 } from '../firebase/constants';
 import {
   mapAuthError,
   normalizeEmail,
   validateInstitutionalEmail,
+  getInitials,
 } from '../firebase/authHelpers';
 import {
   canAccessDeveloperApp,
@@ -26,9 +31,17 @@ import {
   touchLastLogin,
   upsertUserProfile,
 } from '../services/userService';
-import { registerDeveloperAccount } from '../services/developerSignupService';
 
 const AuthContext = createContext(null);
+
+// Read hardcoded developer credentials from env
+const DEV_EMAIL = (import.meta.env.VITE_DEV_EMAIL || '').trim().toLowerCase();
+const DEV_PASSWORD = import.meta.env.VITE_DEV_PASSWORD || '';
+
+function isDeveloperCredentials(email, password) {
+  if (!DEV_EMAIL || !DEV_PASSWORD) return false;
+  return email.trim().toLowerCase() === DEV_EMAIL && password === DEV_PASSWORD;
+}
 
 function getRedirectForRole(role) {
   if (role === ROLES.DEVELOPER) return DEVELOPER_ROUTE_PREFIX;
@@ -46,7 +59,7 @@ export function AuthProvider({ children }) {
   const loginInProgressRef = useRef(false);
 
   const clearSession = useCallback(async () => {
-    await signOut(auth);
+    try { await signOut(auth); } catch { /* ignore */ }
     setProfile(null);
     setFirebaseUser(null);
     setRequiresPasswordSetup(false);
@@ -91,6 +104,56 @@ export function AuthProvider({ children }) {
     [clearSession],
   );
 
+  /**
+   * Ensures the developer Firebase Auth account and Firestore profile exist.
+   * Creates them on first login so the developer never needs manual setup.
+   */
+  const ensureDeveloperAccount = useCallback(async (email, password) => {
+    let credential;
+    try {
+      // Try to sign in first
+      credential = await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        // Auto-create the Firebase Auth account
+        try {
+          credential = await createUserWithEmailAndPassword(auth, email, password);
+        } catch (createErr) {
+          if (createErr.code === 'auth/email-already-in-use') {
+            // Account exists but password is different — this shouldn't happen with hardcoded creds
+            throw new Error('Developer account exists with a different password. Check your .env credentials.');
+          }
+          throw createErr;
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    const { uid } = credential.user;
+
+    // Ensure Firestore developer profile exists
+    const userRef = doc(db, COLLECTIONS.USERS, uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        email,
+        displayName: 'Developer',
+        role: ROLES.DEVELOPER,
+        status: USER_STATUS.ACTIVE,
+        permissions: [],
+        department: 'IT',
+        phone: '',
+        initials: 'DV',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      });
+    }
+
+    return credential;
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
@@ -105,11 +168,15 @@ export function AuthProvider({ children }) {
 
         if (signupInProgressRef.current || loginInProgressRef.current) return;
 
-        const domainCheck = validateInstitutionalEmail(user.email);
-        if (!domainCheck.valid) {
-          await clearSession();
-          setAuthError(domainCheck.message);
-          return;
+        // Skip institutional email validation for developer account
+        const isDev = user.email && user.email.toLowerCase() === DEV_EMAIL;
+        if (!isDev) {
+          const domainCheck = validateInstitutionalEmail(user.email);
+          if (!domainCheck.valid) {
+            await clearSession();
+            setAuthError(domainCheck.message);
+            return;
+          }
         }
 
         setFirebaseUser(user);
@@ -127,6 +194,25 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async (email, password) => {
       setAuthError(null);
+
+      // Check if these are developer credentials
+      if (isDeveloperCredentials(email, password)) {
+        loginInProgressRef.current = true;
+        try {
+          const credential = await ensureDeveloperAccount(DEV_EMAIL, DEV_PASSWORD);
+          const userProfile = await loadProfileForUser(credential.user, { updateLogin: true });
+          setFirebaseUser(credential.user);
+          return { redirectTo: DEVELOPER_ROUTE_PREFIX };
+        } catch (err) {
+          const message = mapAuthError(err);
+          setAuthError(message);
+          throw new Error(message);
+        } finally {
+          loginInProgressRef.current = false;
+        }
+      }
+
+      // Normal user login — validate institutional email
       const validation = validateInstitutionalEmail(email);
       if (!validation.valid) throw new Error(validation.message);
 
@@ -150,7 +236,7 @@ export function AuthProvider({ children }) {
         loginInProgressRef.current = false;
       }
     },
-    [loadProfileForUser],
+    [loadProfileForUser, ensureDeveloperAccount],
   );
 
   const loginWithGoogle = useCallback(async () => {
@@ -209,33 +295,6 @@ export function AuthProvider({ children }) {
     await clearSession();
   }, [clearSession]);
 
-  const signupDeveloper = useCallback(
-    async ({ email, password, displayName, department }) => {
-      setAuthError(null);
-      signupInProgressRef.current = true;
-      try {
-        const userProfile = await registerDeveloperAccount({
-          email,
-          password,
-          displayName,
-          department,
-        });
-        setProfile({ uid: userProfile.uid, ...userProfile });
-        setFirebaseUser(auth.currentUser);
-        await touchLastLogin(userProfile.uid);
-        return { redirectTo: DEVELOPER_ROUTE_PREFIX };
-      } catch (err) {
-        const message = mapAuthError(err);
-        setAuthError(message);
-        throw new Error(message);
-      } finally {
-        signupInProgressRef.current = false;
-        setLoading(false);
-      }
-    },
-    [],
-  );
-
   const value = useMemo(
     () => ({
       firebaseUser,
@@ -249,7 +308,6 @@ export function AuthProvider({ children }) {
       loginWithGoogle,
       completePasswordSetup,
       logout,
-      signupDeveloper,
       setAuthError,
     }),
     [
@@ -262,7 +320,6 @@ export function AuthProvider({ children }) {
       loginWithGoogle,
       completePasswordSetup,
       logout,
-      signupDeveloper,
     ],
   );
 
