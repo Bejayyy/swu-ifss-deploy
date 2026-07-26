@@ -287,3 +287,164 @@ exports.sendStaffWelcomeEmail = functions.https.onCall(async (data, context) => 
     throw new functions.https.HttpsError('internal', 'Failed to send email: ' + error.message);
   }
 });
+
+// ─── Forgot Password: Send OTP ─────────────────────────────────────────────
+exports.sendPasswordResetOTP = functions.https.onCall(async (data) => {
+  const { email } = data;
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'Email is required.');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Verify user exists in Firebase Auth
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(normalizedEmail);
+  } catch (err) {
+    // Don't reveal whether user exists for security
+    return { success: true, message: 'If the email is registered, an OTP has been sent.' };
+  }
+
+  // Verify user exists in Firestore
+  const userDoc = await admin.firestore().doc(`users/${userRecord.uid}`).get();
+  if (!userDoc.exists) {
+    return { success: true, message: 'If the email is registered, an OTP has been sent.' };
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  // Store OTP in Firestore
+  await admin.firestore().doc(`password_reset_otps/${normalizedEmail}`).set({
+    otp,
+    expiresAt,
+    attempts: 0,
+    createdAt: Date.now(),
+    uid: userRecord.uid,
+  });
+
+  // Send OTP email
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: normalizedEmail,
+    subject: 'SWU IFSS — Password Reset Code',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #800000; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .otp-box { background: #fff; border: 2px solid #800000; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
+          .otp-code { font-size: 36px; font-weight: bold; color: #800000; letter-spacing: 8px; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Password Reset</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${userDoc.data().displayName || 'User'},</h2>
+            <p>You requested a password reset for your SWU IFSS account. Use the code below to reset your password:</p>
+            
+            <div class="otp-box">
+              <p style="margin:0 0 8px 0;font-size:14px;color:#666;">Your verification code</p>
+              <div class="otp-code">${otp}</div>
+            </div>
+
+            <p><strong>This code expires in 10 minutes.</strong></p>
+            <p>If you did not request a password reset, please ignore this email. Your account remains secure.</p>
+
+            <p>Best regards,<br>SWU IFSS Team</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'If the email is registered, an OTP has been sent.' };
+  } catch (error) {
+    console.error('Error sending OTP email:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to send OTP email. Please try again.');
+  }
+});
+
+// ─── Forgot Password: Verify OTP & Reset Password ──────────────────────────
+exports.verifyOTPAndResetPassword = functions.https.onCall(async (data) => {
+  const { email, otp, newPassword } = data;
+  if (!email || !otp || !newPassword) {
+    throw new functions.https.HttpsError('invalid-argument', 'Email, OTP, and new password are required.');
+  }
+
+  if (newPassword.length < 8) {
+    throw new functions.https.HttpsError('invalid-argument', 'Password must be at least 8 characters.');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const otpRef = admin.firestore().doc(`password_reset_otps/${normalizedEmail}`);
+  const otpDoc = await otpRef.get();
+
+  if (!otpDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'No OTP request found. Please request a new code.');
+  }
+
+  const otpData = otpDoc.data();
+
+  // Check expiry
+  if (Date.now() > otpData.expiresAt) {
+    await otpRef.delete();
+    throw new functions.https.HttpsError('deadline-exceeded', 'OTP has expired. Please request a new code.');
+  }
+
+  // Check max attempts (5)
+  if (otpData.attempts >= 5) {
+    await otpRef.delete();
+    throw new functions.https.HttpsError('resource-exhausted', 'Too many failed attempts. Please request a new code.');
+  }
+
+  // Verify OTP
+  if (otpData.otp !== otp.trim()) {
+    await otpRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
+    const remaining = 4 - otpData.attempts;
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      `Invalid OTP. ${remaining > 0 ? remaining + ' attempt(s) remaining.' : 'Please request a new code.'}`
+    );
+  }
+
+  // OTP is valid — reset password
+  try {
+    await admin.auth().updateUser(otpData.uid, { password: newPassword });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to reset password. Please try again.');
+  }
+
+  // Clean up OTP document
+  await otpRef.delete();
+
+  // Update Firestore user profile
+  try {
+    await admin.firestore().doc(`users/${otpData.uid}`).update({
+      mustSetPassword: false,
+      passwordEnabled: true,
+    });
+  } catch {
+    // Non-fatal
+  }
+
+  return { success: true, message: 'Password has been reset successfully.' };
+});
+

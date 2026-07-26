@@ -6,6 +6,7 @@ import { RoleConfigProvider } from './context/RoleConfigContext';
 import { DeveloperRoute, PasswordSetupRoute, PublicOnlyRoute, RegistrarRoute } from './components/auth/ProtectedRoute';
 
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
 import DeveloperSignup from './pages/DeveloperSignup';
 import DeveloperDashboard from './pages/developer/DeveloperDashboard';
 import PasswordSetup from './pages/PasswordSetup';
@@ -46,6 +47,14 @@ export default function App() {
               element={
                 <PublicOnlyRoute>
                   <Login />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicOnlyRoute>
+                  <ForgotPassword />
                 </PublicOnlyRoute>
               }
             />
