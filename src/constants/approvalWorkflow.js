@@ -34,9 +34,6 @@ export function isReservationActionable(reservation, role, profile) {
   const pending = getActivePendingRecord(reservation.approvalRecords);
   if (!pending) return false;
 
-  // Registrar can act on any pending request
-  if (role === 'registrar') return true;
-
   // If this pending step is assigned to a specific customManagerUid (e.g. Dean room manager)
   if (pending.customManagerUid) {
     return profile.uid === pending.customManagerUid;
