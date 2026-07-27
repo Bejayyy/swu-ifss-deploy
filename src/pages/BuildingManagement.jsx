@@ -7,17 +7,20 @@ import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddBuildingModal from '../components/modals/AddBuildingModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
+import EditBuildingModal from '../components/modals/EditBuildingModal';
+import PageSkeleton from '../components/SkeletonLoader';
 
 const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', Maintenance: 'badge-maintenance' };
 
 export default function BuildingManagement() {
   const navigate = useNavigate();
-  const { buildingList, buildingsLoading, buildingsError } = useApp();
+  const { buildingList, buildingsLoading, buildingsError, updateBuilding } = useApp();
   const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, canSubmitReservation, roleLabel } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
+  const [showEditBuilding, setShowEditBuilding] = useState(false);
 
   useEffect(() => {
     if (!buildingList.length) {
@@ -37,15 +40,12 @@ export default function BuildingManagement() {
       title={canManageBuildings() ? 'Building & Room Management' : 'Buildings & Rooms'}
       subtitle={canManageRoomMaintenance() ? `${roleLabel} — manage room maintenance and view schedules` : canManageAssignedRooms() ? `${roleLabel} — manage assigned classrooms` : 'View buildings and room information'}
     >
-      <div className="flex justify-end gap-2 mb-5 flex-wrap">
-        {canManageBuildings() && building && (
-          <button type="button" className="btn-outline-maroon" onClick={() => setShowAddFloor(true)}>
-            <Plus size={16} /> Add Floor
+      <div className="flex justify-end gap-2 mb-5">
+        {canManageBuildings() && (
+          <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
+            <Plus size={16} /> Add Building
           </button>
         )}
-        {canManageBuildings() && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
-          <Plus size={16} /> Add Building
-        </button>}
       </div>
 
       {buildingsError && (
@@ -55,13 +55,15 @@ export default function BuildingManagement() {
       )}
 
       {buildingsLoading && buildingList.length === 0 ? (
-        <p className="text-sm text-gray-500 py-12 text-center">Loading buildings…</p>
+        <PageSkeleton />
       ) : buildingList.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <p className="text-sm text-gray-500 mb-4">No buildings yet. Add your first building to get started.</p>
-          {canManageBuildings() && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
-            <Plus size={16} /> Add Building
-          </button>}
+          {canManageBuildings() && (
+            <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
+              <Plus size={16} /> Add Building
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -85,46 +87,48 @@ export default function BuildingManagement() {
 
           {building && (
             <div className="p-6">
-              <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Building2 size={18} style={{ color: '#7A0808' }} />
-                    <h2 className="font-black text-lg text-dark">{building.name}</h2>
-                  </div>
-                  <div className="flex gap-4 text-xs text-gray-400">
-                    <span>Floors: {building.floors}</span>
-                    <span>Rooms: {building.totalRooms ?? allRooms.length}</span>
-                  </div>
-                </div>
-                {building.manager ? (
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <div className="w-6 h-6 rounded-full bg-yellow-400 flex items-center justify-center font-black text-xs text-dark">
-                      {building.manager.charAt(0)}
+              <div className="flex items-center justify-between mb-6 flex-wrap gap-4 pb-5 border-b border-gray-100">
+                <div className="flex items-center gap-4">
+                  {building.image ? (
+                    <img src={building.image} alt={building.name} className="w-16 h-16 rounded-2xl object-cover border border-gray-200 shadow-sm" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-[#7A0808]">
+                      <Building2 size={28} />
                     </div>
-                    <span className="font-semibold">{building.manager}</span>
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h2 className="font-black text-xl text-dark">{building.name}</h2>
+                      {(building.prefix || building.code) && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">
+                          Prefix: {building.prefix || building.code}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-4 text-xs text-gray-500 font-medium">
+                      <span>Floors: {building.floors}</span>
+                      <span>Rooms: {building.totalRooms ?? allRooms.length}</span>
+                    </div>
                   </div>
-                ) : (
-                  <span className="text-xs font-semibold text-gray-400 italic">No manager assigned</span>
-                )}
-              </div>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5 p-4 bg-gray-50 rounded-xl">
-                <div>
-                  <p className="text-[10px] font-bold uppercase text-gray-400">Building Manager</p>
-                  <p className="text-sm font-bold text-dark mt-0.5">{building.manager || '—'}</p>
-                  <p className="text-xs text-gray-400">{building.email || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase text-gray-400">Contact</p>
-                  <p className="text-sm font-bold text-dark mt-0.5">{building.contact || '—'}</p>
-                </div>
+                {canManageBuildings() && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button type="button" className="btn-outline-maroon flex items-center gap-2" onClick={() => setShowAddFloor(true)}>
+                      <Plus size={16} /> Add Floor
+                    </button>
+                    <button type="button" className="btn-outline-maroon flex items-center gap-2" onClick={() => setShowEditBuilding(true)}>
+                      <Edit2 size={14} /> Edit Building
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      {['Room', 'Floor', 'Capacity', 'Facilities', 'Manage by', 'Status', 'Actions'].map((h) => (
+                      {['Room', 'Floor', 'Capacity', 'Facilities', 'Status', 'Actions'].map((h) => (
                         <th key={h} className="text-left text-[10px] font-black uppercase tracking-wider text-gray-400 py-3 pr-4">
                           {h}
                         </th>
@@ -134,7 +138,7 @@ export default function BuildingManagement() {
                   <tbody>
                     {allRooms.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-sm text-gray-400">
+                        <td colSpan={6} className="py-8 text-center text-sm text-gray-400">
                           No rooms yet. Open building details to add rooms per floor.
                         </td>
                       </tr>
@@ -144,7 +148,7 @@ export default function BuildingManagement() {
                         return (
                           <tr key={room.docId || `${room.id}-${room.floor}`} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
                             <td className="py-3 pr-4 text-sm font-bold text-dark">{room.id}</td>
-                            <td className="py-3 pr-4 text-sm text-gray-600">{room.floorLabel || room.floor}</td>
+                            <td className="py-3 pr-4 text-sm text-gray-600">{room.floorLabel || `Floor ${room.floor}`}</td>
                             <td className="py-3 pr-4 text-sm text-gray-600">{room.capacity}</td>
                             <td className="py-3 pr-4">
                               <div className="text-xs text-gray-600">
@@ -152,9 +156,6 @@ export default function BuildingManagement() {
                                   <div key={i}>{e}</div>
                                 ))}
                               </div>
-                            </td>
-                            <td className="py-3 pr-4 text-xs text-gray-600">
-                              {building.manager ? building.manager.split(' ').slice(0, 3).join(' ') : '—'}
                             </td>
                             <td className="py-3 pr-4">
                               <span className={statusBadge[room.status] || 'badge-available'}>{room.status}</span>
@@ -195,6 +196,7 @@ export default function BuildingManagement() {
                                   }
                                   className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                                   style={{ color: '#7A0808' }}
+                                  title="View room details"
                                 >
                                   <Edit2 size={14} />
                                 </button>
@@ -229,6 +231,13 @@ export default function BuildingManagement() {
           buildingId={building.id}
           buildingName={building.name}
           onClose={() => setShowAddFloor(false)}
+        />
+      )}
+      {canManageBuildings() && showEditBuilding && building && (
+        <EditBuildingModal
+          building={building}
+          onClose={() => setShowEditBuilding(false)}
+          onSave={updateBuilding}
         />
       )}
     </Layout>

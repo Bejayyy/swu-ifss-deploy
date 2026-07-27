@@ -117,7 +117,6 @@ service cloud.firestore {
       allow create: if isProvisionalDeveloperSignup(userId)
         || (
           isDeveloper()
-          && isPhinmaedEmail()
           && request.resource.data.role == 'registrar'
           && request.resource.data.email.matches('.*@phinmaed\\.com$')
           && request.resource.data.status in ['active', 'inactive']
@@ -137,7 +136,6 @@ service cloud.firestore {
         && request.resource.data.keys().hasAny(['migratedToUid', 'status']);
 
       allow update: if isDeveloper()
-        && isPhinmaedEmail()
         && resource.data.role == 'registrar'
         && request.resource.data.role == 'registrar'
         && request.resource.data.email.matches('.*@phinmaed\\.com$')
@@ -162,9 +160,8 @@ service cloud.firestore {
         && callerIsSelf(userId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'updatedAt', 'mustSetPassword', 'passwordEnabled', 'authProviders']);
 
-      allow delete: if (isDeveloper() || isRegistrar()) 
-        && isPhinmaedEmail() 
-        && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role));
+      allow delete: if (isDeveloper() && resource.data.role == 'registrar')
+        || (isRegistrar() && isPhinmaedEmail() && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role)));
 
       // Course schedules subcollection - deans can manage their own, all staff can read
       match /course_schedules/{section} {

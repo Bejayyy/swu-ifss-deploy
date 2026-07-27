@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getAllCatalogNavKeys, getAllCatalogPermissionKeys } from '../../constants/accessCatalog';
 
-export default function AddRoleModal({ onClose, onSave, saving = false }) {
+export default function AddRoleModal({ onClose, onSave, saving = false, existingRoles = [] }) {
   const [form, setForm] = useState({
     key: '',
     label: '',
@@ -16,6 +16,8 @@ export default function AddRoleModal({ onClose, onSave, saving = false }) {
     e.preventDefault();
     setError('');
     const key = form.key.trim().toLowerCase().replace(/\s+/g, '_');
+    const label = form.label.trim();
+
     if (!key) {
       setError('Role key is required.');
       return;
@@ -24,14 +26,25 @@ export default function AddRoleModal({ onClose, onSave, saving = false }) {
       setError('Role key must start with a letter and use only lowercase letters, numbers, and underscores.');
       return;
     }
-    if (!form.label.trim()) {
+    if (!label) {
       setError('Role label is required.');
       return;
     }
+
+    if (Array.isArray(existingRoles) && existingRoles.length > 0) {
+      const duplicate = existingRoles.find(
+        (r) => (r.id || r.value || '').toLowerCase() === key || (r.label || '').toLowerCase() === label.toLowerCase()
+      );
+      if (duplicate) {
+        setError(`A role "${duplicate.label || duplicate.id || key}" already exists in the system.`);
+        return;
+      }
+    }
+
     try {
       await onSave({
         id: key,
-        label: form.label.trim(),
+        label,
         permissions: form.permissions,
         navKeys: form.navKeys,
         isSystem: false,

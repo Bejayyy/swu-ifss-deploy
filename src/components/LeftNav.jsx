@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, BookOpen,
   Search, Clock, Building2, GraduationCap, BarChart2,
-  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch,
+  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch, Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
@@ -15,19 +15,14 @@ const TEXT = '#2B3235';
 
 const NAV_ICONS = {
   '/dashboard': LayoutDashboard,
-  '/approvals': CheckSquare,
-  '/course-scheduling': Calendar,
-  '/teachers': GraduationCap,
-  '/courses': BookOpen,
-  '/room-availability': BookOpen,
-  '/room-finder': Search,
-  '/schedule-history': Clock,
+  '/system-administration': Users,
   '/building-management': Building2,
   '/academic-calendar': GraduationCap,
-  '/reports': BarChart2,
+  '/course-scheduling': Calendar,
   '/college-inventory': GraduationCap,
-  '/system-administration': Settings,
   '/approval-workflow': GitBranch,
+  '/approvals': CheckSquare,
+  '/reports': BarChart2,
   '/maintenance-dashboard': Building2,
 };
 
@@ -70,18 +65,20 @@ export default function LeftNav({
         }`}
         style={{ width: NAV_WIDTH_PX, borderRight: '1px solid #f0f0f0' }}
       >
-      <div
-        className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
-        style={{ minHeight: TOP_NAV_HEIGHT_PX, borderBottom: '1px solid #f0f0f0' }}
-      >
-        <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
-        <div className="min-w-0">
+        <header
+          className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
+          style={{ minHeight: TOP_NAV_HEIGHT_PX, borderBottom: '1px solid #f0f0f0' }}
+        >
+          {systemLogo ? (
+            <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
+          ) : null}
+          <div className="min-w-0">
           <p className="font-bold text-xl leading-tight truncate" style={{ color: MAROON }}>SWU-IFSS</p>
           <p className="text-[11px] font-medium leading-tight truncate" style={{ color: TEXT, opacity: 0.75 }}>
             Integrated Facility Scheduling System
           </p>
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2">
         {resolvedNavItems.map(({ label, icon: Icon, path }) => {

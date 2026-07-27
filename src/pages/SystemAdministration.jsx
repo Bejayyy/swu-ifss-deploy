@@ -186,19 +186,21 @@ export default function SystemAdministration() {
     setSavingRole(true);
     
     try {
-      await saveRoleDefinition(payload);
+      const roleKey = await saveRoleDefinition(payload, roleDefinitionsList);
       showNotification({
         type: 'success',
         title: 'Role created',
         message: `"${payload.label}" role has been created successfully.`,
       });
       setShowAddRole(false);
+      return roleKey;
     } catch (error) {
       showNotification({
         type: 'error',
         title: 'Creation failed',
         message: error.message || 'Failed to create role.',
       });
+      throw error;
     } finally {
       setSavingRole(false);
       setIsLoading(false);
@@ -308,7 +310,7 @@ export default function SystemAdministration() {
   ];
 
   return (
-    <Layout title="System Administration" subtitle="Manage users, roles, navigation access, and permissions">
+    <Layout title="User Management" subtitle="Manage users, roles, navigation access, and permissions">
       <ProgressStatCards items={stats} />
 
       {(loadError || rolesError) && (
@@ -465,6 +467,8 @@ export default function SystemAdministration() {
           onSave={addUser}
           roleOptions={roleOptions}
           roleDefinitions={roleDefinitions}
+          roleDefinitionsList={roleDefinitionsList}
+          onSaveRole={createRole}
         />
       )}
       {showFilter && (
@@ -507,6 +511,7 @@ export default function SystemAdministration() {
           onClose={() => setShowAddRole(false)}
           onSave={createRole}
           saving={savingRole}
+          existingRoles={roleDefinitionsList}
         />
       )}
 

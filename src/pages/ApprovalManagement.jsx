@@ -14,10 +14,12 @@ import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
 import { deleteRoomReservation } from '../services/reservationService';
 
+import { TableSkeleton } from '../components/SkeletonLoader';
+
 export default function ApprovalManagement() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { requests } = useApp();
+  const { requests, requestsLoading } = useApp();
   const { profile } = useAuth();
   const {
     role,
@@ -369,7 +371,9 @@ export default function ApprovalManagement() {
         </div>
 
         {/* Request Cards */}
-        {displayRequests.length === 0 ? (
+        {requestsLoading ? (
+          <TableSkeleton rows={5} cols={5} />
+        ) : displayRequests.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">
             {showSection === 'approvals' ? 'No requests awaiting your approval.' : 'You have not created any requests yet.'}
           </div>

@@ -7,9 +7,9 @@ const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'C
 const equipmentOptions = ['Projector', 'Whiteboard', 'Air Conditioning', 'Audio System', 'Computers', 'Smart Board', 'CCTV'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
 
-export default function AddRoomModal({ buildingId, floorId, floor, floorManagedBy, onClose }) {
+export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floor, floorManagedBy, existingRoomsCount = 0, onClose }) {
   const { addRoom, currentUser } = useApp();
-  const [form, setForm] = useState({ name: '', type: '', capacity: '', status: 'Available', equipment: [], managedBy: '' });
+  const [form, setForm] = useState({ name: '', type: 'Classroom', capacity: '40', status: 'Available', equipment: [], managedBy: '' });
   const [types, setTypes] = useState(roomTypes);
   const [equipmentChoices, setEquipmentChoices] = useState(equipmentOptions);
   const [newType, setNewType] = useState('');
@@ -19,6 +19,15 @@ export default function AddRoomModal({ buildingId, floorId, floor, floorManagedB
   const [error, setError] = useState('');
 
   const isRegistrar = currentUser?.role === 'registrar';
+
+  // Auto-generate default room name (e.g. PH - 101) based on building prefix & floor
+  useEffect(() => {
+    if (!form.name && floor) {
+      const prefix = buildingPrefix || 'RM';
+      const num = String(existingRoomsCount + 1).padStart(2, '0');
+      setForm((f) => ({ ...f, name: `${prefix} - ${floor}${num}` }));
+    }
+  }, [buildingPrefix, floor, existingRoomsCount]);
 
   // Subscribe to staff users to get dean list
   useEffect(() => {

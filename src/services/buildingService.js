@@ -139,22 +139,19 @@ export function subscribeToBuildings(onData, onError) {
   };
 }
 
-export async function createBuilding({ name, manager, floorNames, image, contact, email }) {
+export async function createBuilding({ name, prefix, manager, floorNames, image, contact, email }) {
   const trimmedName = name.trim();
   if (!trimmedName) throw new Error('Building name is required.');
 
   const buildingRef = doc(collection(db, COLLECTIONS.BUILDINGS));
-  const code = generateBuildingCode(trimmedName);
+  const code = (prefix?.trim() || generateBuildingCode(trimmedName)).toUpperCase();
   const batch = writeBatch(db);
-  const managerValue = manager?.trim() || null;
 
   batch.set(buildingRef, {
     name: trimmedName,
     code,
+    prefix: code,
     image: image || '',
-    manager: managerValue,
-    contact: contact?.trim() || '',
-    email: email?.trim() || '',
     totalRooms: 0,
     floors: floorNames.length,
     createdAt: serverTimestamp(),
@@ -187,15 +184,11 @@ export async function addFloorToBuilding(buildingId, floorData) {
 
   // Handle both old format (string) and new format (object)
   const label = typeof floorData === 'string' ? floorData : floorData.label;
-  const managedBy = typeof floorData === 'object' ? floorData.managedBy : null;
-  const managedByName = typeof floorData === 'object' ? floorData.managedByName : null;
 
   await setDoc(floorRef, {
     buildingId,
     floorNumber,
     label: (label || `Floor ${floorNumber}`).trim(),
-    managedBy: managedBy || null,
-    managedByName: managedByName || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -211,9 +204,11 @@ export async function addFloorToBuilding(buildingId, floorData) {
 export async function updateBuildingRecord(buildingId, patch) {
   const updates = { updatedAt: serverTimestamp() };
   if (patch.name !== undefined) updates.name = patch.name.trim();
-  if (patch.manager !== undefined) updates.manager = patch.manager?.trim() || null;
-  if (patch.contact !== undefined) updates.contact = patch.contact.trim();
-  if (patch.email !== undefined) updates.email = patch.email.trim();
+  if (patch.prefix !== undefined) {
+    const p = patch.prefix.trim().toUpperCase();
+    updates.prefix = p;
+    updates.code = p;
+  }
   if (patch.image !== undefined) updates.image = patch.image;
 
   await updateDoc(doc(db, COLLECTIONS.BUILDINGS, buildingId), updates);

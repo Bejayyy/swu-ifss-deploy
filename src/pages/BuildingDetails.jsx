@@ -92,20 +92,11 @@ export default function BuildingDetails() {
           {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowAddFloor(true)}>
             <Plus size={14} /> Add Floor
           </button>}
-          {canManageBuilding && <button type="button" className="btn-maroon" style={{ borderRadius: 10 }} onClick={() => setShowAddRoom(true)} disabled={!floorEntry.floorId}>
-            <Plus size={16} /> Add Room
-          </button>}
           {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
             <Edit2 size={14} /> Edit Building
           </button>}
         </div>
       </div>
-
-      {!building.manager && (
-        <p className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-4">
-          No building manager assigned for this facility.
-        </p>
-      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
@@ -325,9 +316,11 @@ export default function BuildingDetails() {
       {canManageBuilding && showAddRoom && floorEntry.floorId && (
         <AddRoomModal
           buildingId={building.id}
+          buildingPrefix={building.prefix || building.code}
           floorId={floorEntry.floorId}
           floor={activeFloor}
           floorManagedBy={floorEntry.managedBy}
+          existingRoomsCount={floorData.rooms.length}
           onClose={() => setShowAddRoom(false)}
         />
       )}

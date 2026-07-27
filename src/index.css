@@ -198,3 +198,18 @@ body {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Skeleton pulse animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.skeleton {
+  background-color: #e5e7eb;
+  border-radius: 8px;
+}

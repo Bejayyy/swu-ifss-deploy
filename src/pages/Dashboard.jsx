@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, DoorOpen, ClipboardList, Users, Activity, CheckCircle, XCircle, Clock, ArrowRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import PageSkeleton from '../components/SkeletonLoader';
 
 const stats = [
   { label: 'Total Buildings', value: '04', icon: Building2 },
@@ -30,9 +31,18 @@ const roomUtilization = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { buildingList, requests } = useApp();
+  const { buildingList, requests, buildingsLoading, requestsLoading } = useApp();
 
   const pendingReqs = requests.filter((r) => r.status === 'Pending' || r.status === 'In Progress').length;
+  const isLoading = buildingsLoading || requestsLoading;
+
+  if (isLoading) {
+    return (
+      <Layout title="Dashboard" subtitle="Facility Overview">
+        <PageSkeleton />
+      </Layout>
+    );
+  }
 
   return (
     <Layout title="Dashboard" subtitle="Facility Overview">
@@ -61,8 +71,10 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 gap-4">
             {buildingList.slice(0, 4).map(b => (
               <div key={b.id} className="rounded-xl overflow-hidden bg-white shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/building/${b.id}`)}>
-                <div className="h-32 overflow-hidden">
-                  <img src={b.image} alt={b.name} className="w-full h-full object-cover" />
+                <div className="h-32 overflow-hidden bg-gray-100">
+                  {b.image ? (
+                    <img src={b.image} alt={b.name} className="w-full h-full object-cover" />
+                  ) : null}
                 </div>
                 <div className="p-3">
                   <p className="font-bold text-sm" style={{ color: '#2B3235' }}>{b.name}</p>

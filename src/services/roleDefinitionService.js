@@ -52,11 +52,22 @@ export async function seedDefaultRoleDefinitions() {
   );
 }
 
-export async function saveRoleDefinition({ id, label, permissions, navKeys, isSystem = false }) {
+export async function saveRoleDefinition({ id, label, permissions, navKeys, isSystem = false }, existingDefinitions = []) {
   if (!id?.trim()) throw new Error('Role key is required.');
   if (!label?.trim()) throw new Error('Role label is required.');
 
   const roleKey = id.trim().toLowerCase().replace(/\s+/g, '_');
+  const roleLabelLower = label.trim().toLowerCase();
+
+  if (Array.isArray(existingDefinitions) && existingDefinitions.length > 0) {
+    const duplicate = existingDefinitions.find(
+      (r) => (r.id || '').toLowerCase() === roleKey || (r.label || '').toLowerCase() === roleLabelLower,
+    );
+    if (duplicate) {
+      throw new Error(`A role with key or label "${duplicate.label || duplicate.id}" already exists.`);
+    }
+  }
+
   await setDoc(
     roleDefRef(roleKey),
     {
@@ -67,7 +78,6 @@ export async function saveRoleDefinition({ id, label, permissions, navKeys, isSy
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
-    { merge: true },
   );
   return roleKey;
 }

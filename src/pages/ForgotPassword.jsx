@@ -231,7 +231,9 @@ export default function ForgotPassword() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-5">
-          <img src={systemLogo} alt="SWU-IFSS logo" className="h-16 w-auto object-contain mb-2" />
+          {systemLogo ? (
+            <img src={systemLogo} alt="SWU-IFSS logo" className="h-16 w-auto object-contain mb-2" />
+          ) : null}
           <h2 className="text-lg font-black" style={{ color: '#2B3235' }}>
             Reset Password
           </h2>

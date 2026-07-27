@@ -6,7 +6,7 @@ import { DEVELOPER_ROUTE_PREFIX } from '../../firebase/constants';
 import systemLogo from '../../assets/logo.png';
 
 const navItems = [
-  { label: 'Registrar Accounts', icon: Users, path: DEVELOPER_ROUTE_PREFIX },
+  { label: 'User Management', icon: Users, path: DEVELOPER_ROUTE_PREFIX },
 ];
 
 export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onClose = () => {} }) {
@@ -35,7 +35,9 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
           className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
           style={{ minHeight: TOP_NAV_HEIGHT_PX, borderBottom: '1px solid #f0f0f0' }}
         >
-          <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
+          {systemLogo ? (
+            <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
+          ) : null}
           <div className="min-w-0">
             <p className="font-bold text-xl leading-tight truncate" style={{ color: '#800000' }}>SWU-IFSS</p>
             <p className="text-[11px] font-medium leading-tight truncate" style={{ color: '#2B3235', opacity: 0.75 }}>
@@ -43,21 +45,6 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
             </p>
           </div>
         </header>
-
-        <section className="px-3 py-4 flex-shrink-0">
-          <div
-            className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
-            style={{ background: '#FFF0F0' }}
-          >
-            <Code2 size={16} className="text-[#800000] flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold leading-tight" style={{ color: '#800000' }}>Account management only</p>
-              <p className="text-[10px] leading-tight mt-0.5" style={{ color: '#2B3235', opacity: 0.75 }}>
-                No scheduling or registrar system features
-              </p>
-            </div>
-          </div>
-        </section>
 
         <nav className="flex-1 overflow-y-auto scrollbar-thin py-2 px-2">
           {navItems.map(({ label, icon: Icon, path }) => {

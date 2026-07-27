@@ -57,6 +57,17 @@ export async function createRegistrarAccount(
   { email, password, displayName, department, phone, permissions, notes },
   createdByUid,
 ) {
+  // Enforce single active registrar constraint
+  const activeRegistrarsQuery = query(
+    collection(db, COLLECTIONS.USERS),
+    where('role', '==', ROLES.REGISTRAR),
+    where('status', '==', USER_STATUS.ACTIVE),
+  );
+  const activeSnap = await getDocs(activeRegistrarsQuery);
+  if (!activeSnap.empty) {
+    throw new Error('Account creation failed: Only 1 active Registrar account is allowed in the system. An active Registrar account already exists.');
+  }
+
   const validation = validateInstitutionalEmail(email);
   if (!validation.valid) {
     throw new Error(validation.message);
@@ -72,7 +83,7 @@ export async function createRegistrarAccount(
     role: ROLES.REGISTRAR,
     status: USER_STATUS.ACTIVE,
     permissions: permissions || [],
-    department,
+    department: department || 'Registrar',
     phone,
     createdBy: createdByUid,
     mustSetPassword: true, // Force password change on first login
@@ -87,7 +98,7 @@ export async function createRegistrarAccount(
     {
       email: normalized,
       displayName: displayName.trim(),
-      department: (department || '').trim(),
+      department: (department || 'Registrar').trim(),
       status: USER_STATUS.ACTIVE,
       permissions: permissions || [],
       notes: (notes || '').trim(),
@@ -118,6 +129,19 @@ export async function updateRegistrarAccount(
   { displayName, department, phone, permissions, notes, status },
   managedByUid,
 ) {
+  if (status === USER_STATUS.ACTIVE) {
+    const activeRegistrarsQuery = query(
+      collection(db, COLLECTIONS.USERS),
+      where('role', '==', ROLES.REGISTRAR),
+      where('status', '==', USER_STATUS.ACTIVE),
+    );
+    const activeSnap = await getDocs(activeRegistrarsQuery);
+    const otherActive = activeSnap.docs.filter((d) => d.id !== uid);
+    if (otherActive.length > 0) {
+      throw new Error('Update failed: Only 1 active Registrar account is allowed in the system. An active Registrar account already exists.');
+    }
+  }
+
   const updates = { updatedAt: serverTimestamp() };
   if (displayName !== undefined) updates.displayName = displayName.trim();
   if (department !== undefined) updates.department = department.trim();

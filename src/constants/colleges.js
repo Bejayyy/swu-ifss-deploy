@@ -41,10 +41,9 @@ export function normalizeCollegeValue(input) {
  * Roles that require college assignment
  * GSD and Student Life are administrative offices, not part of any college
  */
-export const COLLEGE_REQUIRED_ROLES = ['teacher', 'organization_head', 'dean'];
-
 export function requiresCollege(roleValue) {
-  return COLLEGE_REQUIRED_ROLES.includes(roleValue);
+  if (!roleValue) return false;
+  return roleValue !== 'gsd' && roleValue !== 'student-life';
 }
 
 /**

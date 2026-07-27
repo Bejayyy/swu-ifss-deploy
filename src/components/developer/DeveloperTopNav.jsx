@@ -23,7 +23,7 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
       style={{
         left: isDesktop ? NAV_WIDTH_PX : 0,
         height: TOP_NAV_HEIGHT_PX,
-        background: '#1e3a5f',
+        background: '#800000',
         boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
       }}
     >
@@ -57,8 +57,8 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
             {initials}
           </div>
           <div className="text-left hidden sm:block">
-            <p className="text-white text-xs font-bold leading-tight">{profile?.displayName || 'Developer'}</p>
-            <p className="text-red-100 text-[10px] font-medium">System Developer</p>
+            <p className="text-white text-xs font-bold leading-tight">{profile?.displayName || 'Super Admin'}</p>
+            <p className="text-red-100 text-[10px] font-medium">Super Admin</p>
           </div>
           <ChevronDown size={14} className="text-red-100 hidden sm:block" />
         </button>

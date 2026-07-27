@@ -65,7 +65,9 @@ export default function Login() {
         style={{ maxWidth: 420 }}
       >
         <div className="flex flex-col items-center mb-7">
-          <img src={systemLogo} alt="SWU-IFSS logo" className="h-20 w-auto object-contain mb-3" />
+          {systemLogo ? (
+            <img src={systemLogo} alt="SWU-IFSS logo" className="h-20 w-auto object-contain mb-3" />
+          ) : null}
           <p className="text-xs text-gray-400">Southwestern University PHINMA</p>
         </div>
 

@@ -6,6 +6,7 @@ import CreateRegistrarModal from '../../components/developer/modals/CreateRegist
 import EditRegistrarModal from '../../components/developer/modals/EditRegistrarModal';
 import RegistrarActionsModal from '../../components/developer/modals/RegistrarActionsModal';
 import RegistrarFilterModal from '../../components/developer/modals/RegistrarFilterModal';
+import { TableSkeleton } from '../../components/SkeletonLoader';
 import { useAuth } from '../../context/AuthContext';
 import { USER_STATUS } from '../../firebase/constants';
 import {
@@ -20,6 +21,7 @@ import {
 export default function DeveloperDashboard() {
   const { profile } = useAuth();
   const [registrars, setRegistrars] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState({ status: 'any' });
@@ -34,8 +36,12 @@ export default function DeveloperDashboard() {
       (list) => {
         setRegistrars(list);
         setLoadError('');
+        setLoading(false);
       },
-      (err) => setLoadError(err.message || 'Unable to load registrars.'),
+      (err) => {
+        setLoadError(err.message || 'Unable to load registrars.');
+        setLoading(false);
+      },
     );
     return unsub;
   }, []);
@@ -128,10 +134,10 @@ export default function DeveloperDashboard() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button type="button" className="btn-outline-maroon gap-2" style={{ borderRadius: 10, borderColor: '#1e3a5f', color: '#1e3a5f' }} onClick={() => setShowFilter(true)}>
+        <button type="button" className="btn-outline-maroon gap-2" style={{ borderRadius: 10, borderColor: '#800000', color: '#800000' }} onClick={() => setShowFilter(true)}>
           <Filter size={16} /> Filter
         </button>
-        <button type="button" className="gap-2 text-white font-semibold px-5 py-2 rounded-[10px] flex items-center" style={{ background: '#1e3a5f' }} onClick={() => setShowCreate(true)}>
+        <button type="button" className="gap-2 text-white font-semibold px-5 py-2 rounded-[10px] flex items-center" style={{ background: '#800000' }} onClick={() => setShowCreate(true)}>
           <Plus size={16} /> Create Registrar
         </button>
       </div>
@@ -141,12 +147,15 @@ export default function DeveloperDashboard() {
       )}
 
       {filter.status !== 'any' && (
-        <p className="text-xs font-semibold mb-2" style={{ color: '#1e3a5f' }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: '#800000' }}>
           Status filter: {filter.status} ({filtered.length} shown)
         </p>
       )}
 
-      <div className="bg-white rounded-[10px] shadow-md border border-gray-100 overflow-hidden">
+      {loading ? (
+        <TableSkeleton rows={5} cols={5} />
+      ) : (
+        <div className="bg-white rounded-[10px] shadow-md border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -164,7 +173,7 @@ export default function DeveloperDashboard() {
                 <tr key={r.uid} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#1e3a5f', borderRadius: 10 }}>
+                      <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#800000', borderRadius: 10 }}>
                         {r.initials || 'R'}
                       </div>
                       <span className="font-bold">{r.displayName}</span>
@@ -197,6 +206,7 @@ export default function DeveloperDashboard() {
           </table>
         </div>
       </div>
+      )}
 
       {showCreate && <CreateRegistrarModal onClose={() => setShowCreate(false)} onSave={handleCreate} saving={busy} />}
       {showFilter && (
