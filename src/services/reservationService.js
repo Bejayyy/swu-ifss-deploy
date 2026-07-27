@@ -488,6 +488,7 @@ export async function processApprovalAction({
   approverRole,
   action,
   remarks = '',
+  signatureUrl = null,
 }) {
   if (!['approve', 'reject'].includes(action)) {
     throw new Error('Invalid approval action.');
@@ -528,6 +529,7 @@ export async function processApprovalAction({
         approvedByName: approverName,
         approvedAt: now,
         remarks: remarks.trim() || null,
+        signatureUrl: signatureUrl || pending.signatureUrl || null,
       };
       for (let i = pendingIndex + 1; i < records.length; i += 1) {
         if (records[i].status === APPROVAL_RECORD_STATUS.WAITING) {
@@ -550,7 +552,14 @@ export async function processApprovalAction({
       approvedByName: approverName,
       approvedAt: now,
       remarks: remarks.trim() || null,
+      signatureUrl: signatureUrl || pending.signatureUrl || null,
     };
+
+    // Persist signature to user profile for future requests
+    if (signatureUrl && approverUid) {
+      const userRef = doc(db, COLLECTIONS.USERS, approverUid);
+      transaction.set(userRef, { signatureUrl, updatedAt: serverTimestamp() }, { merge: true });
+    }
 
     const nextIndex = records.findIndex((r) => r.status === APPROVAL_RECORD_STATUS.WAITING);
     if (nextIndex === -1) {

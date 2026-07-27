@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle, Upload, Trash2, FileSignature } from 'lucide-react';
 import { RESERVATION_STATUS, isReservationActionable } from '../../constants/approvalWorkflow';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from '../modals/ModalProvider';
@@ -12,6 +12,7 @@ export default function ReservationApprovalActions({
   onReject,
 }) {
   const [remarks, setRemarks] = useState('');
+  const [signatureUrl, setSignatureUrl] = useState(profile?.signatureUrl || '');
   const [showReject, setShowReject] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -24,10 +25,25 @@ export default function ReservationApprovalActions({
 
   if (isTerminal || !canAct) return null;
 
+  const handleSignatureUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Signature file must be under 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setSignatureUrl(ev.target?.result || '');
+      setError('');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleApprove = async () => {
     const confirmed = await showConfirm({
       title: 'Approve reservation?',
-      message: 'This will approve the room reservation request and move it to the next approval step.',
+      message: 'This will approve the room reservation request and attach your signature to this workflow step.',
       confirmText: 'Approve',
       cancelText: 'Cancel',
       variant: 'primary',
@@ -40,7 +56,7 @@ export default function ReservationApprovalActions({
     setBusy(true);
     setError('');
     try {
-      await onApprove({ remarks });
+      await onApprove({ remarks, signatureUrl });
       showNotification({
         type: 'success',
         title: 'Reservation approved',
@@ -120,10 +136,49 @@ export default function ReservationApprovalActions({
 
   return (
     <>
-      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-3">
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
         <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>Approval Actions</h3>
+        
+        {/* Approver Signature Upload */}
+        <div className="border border-gray-100 bg-gray-50/50 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#7A0808' }}>
+              <FileSignature size={14} /> Approver Signature
+            </span>
+            {signatureUrl && (
+              <button
+                type="button"
+                onClick={() => setSignatureUrl('')}
+                className="text-[11px] font-bold text-red-600 hover:underline flex items-center gap-1"
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            )}
+          </div>
+
+          {signatureUrl ? (
+            <div className="bg-white border border-gray-200 rounded-lg p-2 flex items-center justify-center">
+              <img src={signatureUrl} alt="Signature Preview" className="max-h-16 object-contain" />
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-2 border border-dashed border-gray-300 bg-white rounded-lg p-3 cursor-pointer hover:border-[#7A0808] transition-colors">
+              <Upload size={14} className="text-gray-400" />
+              <span className="text-xs text-gray-600 font-semibold">Upload Digital Signature (PNG/JPG)</span>
+              <input
+                type="file"
+                accept="image/png, image/jpeg, image/webp"
+                className="hidden"
+                onChange={handleSignatureUpload}
+              />
+            </label>
+          )}
+          <p className="text-[10px] text-gray-400">
+            This signature will be printed on the official permit document upon approval.
+          </p>
+        </div>
+
         <textarea
-          className="form-input resize-none"
+          className="form-input resize-none text-xs"
           rows={3}
           placeholder={showReject ? 'Reason for rejection (required)' : 'Remarks (optional)'}
           value={remarks}

@@ -270,7 +270,7 @@ export function AppProvider({ children }) {
     await updateRoomReservation(id, updates);
   }, []);
 
-  const approveReservation = useCallback(async (reservationId, { action, remarks, approverUid, approverName, approverRole }) => {
+  const approveReservation = useCallback(async (reservationId, { action, remarks, approverUid, approverName, approverRole, signatureUrl }) => {
     await processApprovalAction({
       reservationId,
       action,
@@ -278,6 +278,7 @@ export function AppProvider({ children }) {
       approverUid,
       approverName,
       approverRole,
+      signatureUrl,
     });
   }, []);
 
