@@ -17,6 +17,7 @@ const NAV_ICONS = {
   '/dashboard': LayoutDashboard,
   '/system-administration': Users,
   '/building-management': Building2,
+  '/room-finder': Search,
   '/academic-calendar': GraduationCap,
   '/course-scheduling': Calendar,
   '/college-inventory': GraduationCap,

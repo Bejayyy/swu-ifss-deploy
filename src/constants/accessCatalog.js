@@ -1,4 +1,4 @@
-import { NAV_ITEMS, PERMISSIONS } from './rolePermissions';
+import { NAV_ITEMS, PERMISSIONS, sortNavKeys } from './rolePermissions';
 
 /** Categorized access catalog for role & user permission management */
 export const ACCESS_CATALOG = [
@@ -8,19 +8,15 @@ export const ACCESS_CATALOG = [
     description: 'Sidebar pages visible to this role or user',
     items: [
       { type: 'nav', navKey: 'dashboard', label: 'Dashboard', description: 'Home dashboard overview' },
-      { type: 'nav', navKey: 'approvals', label: 'Request Management', description: 'View and manage requests' },
-      { type: 'nav', navKey: 'courseScheduling', label: 'Course Scheduling', description: 'Plot and manage course schedules', requiresPermission: PERMISSIONS.SCHEDULING_SUBMIT },
-      { type: 'nav', navKey: 'teachers', label: 'Teachers', description: 'View teachers in your college' },
-      { type: 'nav', navKey: 'courses', label: 'Courses', description: 'Manage course catalog' },
-      { type: 'nav', navKey: 'roomAvailability', label: 'Room Availability', description: 'View room availability calendar', requiresPermission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
-      { type: 'nav', navKey: 'roomFinder', label: 'Room Finder', description: 'Search for available rooms', requiresPermission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
-      { type: 'nav', navKey: 'scheduleHistory', label: 'Schedule History', description: 'View past schedules', requiresPermission: PERMISSIONS.ROOM_SCHEDULES_VIEW },
+      { type: 'nav', navKey: 'systemAdmin', label: 'User Management', description: 'Manage users and roles', requiresPermission: PERMISSIONS.SYSTEM_ADMIN },
       { type: 'nav', navKey: 'buildings', label: 'Buildings', description: 'Building and room directory', requiresPermission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
+      { type: 'nav', navKey: 'roomFinder', label: 'Room Finder', description: 'Search for available rooms', requiresPermission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
       { type: 'nav', navKey: 'academicCalendar', label: 'Academic Calendar', description: 'School year and calendar settings', requiresPermission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
-      { type: 'nav', navKey: 'reports', label: 'Reports & Analytics', description: 'System reports', requiresPermission: PERMISSIONS.REPORTS_VIEW },
+      { type: 'nav', navKey: 'courseScheduling', label: 'Course Scheduling', description: 'Plot and manage course schedules', requiresPermission: PERMISSIONS.SCHEDULING_SUBMIT },
       { type: 'nav', navKey: 'collegeInventory', label: 'College Inventory', description: 'Manage colleges and departments', requiresPermission: PERMISSIONS.SYSTEM_ADMIN },
-      { type: 'nav', navKey: 'systemAdmin', label: 'System Administration', description: 'Manage users and roles', requiresPermission: PERMISSIONS.SYSTEM_ADMIN },
       { type: 'nav', navKey: 'approvalWorkflow', label: 'Approval Workflow', description: 'Configure approval workflows', requiresPermission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
+      { type: 'nav', navKey: 'approvals', label: 'Request Management', description: 'View and manage requests' },
+      { type: 'nav', navKey: 'reports', label: 'Reports & Analytics', description: 'System reports', requiresPermission: PERMISSIONS.REPORTS_VIEW },
       { type: 'nav', navKey: 'maintenanceDashboard', label: 'Maintenance Dashboard', description: 'Manage room maintenance', requiresPermission: PERMISSIONS.ROOMS_MAINTENANCE_MANAGE },
     ],
   },
@@ -120,7 +116,7 @@ export function toggleNavKey(navKeys, navKey, enabled) {
   const set = new Set(navKeys);
   if (enabled) set.add(navKey);
   else set.delete(navKey);
-  return [...set];
+  return sortNavKeys([...set]);
 }
 
 export function togglePermission(permissions, permission, enabled) {

@@ -1,219 +1,592 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Building2, Users, Layers, Calendar, BookOpen } from 'lucide-react';
+import {
+  Search, Building2, Users, BookOpen, X,
+  ChevronLeft, ChevronRight, SlidersHorizontal,
+  DoorOpen, Filter, RotateCcw, Eye,
+} from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
-import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
+import { TableSkeleton } from '../components/SkeletonLoader';
 
-const TYPE_BADGE = {
-  'Lecture Room': 'bg-blue-100 text-blue-800',
-  Classroom: 'bg-amber-100 text-amber-900',
-  Laboratory: 'bg-purple-100 text-purple-900',
-  'Seminar Room': 'bg-teal-100 text-teal-900',
-  'Conference Room': 'bg-slate-200 text-slate-800',
+const MAROON = '#7A0808';
+const TEXT = '#2B3235';
+const R = 10;
+
+const TYPE_COLORS = {
+  'Lecture Room': { bg: '#DBEAFE', text: '#1E40AF' },
+  Classroom: { bg: '#FEF3C7', text: '#92400E' },
+  Laboratory: { bg: '#EDE9FE', text: '#6D28D9' },
+  'Seminar Room': { bg: '#CCFBF1', text: '#0F766E' },
+  'Conference Room': { bg: '#E2E8F0', text: '#334155' },
+  Gymnasium: { bg: '#FEE2E2', text: '#991B1B' },
 };
+
+
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
+function Chip({ label, active, onClick, count }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all whitespace-nowrap"
+      style={
+        active
+          ? { background: MAROON, color: '#fff', borderColor: MAROON }
+          : { background: '#fff', color: TEXT, borderColor: '#e2e5e8' }
+      }
+    >
+      {label}
+      {count !== undefined && (
+        <span
+          className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[10px] font-black"
+          style={active ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : { background: '#f3f4f6', color: TEXT }}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function EquipChip({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all"
+      style={
+        active
+          ? { background: '#FFF0F0', color: MAROON, borderColor: MAROON }
+          : { background: '#FAFAFA', color: '#6B7280', borderColor: '#E5E7EB' }
+      }
+    >
+      {active && <span className="text-[10px]">✓</span>}
+      {label}
+    </button>
+  );
+}
 
 export default function RoomFinder() {
   const navigate = useNavigate();
-  const { buildingList } = useApp();
+  const { buildingList, loading: appLoading } = useApp();
   const { canSubmitReservation } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
-  const [q, setQ] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [category, setCategory] = useState('academic');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [buildingId, setBuildingId] = useState('all');
-  const [roomType, setRoomType] = useState('all');
-  const [capMin, setCapMin] = useState(0);
-  const [chk, setChk] = useState({ Available: true, Occupied: true, Maintenance: true });
 
+  // Filters
+  const [q, setQ] = useState('');
+  const [selectedBuildings, setSelectedBuildings] = useState([]);
+  const [selectedTypes, setSelectedTypes] = useState([]);
+  const [selectedStatuses, setSelectedStatuses] = useState([]);
+  const [selectedEquipment, setSelectedEquipment] = useState([]);
+  const [capMin, setCapMin] = useState('');
+  const [capMax, setCapMax] = useState('');
+  const [selectedFloor, setSelectedFloor] = useState('all');
+  const [showFilters, setShowFilters] = useState(true);
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Flatten all rooms from building data
   const allRooms = useMemo(() => {
     const out = [];
     buildingList.forEach((b) => {
       b.floorData.forEach((f) => {
         f.rooms.forEach((r) => {
-          out.push({ ...r, buildingName: b.name, buildingId: b.id, floor: f.floor });
+          out.push({
+            ...r,
+            buildingName: b.name,
+            buildingId: b.id,
+            buildingPrefix: b.prefix || b.code || '',
+            floor: f.floor,
+            floorId: f.floorId,
+          });
         });
       });
     });
     return out;
   }, [buildingList]);
 
-  const types = useMemo(() => ['all', ...new Set(allRooms.map((r) => r.type))], [allRooms]);
+  // Derive unique values from room data for filter options
+  const allTypes = useMemo(() => [...new Set(allRooms.map((r) => r.type))].sort(), [allRooms]);
+  const allEquipment = useMemo(() => {
+    const set = new Set();
+    allRooms.forEach((r) => (r.equipment || []).forEach((e) => set.add(e)));
+    return [...set].sort();
+  }, [allRooms]);
+  const allFloors = useMemo(() => [...new Set(allRooms.map((r) => r.floor))].sort((a, b) => a - b), [allRooms]);
 
+  // Active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (q) count++;
+    if (selectedBuildings.length) count++;
+    if (selectedTypes.length) count++;
+    if (selectedStatuses.length) count++;
+    if (selectedEquipment.length) count++;
+    if (capMin) count++;
+    if (capMax) count++;
+    if (selectedFloor !== 'all') count++;
+    return count;
+  }, [q, selectedBuildings, selectedTypes, selectedStatuses, selectedEquipment, capMin, capMax, selectedFloor]);
+
+  // Filter rooms
   const filtered = useMemo(() => {
     return allRooms.filter((r) => {
-      const hay = `${r.id} ${r.name} ${r.type} ${r.buildingName}`.toLowerCase();
-      if (q && !hay.includes(q.toLowerCase())) return false;
-      if (buildingId !== 'all' && String(r.buildingId) !== buildingId) return false;
-      if (roomType !== 'all' && r.type !== roomType) return false;
-      if ((r.capacity || 0) < capMin) return false;
-      if (!chk[r.status]) return false;
-      if (statusFilter === 'Available' && r.status !== 'Available') return false;
-      if (statusFilter === 'Occupied' && r.status !== 'Occupied') return false;
-      if (statusFilter === 'Maintenance' && r.status !== 'Maintenance') return false;
+      // Text search
+      if (q) {
+        const hay = `${r.id} ${r.name} ${r.type} ${r.buildingName} ${r.roomCode || ''}`.toLowerCase();
+        if (!hay.includes(q.toLowerCase())) return false;
+      }
+      // Building filter
+      if (selectedBuildings.length && !selectedBuildings.includes(r.buildingId)) return false;
+      // Type filter
+      if (selectedTypes.length && !selectedTypes.includes(r.type)) return false;
+      // Status filter
+      if (selectedStatuses.length && !selectedStatuses.includes(r.status)) return false;
+      // Capacity range
+      const cap = r.capacity || 0;
+      if (capMin && cap < Number(capMin)) return false;
+      if (capMax && cap > Number(capMax)) return false;
+      // Equipment filter (AND logic: room must have ALL selected equipment)
+      if (selectedEquipment.length) {
+        const roomEquip = (r.equipment || []).map((e) => e.toLowerCase());
+        if (!selectedEquipment.every((e) => roomEquip.includes(e.toLowerCase()))) return false;
+      }
+      // Floor filter
+      if (selectedFloor !== 'all' && r.floor !== Number(selectedFloor)) return false;
       return true;
     });
-  }, [allRooms, q, buildingId, roomType, capMin, chk, statusFilter]);
+  }, [allRooms, q, selectedBuildings, selectedTypes, selectedStatuses, selectedEquipment, capMin, capMax, selectedFloor]);
 
-  const academicSlots = allRooms.filter((_, i) => i % 2 === 0).length;
-  const nonAcademicSlots = allRooms.length - academicSlots;
+  // Group filtered rooms by building for display
+  const groupedByBuilding = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((r) => {
+      if (!map.has(r.buildingId)) {
+        map.set(r.buildingId, { buildingName: r.buildingName, buildingId: r.buildingId, rooms: [] });
+      }
+      map.get(r.buildingId).rooms.push(r);
+    });
+    return [...map.values()].sort((a, b) => a.buildingName.localeCompare(b.buildingName));
+  }, [filtered]);
+
+  // Paginate flat list
+  const totalRooms = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalRooms / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedRooms = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, safePage, pageSize]);
+
+  // Group paginated rooms by building
+  const paginatedGrouped = useMemo(() => {
+    const map = new Map();
+    paginatedRooms.forEach((r) => {
+      if (!map.has(r.buildingId)) {
+        map.set(r.buildingId, { buildingName: r.buildingName, buildingId: r.buildingId, rooms: [] });
+      }
+      map.get(r.buildingId).rooms.push(r);
+    });
+    return [...map.values()];
+  }, [paginatedRooms]);
+
+  const clearFilters = useCallback(() => {
+    setQ('');
+    setSelectedBuildings([]);
+    setSelectedTypes([]);
+    setSelectedStatuses([]);
+    setSelectedEquipment([]);
+    setCapMin('');
+    setCapMax('');
+    setSelectedFloor('all');
+    setPage(1);
+  }, []);
+
+  const toggleArray = (arr, setArr, val) => {
+    setArr((prev) => (prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]));
+    setPage(1);
+  };
+
+  // Reset page when filters change
+  const setFilterAndReset = (setter) => (val) => { setter(val); setPage(1); };
+
+  const isLoading = appLoading && allRooms.length === 0;
 
   return (
-    <Layout title="Room Finder" subtitle="Search for available rooms">
-      <div className="bg-white shadow-md border border-gray-100 p-5 mb-5" style={{ borderRadius: 10 }}>
-        <div className="flex flex-col lg:flex-row gap-3 mb-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              className="form-input pl-10"
-              placeholder="Search by room ID, name, building, or type..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-          <button type="button" className="btn-maroon whitespace-nowrap" style={{ borderRadius: 10 }} onClick={() => setShowFilters(!showFilters)}>
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
+    <Layout title="Room Finder" subtitle="Search and filter rooms across all buildings">
+      <div className="flex gap-5" style={{ minHeight: 'calc(100vh - 180px)' }}>
+        {/* ── Filter Sidebar ── */}
+        <div
+          className={`bg-white border border-gray-100 shadow-sm flex-shrink-0 transition-all duration-300 overflow-hidden ${showFilters ? 'w-[280px]' : 'w-0 border-0 p-0'}`}
+          style={{ borderRadius: R }}
+        >
+          {showFilters && (
+            <div className="p-4 h-full overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Filter size={14} style={{ color: MAROON }} />
+                  <span className="text-sm font-black" style={{ color: TEXT }}>Filters</span>
+                  {activeFilterCount > 0 && (
+                    <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black" style={{ background: MAROON, color: '#fff' }}>
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </div>
+                {activeFilterCount > 0 && (
+                  <button type="button" onClick={clearFilters} className="flex items-center gap-1 text-[11px] font-bold hover:underline" style={{ color: MAROON }}>
+                    <RotateCcw size={11} /> Clear all
+                  </button>
+                )}
+              </div>
+
+              {/* Search */}
+              <div className="mb-4">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Search</label>
+                <div className="relative">
+                  <input
+                    className="form-input text-xs"
+                    placeholder="Room name, building..."
+                    value={q}
+                    onChange={(e) => { setQ(e.target.value); setPage(1); }}
+                  />
+                  {q ? (
+                    <button type="button" onClick={() => { setQ(''); setPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X size={12} />
+                    </button>
+                  ) : (
+                    <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={13} />
+                  )}
+                </div>
+              </div>
+
+              {/* Building Filter */}
+              <div className="mb-4">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Building</label>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                  {buildingList.map((b) => (
+                    <label key={b.id} className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-gray-50 text-xs font-semibold" style={{ color: TEXT }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedBuildings.includes(b.id)}
+                        onChange={() => toggleArray(selectedBuildings, setSelectedBuildings, b.id)}
+                        className="accent-[#7A0808] rounded"
+                      />
+                      <span className="truncate">{b.name}</span>
+                      <span className="ml-auto text-[10px] font-bold text-gray-400">{b.totalRooms || 0}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Room Type Filter */}
+              <div className="mb-4">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Room Type</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {allTypes.map((t) => (
+                    <Chip
+                      key={t}
+                      label={t}
+                      active={selectedTypes.includes(t)}
+                      onClick={() => toggleArray(selectedTypes, setSelectedTypes, t)}
+                      count={allRooms.filter((r) => r.type === t).length}
+                    />
+                  ))}
+                </div>
+              </div>
+
+
+              {/* Capacity Range */}
+              <div className="mb-4">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Capacity Range</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="form-input text-xs text-center"
+                    placeholder="Min"
+                    value={capMin}
+                    onChange={(e) => { setCapMin(e.target.value); setPage(1); }}
+                    min={0}
+                    style={{ width: '50%' }}
+                  />
+                  <span className="text-xs font-bold text-gray-300">—</span>
+                  <input
+                    type="number"
+                    className="form-input text-xs text-center"
+                    placeholder="Max"
+                    value={capMax}
+                    onChange={(e) => { setCapMax(e.target.value); setPage(1); }}
+                    min={0}
+                    style={{ width: '50%' }}
+                  />
+                </div>
+              </div>
+
+              {/* Floor Filter */}
+              <div className="mb-4">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Floor</label>
+                <select
+                  className="form-input text-xs"
+                  value={selectedFloor}
+                  onChange={(e) => { setSelectedFloor(e.target.value); setPage(1); }}
+                >
+                  <option value="all">All Floors</option>
+                  {allFloors.map((f) => (
+                    <option key={f} value={f}>Floor {f}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Equipment / Inclusions */}
+              {allEquipment.length > 0 && (
+                <div className="mb-2">
+                  <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Equipment / Inclusions</label>
+                  <div className="flex flex-wrap gap-1.5 max-h-[160px] overflow-y-auto">
+                    {allEquipment.map((e) => (
+                      <EquipChip
+                        key={e}
+                        label={e}
+                        active={selectedEquipment.includes(e)}
+                        onClick={() => toggleArray(selectedEquipment, setSelectedEquipment, e)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {showFilters && (
-          <div className="pt-4 border-t border-gray-100">
-            <div className="flex flex-col gap-3 mb-4 w-fit max-w-full">
-              <CategoryFilterTabs
-                value={category}
-                onChange={setCategory}
-                academicCount={academicSlots}
-                nonAcademicCount={nonAcademicSlots}
-              />
-              <StatusFilterRow
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={['All', 'Available', 'Occupied', 'Maintenance']}
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="form-label">Building</label>
-              <select className="form-input" value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
-                <option value="all">All Buildings</option>
-                {buildingList.map((b) => (
-                  <option key={b.id} value={String(b.id)}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Room Type</label>
-              <select className="form-input" value={roomType} onChange={(e) => setRoomType(e.target.value)}>
-                {types.map((t) => (
-                  <option key={t} value={t}>{t === 'all' ? 'All types' : t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <label className="form-label">Minimum capacity: {capMin}</label>
-              <input
-                type="range"
-                min={0}
-                max={200}
-                value={capMin}
-                onChange={(e) => setCapMin(Number(e.target.value))}
-                className="w-full accent-[#800000]"
-              />
-            </div>
-            <div className="md:col-span-2 flex flex-wrap gap-4">
-              {['Available', 'Occupied', 'Maintenance'].map((s) => (
-                <label key={s} className="flex items-center gap-2 text-sm font-semibold cursor-pointer" style={{ color: '#2B3235' }}>
-                  <input
-                    type="checkbox"
-                    checked={chk[s]}
-                    onChange={() => setChk((c) => ({ ...c, [s]: !c[s] }))}
-                    className="rounded border-gray-300 accent-[#800000]"
-                  />
-                  {s}
-                </label>
-              ))}
-            </div>
-          </div>
-          </div>
-        )}
-      </div>
-
-      <p className="text-sm font-bold mb-3" style={{ color: '#2B3235' }}>
-        {filtered.length} room{filtered.length !== 1 ? 's' : ''} found
-        {category === 'academic' ? ' · Academic use view' : ' · Non-academic use view'}
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.map((room) => (
-            <div key={`${room.buildingId}-${room.id}`} className="bg-white shadow-md border border-gray-100 p-5 flex flex-col min-h-[280px]" style={{ borderRadius: 10 }}>
-            <div className="flex items-start justify-between mb-1">
-              <h3 className="font-black text-lg" style={{ color: '#2B3235' }}>{room.id}</h3>
-              <span className={room.status === 'Available' ? 'badge-available' : room.status === 'Occupied' ? 'badge-occupied' : 'badge-maintenance'}>
-                {room.status}
-              </span>
-            </div>
-            <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
-              Rooms and availability summary
-            </p>
-            <div className="grid grid-cols-2 gap-3 flex-1">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 flex items-center justify-center flex-shrink-0" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                  <Building2 size={16} style={{ color: '#800000' }} />
-                </div>
-                <span className="text-xs font-bold leading-tight" style={{ color: '#2B3235' }}>{room.buildingName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 flex items-center justify-center flex-shrink-0" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                  <Users size={16} style={{ color: '#800000' }} />
-                </div>
-                <span className="text-xs font-bold" style={{ color: '#2B3235' }}>{room.capacity} Capacity</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 flex items-center justify-center flex-shrink-0" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                  <Layers size={16} style={{ color: '#800000' }} />
-                </div>
-                <span className="text-xs font-bold" style={{ color: '#2B3235' }}>Floor {room.floor}</span>
-              </div>
-              <div className="flex items-end justify-end">
-                <span className={`text-[10px] font-black px-2 py-1 rounded-full ${TYPE_BADGE[room.type] || 'bg-gray-100 text-gray-800'}`}>
-                  {room.type}
-                </span>
-              </div>
-            </div>
+        {/* ── Main Content ── */}
+        <div className="flex-1 min-w-0">
+          {/* Top bar */}
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="btn-outline-maroon w-full justify-center mt-4 py-2.5 text-sm gap-2"
-                style={{ borderRadius: 10 }}
-                onClick={() =>
-                  navigate(`/room/${room.id}`, {
-                    state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor },
-                  })
-                }
+                onClick={() => setShowFilters((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-bold transition-all hover:border-[#7A0808]"
+                style={{ color: showFilters ? MAROON : TEXT, borderColor: showFilters ? MAROON : '#e2e5e8', background: showFilters ? '#FFF0F0' : '#fff' }}
               >
-                <Calendar size={16} /> View Schedule
+                <SlidersHorizontal size={14} />
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
+                {!showFilters && activeFilterCount > 0 && (
+                  <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[10px] font-black" style={{ background: MAROON, color: '#fff' }}>
+                    {activeFilterCount}
+                  </span>
+                )}
               </button>
-              {canSubmitReservation() && (
-                <button
-                  type="button"
-                  className="btn-maroon w-full justify-center mt-2 py-2.5 text-sm gap-2"
-                  style={{ borderRadius: 10 }}
-                  onClick={() => openReservation({
-                    building: room.buildingName,
-                    buildingId: room.buildingId,
-                    room: room.id,
-                    roomDocId: room.docId,
-                    floor: room.floor,
-                    designatedVenue: `${room.id}, ${room.buildingName} Floor ${room.floor}`,
-                  })}
-                >
-                  <BookOpen size={16} /> Reserve Room
+              <p className="text-sm font-bold" style={{ color: TEXT }}>
+                <span style={{ color: MAROON }}>{totalRooms}</span> room{totalRooms !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-gray-400">Per page</label>
+              <select
+                className="form-input text-xs py-1.5 px-2"
+                style={{ width: 64, borderRadius: 8 }}
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
+          {isLoading ? (
+            <TableSkeleton rows={8} cols={6} />
+          ) : totalRooms === 0 ? (
+            <div className="bg-white border border-gray-100 shadow-sm p-12 text-center" style={{ borderRadius: R }}>
+              <DoorOpen size={40} className="mx-auto mb-3 text-gray-300" />
+              <p className="text-sm font-bold mb-1" style={{ color: TEXT }}>No rooms found</p>
+              <p className="text-xs text-gray-400">Try adjusting your filters or search criteria.</p>
+              {activeFilterCount > 0 && (
+                <button type="button" onClick={clearFilters} className="mt-3 text-xs font-bold flex items-center gap-1 mx-auto" style={{ color: MAROON }}>
+                  <RotateCcw size={12} /> Clear all filters
                 </button>
               )}
-          </div>
-        ))}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-100 shadow-sm overflow-hidden" style={{ borderRadius: R }}>
+              {/* Table header */}
+              <div className="grid grid-cols-[minmax(100px,1.2fr)_minmax(100px,1fr)_60px_minmax(80px,1fr)_70px_minmax(120px,1.5fr)_50px] gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50/60 items-center">
+                {['Room', 'Building', 'Floor', 'Type', 'Capacity', 'Equipment', ''].map((h) => (
+                  <span key={h} className="text-[10px] font-bold uppercase tracking-wider text-center" style={{ color: TEXT, opacity: 0.45 }}>{h}</span>
+                ))}
+              </div>
+
+              {/* Grouped rows */}
+              {paginatedGrouped.map((group) => (
+                <div key={group.buildingId}>
+                  {/* Building section header */}
+                  <div className="flex items-center gap-2 px-5 py-2 border-b border-gray-50" style={{ background: '#FAFBFC' }}>
+                    <Building2 size={13} style={{ color: MAROON }} />
+                    <span className="text-[11px] font-black" style={{ color: MAROON }}>{group.buildingName}</span>
+                    <span className="text-[10px] font-bold text-gray-400 ml-1">({group.rooms.length} room{group.rooms.length !== 1 ? 's' : ''})</span>
+                  </div>
+
+                  {/* Room rows */}
+                  {group.rooms.map((room, idx) => {
+                    const typeColor = TYPE_COLORS[room.type] || { bg: '#F3F4F6', text: '#374151' };
+                    const equipList = room.equipment || [];
+
+                    return (
+                      <div
+                        key={`${room.buildingId}-${room.docId || room.id}-${idx}`}
+                        className="grid grid-cols-[minmax(100px,1.2fr)_minmax(100px,1fr)_60px_minmax(80px,1fr)_70px_minmax(120px,1.5fr)_50px] gap-4 px-5 py-3 border-b border-gray-50 hover:bg-gray-50/50 transition-colors items-center group"
+                      >
+                        {/* Room name */}
+                        <div className="flex items-center justify-center gap-2 min-w-0">
+                          <DoorOpen size={14} className="text-gray-400 flex-shrink-0" />
+                          <span className="text-xs font-bold truncate" style={{ color: TEXT }}>{room.name || room.id}</span>
+                        </div>
+
+                        {/* Building */}
+                        <span className="text-xs font-medium truncate text-center" style={{ color: TEXT, opacity: 0.7 }}>{room.buildingName}</span>
+
+                        {/* Floor */}
+                        <span className="text-xs font-semibold text-center" style={{ color: TEXT }}>F{room.floor}</span>
+
+                        {/* Type */}
+                        <div className="flex justify-center">
+                          <span
+                            className="text-[10px] font-black px-2 py-0.5 rounded-full truncate inline-block"
+                            style={{ background: typeColor.bg, color: typeColor.text }}
+                          >
+                            {room.type}
+                          </span>
+                        </div>
+
+                        {/* Capacity */}
+                        <div className="flex items-center justify-center gap-1">
+                          <Users size={11} className="text-gray-400" />
+                          <span className="text-xs font-bold" style={{ color: TEXT }}>{room.capacity || 0}</span>
+                        </div>
+
+                        {/* Equipment */}
+                        <div className="flex flex-wrap gap-1 min-w-0 justify-center">
+                          {equipList.length === 0 ? (
+                            <span className="text-[10px] text-gray-300 italic">None</span>
+                          ) : equipList.length <= 2 ? (
+                            equipList.map((e) => (
+                              <span key={e} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 truncate">{e}</span>
+                            ))
+                          ) : (
+                            <>
+                              {equipList.slice(0, 2).map((e) => (
+                                <span key={e} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 truncate">{e}</span>
+                              ))}
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-gray-400" title={equipList.slice(2).join(', ')}>
+                                +{equipList.length - 2}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                            title="View Room"
+                            onClick={() =>
+                              navigate(`/room/${room.id}`, {
+                                state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor, floorId: room.floorId },
+                              })
+                            }
+                          >
+                            <Eye size={14} style={{ color: MAROON }} />
+                          </button>
+                          {canSubmitReservation() && (
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                              title="Reserve Room"
+                              onClick={() =>
+                                openReservation({
+                                  building: room.buildingName,
+                                  buildingId: room.buildingId,
+                                  room: room.id,
+                                  roomDocId: room.docId,
+                                  floor: room.floor,
+                                  designatedVenue: `${room.id}, ${room.buildingName} Floor ${room.floor}`,
+                                })
+                              }
+                            >
+                              <BookOpen size={14} style={{ color: '#166534' }} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/40">
+                <p className="text-[11px] font-semibold text-gray-400">
+                  Showing {Math.min((safePage - 1) * pageSize + 1, totalRooms)}–{Math.min(safePage * pageSize, totalRooms)} of {totalRooms} rooms
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={14} style={{ color: TEXT }} />
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 7) {
+                      pageNum = i + 1;
+                    } else if (safePage <= 4) {
+                      pageNum = i + 1;
+                    } else if (safePage >= totalPages - 3) {
+                      pageNum = totalPages - 6 + i;
+                    } else {
+                      pageNum = safePage - 3 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setPage(pageNum)}
+                        className="min-w-[28px] h-[28px] flex items-center justify-center rounded-lg text-[11px] font-bold transition-all"
+                        style={
+                          pageNum === safePage
+                            ? { background: MAROON, color: '#fff' }
+                            : { color: TEXT }
+                        }
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight size={14} style={{ color: TEXT }} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {modals}
     </Layout>

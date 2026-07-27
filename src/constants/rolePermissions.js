@@ -81,6 +81,7 @@ export const NAV_ITEMS = {
   dashboard: { label: 'Dashboard', path: '/dashboard', permission: null },
   systemAdmin: { label: 'User Management', path: '/system-administration', permission: PERMISSIONS.SYSTEM_ADMIN },
   buildings: { label: 'Buildings', path: '/building-management', permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
+  roomFinder: { label: 'Room Finder', path: '/room-finder', permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
   academicCalendar: { label: 'Academic Calendar', path: '/academic-calendar', permission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
   courseScheduling: { label: 'Course Scheduling', path: '/course-scheduling', permission: PERMISSIONS.SCHEDULING_SUBMIT },
   collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: PERMISSIONS.SYSTEM_ADMIN },
@@ -95,6 +96,7 @@ const ROLE_NAV_KEYS = {
     'dashboard',
     'systemAdmin',
     'buildings',
+    'roomFinder',
     'academicCalendar',
     'courseScheduling',
     'collegeInventory',
@@ -105,6 +107,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.DEAN]: [
     'dashboard',
     'buildings',
+    'roomFinder',
     'academicCalendar',
     'courseScheduling',
     'approvals',
@@ -112,6 +115,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.GSD]: [
     'dashboard',
     'buildings',
+    'roomFinder',
     'maintenanceDashboard',
     'academicCalendar',
     'approvals',
@@ -119,18 +123,21 @@ const ROLE_NAV_KEYS = {
   [ROLES.STUDENT_LIFE]: [
     'dashboard',
     'buildings',
+    'roomFinder',
     'academicCalendar',
     'approvals',
   ],
   [ROLES.TEACHER]: [
     'dashboard',
     'buildings',
+    'roomFinder',
     'academicCalendar',
     'approvals',
   ],
   [ROLES.ORGANIZATION_HEAD]: [
     'dashboard',
     'buildings',
+    'roomFinder',
     'academicCalendar',
     'approvals',
   ],
@@ -180,13 +187,40 @@ export function getEffectivePermissions(profile, roleDefinitions = {}) {
   return getRoleDefinition(profile.role, roleDefinitions).permissions || [];
 }
 
+export const REGISTRAR_NAV_ORDER = [
+  'dashboard',
+  'systemAdmin',
+  'buildings',
+  'roomFinder',
+  'academicCalendar',
+  'courseScheduling',
+  'collegeInventory',
+  'approvalWorkflow',
+  'approvals',
+  'reports',
+  'maintenanceDashboard',
+];
+
+export function sortNavKeys(navKeys = []) {
+  if (!Array.isArray(navKeys)) return [];
+  const orderMap = new Map(REGISTRAR_NAV_ORDER.map((key, index) => [key, index]));
+  return [...navKeys].sort((a, b) => {
+    const orderA = orderMap.has(a) ? orderMap.get(a) : 999;
+    const orderB = orderMap.has(b) ? orderMap.get(b) : 999;
+    return orderA - orderB;
+  });
+}
+
 export function getEffectiveNavKeys(profile, roleDefinitions = {}) {
   if (!profile?.role) return [];
   if (profile.role === ROLES.REGISTRAR) return ROLE_NAV_KEYS[ROLES.REGISTRAR];
+  let keys = [];
   if (Array.isArray(profile.navKeys) && profile.navKeys.length > 0) {
-    return profile.navKeys;
+    keys = profile.navKeys;
+  } else {
+    keys = getRoleDefinition(profile.role, roleDefinitions).navKeys || [];
   }
-  return getRoleDefinition(profile.role, roleDefinitions).navKeys || [];
+  return sortNavKeys(keys);
 }
 
 export function hasEffectivePermission(profile, permission, roleDefinitions = {}) {
@@ -238,7 +272,7 @@ export function canAccessRoute(role, pathname, roleDefinitions = {}) {
 }
 
 export function getNavItemsForRole(role, roleDefinitions = {}) {
-  const keys = getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[ROLES.TEACHER] || [];
+  const keys = sortNavKeys(getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[ROLES.TEACHER] || []);
   const perms = getPermissionsForRole(role, roleDefinitions);
   return keys
     .map((key) => NAV_ITEMS[key])
