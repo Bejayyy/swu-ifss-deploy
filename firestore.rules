@@ -64,6 +64,18 @@ service cloud.firestore {
       return hasPermission('buildings.manage');
     }
 
+    function canManageRoomActivityApproval() {
+      return hasPermission('approval.manage.room_activity');
+    }
+
+    function canManageStudentActivityApproval() {
+      return hasPermission('approval.manage.student_activity');
+    }
+
+    function canEndorseActivity() {
+      return hasPermission('approval.endorse_activity');
+    }
+
     function isMainRole() {
       return isSignedIn() && userDocExists() && (
         userDoc().data.role == 'registrar'
@@ -313,6 +325,9 @@ service cloud.firestore {
         resource.data.status == 'approved'
         || isMainRole() && (
           isRegistrar()
+          || canManageRoomActivityApproval()
+          || canManageStudentActivityApproval()
+          || canEndorseActivity()
           || resource.data.createdByUid == request.auth.uid
           || (
             isDean() 
@@ -339,6 +354,12 @@ service cloud.firestore {
         && request.resource.data.createdByUid == request.auth.uid;
       allow update: if isMainRole() && isPhinmaedEmail() && (
         isRegistrar()
+        || canManageRoomActivityApproval()
+        || canManageStudentActivityApproval()
+        || canEndorseActivity()
+        || hasRole('gsd')
+        || hasRole('student_life')
+        || hasRole('organization_head')
         || (
           isDean()
           && userDocExists()

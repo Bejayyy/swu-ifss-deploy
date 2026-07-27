@@ -112,7 +112,19 @@ export default function WeeklyScheduleGrid({
     setDrag((d) => (d ? { ...d, endSlot: slotIndex } : d));
   };
 
-  const blocksByDay = Array.from({ length: 7 }, (_, day) => blocks.filter((b) => b.day === day));
+  const [typeFilter, setTypeFilter] = useState('All');
+
+  const filteredBlocks = React.useMemo(() => {
+    if (!typeFilter || typeFilter === 'All') return blocks;
+    return blocks.filter((b) => {
+      if (typeFilter === 'Reservation') {
+        return b.type === 'Reservation' || b.type?.startsWith('Reservation');
+      }
+      return b.type === typeFilter;
+    });
+  }, [blocks, typeFilter]);
+
+  const blocksByDay = Array.from({ length: 7 }, (_, day) => filteredBlocks.filter((b) => b.day === day));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -201,13 +213,55 @@ export default function WeeklyScheduleGrid({
       )}
 
       {showLegend && (
-        <div className="flex gap-4 mb-4 flex-wrap">
-          {Object.entries(SCHEDULE_TYPE_COLORS).map(([type, colors]) => (
-            <div key={type} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ background: colors.bg, border: `1.5px solid ${colors.border}` }} />
-              <span className="text-xs font-semibold text-gray-500">{type}</span>
-            </div>
-          ))}
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap bg-gray-50/60 p-3 rounded-xl border border-gray-100">
+          {/* Interactive Legend Items */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1">Legend:</span>
+            {[
+              { type: 'Lecture', label: 'Lecture' },
+              { type: 'Laboratory', label: 'Laboratory' },
+              { type: 'Reservation', label: 'Reservation' },
+              { type: 'Maintenance', label: 'Maintenance' },
+            ].map(({ type, label }) => {
+              const colors = SCHEDULE_TYPE_COLORS[type];
+              const isSelected = typeFilter === type;
+
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setTypeFilter((prev) => (prev === type ? 'All' : type))}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                    isSelected ? 'ring-2 ring-offset-1 ring-[#800000] shadow-2xs' : 'hover:opacity-90'
+                  }`}
+                  style={{
+                    background: colors.bg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                  }}
+                >
+                  <div className="w-2.5 h-2.5 rounded-xs flex-shrink-0" style={{ background: colors.text }} />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Schedule Type Filter Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-gray-600">Filter Schedule:</span>
+            <select
+              className="form-input text-xs py-1.5 px-3 rounded-xl border-gray-200 bg-white font-medium cursor-pointer"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="All">All Types ({blocks.length})</option>
+              <option value="Lecture">Lecture ({blocks.filter((b) => b.type === 'Lecture').length})</option>
+              <option value="Laboratory">Laboratory ({blocks.filter((b) => b.type === 'Laboratory').length})</option>
+              <option value="Reservation">Reservation ({blocks.filter((b) => b.type === 'Reservation' || b.type?.startsWith('Reservation')).length})</option>
+              <option value="Maintenance">Maintenance ({blocks.filter((b) => b.type === 'Maintenance').length})</option>
+            </select>
+          </div>
         </div>
       )}
 
@@ -282,7 +336,9 @@ export default function WeeklyScheduleGrid({
               {blocksByDay.map((dayBlocks, dayIndex) => (
                 <div key={dayIndex} className="relative h-full" style={{ minHeight: gridHeight }}>
                   {dayBlocks.map((sched) => {
-                    const colors = SCHEDULE_TYPE_COLORS[sched.type] || SCHEDULE_TYPE_COLORS.Lecture;
+                    const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
+                      (sched.type?.startsWith('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
+                      SCHEDULE_TYPE_COLORS.Lecture;
                     const topPx = blockTopPx(sched.start);
                     const heightPx = blockHeightPx(sched.start, sched.end);
                     return (

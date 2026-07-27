@@ -54,10 +54,7 @@ export default function AddUserModal({
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const showCollegeField = useMemo(() => requiresCollege(form.role), [form.role]);
-  const showDepartmentField = useMemo(() => {
-    return form.role === 'gsd' || form.role === 'student-life';
-  }, [form.role]);
+  const showCollegeField = useMemo(() => requiresCollege(form.role, roleDefinitions), [form.role, roleDefinitions]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -87,10 +84,6 @@ export default function AddUserModal({
       setError('College is required for this role.');
       return;
     }
-    if (showDepartmentField && !form.department.trim()) {
-      setError('Department is required for this role.');
-      return;
-    }
 
     const fullName = `${form.firstName.trim()} ${form.middleName.trim()} ${form.lastName.trim()}`;
 
@@ -98,7 +91,8 @@ export default function AddUserModal({
       const saveData = {
         ...form,
         name: fullName,
-        department: showCollegeField ? form.college : form.department,
+        college: showCollegeField ? form.college : '',
+        department: showCollegeField ? form.college : '',
         permissions: form.useCustomAccess ? form.permissions : [],
         navKeys: form.useCustomAccess ? form.navKeys : [],
       };
@@ -200,8 +194,8 @@ export default function AddUserModal({
                 />
               </div>
 
-              {/* 2-Column Grid: User Role & College (or Department) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* User Role & College Selection */}
+              <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-3`}>
                 <div>
                   <label className="form-label">
                     User role <span className="text-red-500">*</span>
@@ -213,8 +207,7 @@ export default function AddUserModal({
                       onChange={(e) => {
                         const newRole = e.target.value;
                         set('role', newRole);
-                        if (!requiresDepartment(newRole)) set('department', '');
-                        if (!requiresCollege(newRole)) set('college', '');
+                        if (!requiresCollege(newRole, roleDefinitions)) set('college', '');
                       }}
                       required
                     >
@@ -267,21 +260,6 @@ export default function AddUserModal({
                         <ChevronDown size={14} className="text-gray-400" />
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {showDepartmentField && (
-                  <div>
-                    <label className="form-label">
-                      Department <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      className="form-input"
-                      value={form.department}
-                      onChange={(e) => set('department', e.target.value)}
-                      placeholder="e.g. GSD, Student Life"
-                      required
-                    />
                   </div>
                 )}
               </div>

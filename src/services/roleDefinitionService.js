@@ -44,6 +44,7 @@ export async function seedDefaultRoleDefinitions() {
         isSystem: def.isSystem,
         permissions: def.permissions,
         navKeys: def.navKeys,
+        requiresCollege: typeof def.requiresCollege === 'boolean' ? def.requiresCollege : ['dean', 'teacher', 'organization_head'].includes(def.id),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },
@@ -52,7 +53,7 @@ export async function seedDefaultRoleDefinitions() {
   );
 }
 
-export async function saveRoleDefinition({ id, label, permissions, navKeys, isSystem = false }, existingDefinitions = []) {
+export async function saveRoleDefinition({ id, label, permissions, navKeys, requiresCollege, isSystem = false }, existingDefinitions = []) {
   if (!id?.trim()) throw new Error('Role key is required.');
   if (!label?.trim()) throw new Error('Role label is required.');
 
@@ -75,9 +76,11 @@ export async function saveRoleDefinition({ id, label, permissions, navKeys, isSy
       isSystem: Boolean(isSystem),
       permissions: permissions || [],
       navKeys: navKeys || [],
+      requiresCollege: typeof requiresCollege === 'boolean' ? requiresCollege : ['dean', 'teacher', 'organization_head'].includes(roleKey),
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
+    { merge: true },
   );
   return roleKey;
 }

@@ -42,11 +42,10 @@ export default function EditUserModal({
     );
   }, []);
 
-  const showCollegeField = requiresCollege(form.roleValue);
-  const showDepartmentField = useMemo(() => {
-    // Only show department field for GSD and Student Life (they're not colleges)
-    return form.roleValue === 'gsd' || form.roleValue === 'student_life';
-  }, [form.roleValue]);
+  const showCollegeField = useMemo(
+    () => requiresCollege(form.roleValue, roleDefinitions),
+    [form.roleValue, roleDefinitions],
+  );
 
   useEffect(() => {
     if (form.useCustomAccess) return;
@@ -79,17 +78,12 @@ export default function EditUserModal({
       setError('College is required for this role.');
       return;
     }
-    if (showDepartmentField && !form.department.trim()) {
-      setError('Department is required for this role.');
-      return;
-    }
     try {
-      // For college-based roles, store in department field for backward compatibility
       const saveData = {
         uid: user.uid,
         name: form.name.trim(),
         email: form.email.trim(),
-        department: showCollegeField ? form.college : form.department.trim(),
+        department: showCollegeField ? form.college : '',
         college: showCollegeField ? form.college : '',
         roleValue: form.roleValue,
         status: form.status,
@@ -144,22 +138,8 @@ export default function EditUserModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {showDepartmentField && (
-                <div>
-                  <label className="form-label">Department</label>
-                  <input 
-                    className="form-input" 
-                    value={form.department} 
-                    onChange={(e) => set('department', e.target.value)} 
-                    placeholder="e.g. GSD, Student Life"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    For non-college administrative offices (GSD, Student Life)
-                  </p>
-                </div>
-              )}
-              <div className={showDepartmentField ? '' : 'col-span-2'}>
+            <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-4`}>
+              <div>
                 <label className="form-label">User role</label>
                 <select 
                   className="form-input" 
@@ -167,12 +147,9 @@ export default function EditUserModal({
                   onChange={(e) => {
                     const newRole = e.target.value;
                     set('roleValue', newRole);
-                    // Clear department and college if switching roles
-                    if (!requiresDepartment(newRole)) {
-                      set('department', '');
-                    }
-                    if (!requiresCollege(newRole)) {
+                    if (!requiresCollege(newRole, roleDefinitions)) {
                       set('college', '');
+                      set('department', '');
                     }
                   }}
                 >
@@ -181,7 +158,6 @@ export default function EditUserModal({
                   ))}
                 </select>
               </div>
-            </div>
 
             {showCollegeField && (
               <div>
@@ -203,6 +179,7 @@ export default function EditUserModal({
                 </p>
               </div>
             )}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

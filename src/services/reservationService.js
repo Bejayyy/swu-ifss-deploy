@@ -138,12 +138,9 @@ export function subscribeRoomReservations(onData, onError, userProfile = null) {
     }
   }
 
-  // GSD, Student Life, and Organization Head see all non-draft reservations AND their own
-  // They're part of approval workflows and need to see pending requests
-  // Firestore rules will filter to ensure they can only read what they're allowed
-  if (userProfile.role === 'gsd' || 
-      userProfile.role === 'student_life' || 
-      userProfile.role === 'organization_head') {
+  // All system roles (GSD, Student Life, Organization Head, Dean, Guard, Custom Roles) see all non-draft reservations AND their own
+  // They are part of approval workflows and need to track both Requests to Approve and My Requests
+  if (userProfile.role) {
     
     // Subscription 1: All non-draft reservations (for approvals)
     const allQuery = query(
@@ -266,6 +263,8 @@ function buildApprovalRecords(workflowSnapshot, submit = true) {
     levelNumber: level.levelNumber,
     roleId: level.roleId,
     roleLabel: level.roleLabel,
+    customManagerUid: level.customManagerUid || null,
+    customManagerName: level.customManagerName || null,
     status: submit
       ? index === 0
         ? APPROVAL_RECORD_STATUS.PENDING
@@ -295,17 +294,17 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
   }
 
   // Check if room/floor has a custom manager (dean delegation)
-  let customManagerUid = null;
-  let customManagerName = null;
+  let customManagerUid = payload.customManagerUid || null;
+  let customManagerName = payload.customManagerName || null;
   let workflowSnapshot;
   let useDeanManagedWorkflow = false;
 
-  if (payload.buildingId && payload.floorId && payload.roomId) {
+  if (!customManagerUid && payload.buildingId && payload.floorId && payload.roomId) {
     try {
       // Try to get room and floor manager info
-      const buildingRef = doc(db, COLLECTIONS.BUILDINGS, payload.buildingId);
-      const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, payload.floorId);
-      const roomRef = doc(floorRef, COLLECTIONS.ROOMS, payload.roomId);
+      const buildingRef = doc(db, COLLECTIONS.BUILDINGS, String(payload.buildingId));
+      const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, String(payload.floorId));
+      const roomRef = doc(floorRef, COLLECTIONS.ROOMS, String(payload.roomId));
       
       const roomSnap = await getDoc(roomRef);
       if (roomSnap.exists()) {

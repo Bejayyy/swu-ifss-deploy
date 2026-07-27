@@ -7,6 +7,7 @@ export default function RoleAccessModal({ role, onClose, onSave, saving = false 
     label: role?.label || '',
     permissions: role?.permissions || [],
     navKeys: role?.navKeys || [],
+    requiresCollege: role?.requiresCollege ?? ['dean', 'teacher', 'organization_head'].includes(role?.id),
   });
   const [error, setError] = useState('');
 
@@ -23,6 +24,7 @@ export default function RoleAccessModal({ role, onClose, onSave, saving = false 
         label: form.label.trim(),
         permissions: form.permissions,
         navKeys: form.navKeys,
+        requiresCollege: Boolean(form.requiresCollege),
         isSystem: role.isSystem,
       });
       onClose();
@@ -65,6 +67,22 @@ export default function RoleAccessModal({ role, onClose, onSave, saving = false 
                 required
               />
               <p className="text-[10px] font-semibold mt-1 opacity-50">Role key: {role?.id}</p>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-3.5 bg-gray-50 border border-gray-100 rounded-xl">
+              <input
+                type="checkbox"
+                id="requiresCollegeEdit"
+                className="accent-[#7A0808] w-4 h-4 rounded cursor-pointer"
+                checked={Boolean(form.requiresCollege)}
+                onChange={(e) => setForm((f) => ({ ...f, requiresCollege: e.target.checked }))}
+              />
+              <label htmlFor="requiresCollegeEdit" className="cursor-pointer text-xs font-bold text-[#2B3235]">
+                Belongs / Assigned to a specific College
+                <span className="block text-[10px] font-normal text-gray-500 mt-0.5">
+                  If checked, users assigned this role must select a College (e.g. Dean, Teacher). If unchecked, College selection is hidden (e.g. Guard, GSD, Student Life).
+                </span>
+              </label>
             </div>
 
             <div>

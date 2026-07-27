@@ -137,39 +137,28 @@ export default function LeftNav({
           return (
             <div key={building.id}>
               <div
-                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group hover:bg-gray-100"
-                onClick={() => toggleBuilding(building.id)}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group ${
+                  buildingActive ? 'bg-red-50/60 font-bold' : 'hover:bg-gray-100'
+                }`}
+                onClick={() => {
+                  toggleBuilding(building.id);
+                  navigate(`/building/${building.id}`);
+                }}
               >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleBuilding(building.id);
-                  }}
-                  className={`flex-shrink-0 ${buildingActive ? 'text-[#800000] opacity-100' : 'text-[#2B3235] opacity-50 group-hover:opacity-80'}`}
-                >
+                <span className={`flex-shrink-0 ${buildingActive ? 'text-[#7A0808]' : 'text-gray-400 group-hover:text-[#7A0808]'}`}>
                   {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                </button>
+                </span>
                 <Building2
                   size={14}
-                  className={`flex-shrink-0 transition-colors ${buildingActive ? 'text-[#800000]' : 'text-[#2B3235]'}`}
+                  className={`flex-shrink-0 transition-colors ${buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235]'}`}
                 />
                 <span
-                  className={`flex-1 text-[12px] font-semibold truncate transition-colors ${buildingActive ? 'text-[#800000]' : 'text-[#2B3235]'}`}
+                  className={`flex-1 text-[12px] font-semibold truncate transition-colors ${
+                    buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235]'
+                  }`}
                 >
                   {building.name}
                 </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/building/${building.id}`);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 text-[10px] font-bold px-1.5 py-0.5 transition-all"
-                  style={{ color: MAROON, background: '#FFF0F0', borderRadius: 8 }}
-                >
-                  View
-                </button>
               </div>
 
               {isExpanded && building.floorData.map((floorObj) => {

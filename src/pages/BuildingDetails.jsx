@@ -148,14 +148,14 @@ export default function BuildingDetails() {
                 <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>
                   {floorEntry.label || `Floor ${activeFloor}`} Overview
                 </h3>
-                {canManageBuilding && (
+                {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && (
                   <button
                     type="button"
                     onClick={() => setEditFloor(floorEntry)}
-                    className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500"
+                    className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1.5 text-xs font-semibold"
                     title="Edit floor"
                   >
-                    <Edit2 size={14} />
+                    <Edit2 size={14} /> Edit Floor
                   </button>
                 )}
               </div>
@@ -250,13 +250,16 @@ export default function BuildingDetails() {
                         >
                           View
                         </button>
-                        {(canManageBuilding || canEditRoom({ ...room, buildingId: building.id })) && <button
-                          type="button"
-                          onClick={() => setEditRoom(room)}
-                          className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500"
-                        >
-                          <Edit2 size={14} />
-                        </button>}
+                        {(canManageBuilding || canManageAssignedRooms() || canEditRoom(room) || isRegistrar) && (
+                          <button
+                            type="button"
+                            onClick={() => setEditRoom(room)}
+                            className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1 text-xs font-semibold"
+                            title="Edit room details and manager"
+                          >
+                            <Edit2 size={14} /> Edit Room
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -265,15 +268,17 @@ export default function BuildingDetails() {
               </div>
             )}
 
-            {canManageBuilding && <button
-              type="button"
-              onClick={() => setShowAddRoom(true)}
-              disabled={!floorEntry.floorId}
-              className="w-full mt-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all border-2 border-dashed disabled:opacity-50"
-              style={{ borderColor: '#7A0808', color: '#7A0808' }}
-            >
-              <Plus size={16} /> Add Room to this floor
-            </button>}
+            {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && (
+              <button
+                type="button"
+                onClick={() => setShowAddRoom(true)}
+                disabled={!floorEntry.floorId}
+                className="w-full mt-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all border-2 border-dashed disabled:opacity-50"
+                style={{ borderColor: '#7A0808', color: '#7A0808' }}
+              >
+                <Plus size={16} /> Add Room to this floor
+              </button>
+            )}
           </>
         )}
       </div>
@@ -313,7 +318,7 @@ export default function BuildingDetails() {
 
       {modals}
 
-      {canManageBuilding && showAddRoom && floorEntry.floorId && (
+      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showAddRoom && floorEntry.floorId && (
         <AddRoomModal
           buildingId={building.id}
           buildingPrefix={building.prefix || building.code}
@@ -324,21 +329,21 @@ export default function BuildingDetails() {
           onClose={() => setShowAddRoom(false)}
         />
       )}
-      {canManageBuilding && showAddFloor && (
+      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showAddFloor && (
         <AddFloorModal
           buildingId={building.id}
           buildingName={building.name}
           onClose={() => setShowAddFloor(false)}
         />
       )}
-      {canManageBuilding && showEditBuilding && (
+      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showEditBuilding && (
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
           onSave={updateBuilding}
         />
       )}
-      {canManageBuilding && editRoom && floorEntry.floorId && (
+      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && editRoom && floorEntry.floorId && (
         <EditRoomModal
           room={editRoom}
           buildingId={building.id}
@@ -347,7 +352,7 @@ export default function BuildingDetails() {
           onClose={() => setEditRoom(null)}
         />
       )}
-      {canManageBuilding && editFloor && (
+      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && editFloor && (
         <EditFloorModal
           buildingId={building.id}
           floor={editFloor}

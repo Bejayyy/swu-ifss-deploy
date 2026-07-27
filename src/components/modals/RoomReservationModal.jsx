@@ -97,65 +97,118 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
     return () => clearTimeout(timer);
   }, [form.room, form.dateOfActivity, form.timeStart, form.timeEnd]);
 
+  const selectedBuilding = useMemo(
+    () => buildingList.find((b) => b.name === form.building || String(b.id) === String(prefill.buildingId)),
+    [buildingList, form.building, prefill.buildingId],
+  );
+
+  const roomsInBuilding = useMemo(() => {
+    if (prefill.room && prefill.buildingId) {
+      return [{ id: prefill.room, floor: prefill.floor, docId: prefill.roomDocId }];
+    }
+    if (!selectedBuilding) return [];
+    return selectedBuilding.floorData.flatMap((f) => f.rooms.map((r) => ({ id: r.id, floor: f.floor, floorId: f.floorId, docId: r.docId, managedBy: r.managedBy, managedByName: r.managedByName })));
+  }, [selectedBuilding, prefill]);
+
+  // Resolve target building, floor, and room from buildingList for dynamic workflow preview & submit
+  const resolvedTarget = useMemo(() => {
+    const targetBuilding = selectedBuilding || buildingList.find((b) => b.name === form.building);
+    if (!targetBuilding?.floorData?.length) {
+      return { building: targetBuilding, floor: null, room: null };
+    }
+
+    for (const f of targetBuilding.floorData) {
+      const foundRoom = f.rooms?.find(
+        (r) => r.id === form.room || r.docId === prefill.roomDocId || r.name === form.room
+      );
+      if (foundRoom) {
+        return { building: targetBuilding, floor: f, room: foundRoom };
+      }
+    }
+    return { building: targetBuilding, floor: null, room: null };
+  }, [selectedBuilding, buildingList, form.building, form.room, prefill.roomDocId]);
+
   useEffect(() => {
     let cancelled = false;
     
     const loadWorkflowPreview = async () => {
       try {
-        // Check if the selected room/floor has a manager
-        let roomManager = null;
-        let roomManagerName = null;
+        const { building: tBuilding, floor: tFloor, room: tRoom } = resolvedTarget;
         
-        if (prefill.buildingId && prefill.floorId && prefill.roomDocId) {
-          // Check room manager
-          const buildingRef = doc(db, COLLECTIONS.BUILDINGS, prefill.buildingId);
-          const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, prefill.floorId);
-          const roomRef = doc(floorRef, COLLECTIONS.ROOMS, prefill.roomDocId);
-          
-          const roomSnap = await getDoc(roomRef);
-          if (roomSnap.exists()) {
-            const roomData = roomSnap.data();
-            roomManager = roomData.managedBy;
-            roomManagerName = roomData.managedByName;
+        let roomManager = tRoom?.managedBy || tFloor?.managedBy || prefill.roomManager || null;
+        let roomManagerName = tRoom?.managedByName || tFloor?.managedByName || prefill.roomManagerName || null;
+        
+        // If roomManager is missing but we have buildingId, floorId, roomDocId, fetch from Firestore
+        const bId = tBuilding?.id || prefill.buildingId;
+        const fId = tFloor?.floorId || prefill.floorId;
+        const rId = tRoom?.docId || prefill.roomDocId;
+        
+        if (!roomManager && bId && fId && rId) {
+          try {
+            const buildingRef = doc(db, COLLECTIONS.BUILDINGS, String(bId));
+            const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, String(fId));
+            const roomRef = doc(floorRef, COLLECTIONS.ROOMS, String(rId));
             
-            // If room doesn't have manager, check floor
-            if (!roomManager) {
-              const floorSnap = await getDoc(floorRef);
-              if (floorSnap.exists()) {
-                const floorData = floorSnap.data();
-                roomManager = floorData.managedBy;
-                roomManagerName = floorData.managedByName;
+            const roomSnap = await getDoc(roomRef);
+            if (roomSnap.exists()) {
+              const roomData = roomSnap.data();
+              roomManager = roomData.managedBy;
+              roomManagerName = roomData.managedByName;
+              
+              if (!roomManager) {
+                const floorSnap = await getDoc(floorRef);
+                if (floorSnap.exists()) {
+                  const floorData = floorSnap.data();
+                  roomManager = floorData.managedBy;
+                  roomManagerName = floorData.managedByName;
+                }
               }
             }
+          } catch (e) {
+            console.error('Workflow preview manager fetch error:', e);
           }
         }
         
         // Determine which workflow to use
         let workflowType = eventType;
         if (roomManager && roomManagerName) {
-          // Use dean-managed workflow based on reservation type
           workflowType = eventType === APPROVAL_TYPES.ACADEMIC 
             ? APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC 
             : APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC;
         }
         
-        const levels = await fetchWorkflowLevels(workflowType);
+        let levels = await fetchWorkflowLevels(workflowType);
         
         if (cancelled) return;
         
+        if ((workflowType === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC || 
+             workflowType === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC) && 
+            (!levels || levels.length === 0)) {
+          // Fallback if Registrar has not custom-ordered the dean-managed workflow
+          levels = eventType === APPROVAL_TYPES.ACADEMIC
+            ? [
+                { levelNumber: 1, roleId: 'dean', roleLabel: 'College Dean' },
+                { levelNumber: 2, roleId: 'gsd', roleLabel: 'GSD' },
+                { levelNumber: 3, roleId: 'room-manager-dean', roleLabel: `${roomManagerName} (Room Manager)` },
+              ]
+            : [
+                { levelNumber: 1, roleId: 'student_life', roleLabel: 'Student Life' },
+                { levelNumber: 2, roleId: 'gsd', roleLabel: 'GSD' },
+                { levelNumber: 3, roleId: 'room-manager-dean', roleLabel: `${roomManagerName} (Room Manager)` },
+              ];
+        }
+        
         // Map levels to preview records
         let previewRecords = levels.map((level, index) => ({
-          id: level.id,
+          id: level.id || `preview_${index}`,
           levelNumber: level.levelNumber,
           roleId: level.roleId,
           roleLabel: level.roleLabel,
           status: index === 0 ? 'Pending' : 'Waiting',
         }));
         
-        // If using dean-managed workflow, replace room-manager-dean placeholder
-        if ((workflowType === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC || 
-             workflowType === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC) && 
-            roomManager && roomManagerName) {
+        // Replace room-manager-dean placeholder with real manager name
+        if (roomManager && roomManagerName) {
           previewRecords = previewRecords.map(record => {
             if (record.roleId === 'room-manager-dean') {
               return {
@@ -177,20 +230,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
     loadWorkflowPreview();
     
     return () => { cancelled = true; };
-  }, [eventType, prefill.buildingId, prefill.floorId, prefill.roomDocId]);
-
-  const selectedBuilding = useMemo(
-    () => buildingList.find((b) => b.name === form.building || String(b.id) === String(prefill.buildingId)),
-    [buildingList, form.building, prefill.buildingId],
-  );
-
-  const roomsInBuilding = useMemo(() => {
-    if (prefill.room && prefill.buildingId) {
-      return [{ id: prefill.room, floor: prefill.floor }];
-    }
-    if (!selectedBuilding) return [];
-    return selectedBuilding.floorData.flatMap((f) => f.rooms.map((r) => ({ id: r.id, floor: f.floor, floorId: f.floorId, docId: r.docId })));
-  }, [selectedBuilding, prefill]);
+  }, [eventType, form.building, form.room, prefill, resolvedTarget]);
 
   const isPrefilledRoom = Boolean(prefill.room && prefill.buildingId);
 
@@ -260,15 +300,19 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
     setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting reservation...');
     setBusy(true);
     try {
+      const { building: tBuilding, floor: tFloor, room: tRoom } = resolvedTarget;
+
       await addRequest(
         {
           type: eventType,
           ...form,
-          college: form.college || profile?.college || '', // Include college for filtering
-          buildingId: prefill.buildingId || selectedBuilding?.id || null,
-          roomId: prefill.roomDocId || null,
-          floor: prefill.floor ?? null,
-          floorId: prefill.floorId || null,
+          college: form.college || profile?.college || '',
+          buildingId: tBuilding?.id || prefill.buildingId || null,
+          roomId: tRoom?.docId || prefill.roomDocId || null,
+          floor: tFloor?.floor ?? prefill.floor ?? null,
+          floorId: tFloor?.floorId || prefill.floorId || null,
+          customManagerUid: tRoom?.managedBy || tFloor?.managedBy || prefill.roomManager || null,
+          customManagerName: tRoom?.managedByName || tFloor?.managedByName || prefill.roomManagerName || null,
           requestorEmail: profile?.email,
           createdByUid: profile?.uid,
         },

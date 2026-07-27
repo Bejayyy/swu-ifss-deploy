@@ -9,6 +9,7 @@ export default function AddRoleModal({ onClose, onSave, saving = false, existing
     label: '',
     permissions: [],
     navKeys: ['dashboard', 'approvals'],
+    requiresCollege: false,
   });
   const [error, setError] = useState('');
 
@@ -47,6 +48,7 @@ export default function AddRoleModal({ onClose, onSave, saving = false, existing
         label,
         permissions: form.permissions,
         navKeys: form.navKeys,
+        requiresCollege: Boolean(form.requiresCollege),
         isSystem: false,
       });
       onClose();
@@ -82,7 +84,7 @@ export default function AddRoleModal({ onClose, onSave, saving = false, existing
                 <label className="form-label">Role key</label>
                 <input
                   className="form-input"
-                  placeholder="e.g. lab_coordinator"
+                  placeholder="e.g. guard"
                   value={form.key}
                   onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
                   required
@@ -92,12 +94,28 @@ export default function AddRoleModal({ onClose, onSave, saving = false, existing
                 <label className="form-label">Display label</label>
                 <input
                   className="form-input"
-                  placeholder="e.g. Lab Coordinator"
+                  placeholder="e.g. Security Guard"
                   value={form.label}
                   onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                   required
                 />
               </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-3.5 bg-gray-50 border border-gray-100 rounded-xl">
+              <input
+                type="checkbox"
+                id="requiresCollegeAdd"
+                className="accent-[#7A0808] w-4 h-4 rounded cursor-pointer"
+                checked={Boolean(form.requiresCollege)}
+                onChange={(e) => setForm((f) => ({ ...f, requiresCollege: e.target.checked }))}
+              />
+              <label htmlFor="requiresCollegeAdd" className="cursor-pointer text-xs font-bold text-[#2B3235]">
+                Belongs / Assigned to a specific College
+                <span className="block text-[10px] font-normal text-gray-500 mt-0.5">
+                  Check this if users in this role belong to a specific College (e.g. Dean, Teacher). Leave unchecked for non-college roles (e.g. Guard, GSD).
+                </span>
+              </label>
             </div>
 
             <div className="flex flex-wrap gap-2">

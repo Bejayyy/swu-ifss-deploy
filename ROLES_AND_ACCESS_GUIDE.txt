@@ -1,0 +1,218 @@
+================================================================================
+     SWU-IFSS: ROLES & ACCESS PERMISSIONS DETAILED REFERENCE GUIDE
+================================================================================
+
+This guide explains the navigation-centric access structure in the SWU Integrated 
+Facility Scheduling System (SWU-IFSS) User Management module.
+
+--------------------------------------------------------------------------------
+HOW ROLES & ACCESS UI WORKS:
+--------------------------------------------------------------------------------
+1. Navigation-Centric Grouping:
+   In User Management -> Roles & Access, every sidebar page is represented as a 
+   card. Action permissions for that page are nested DIRECTLY UNDERNEATH it.
+
+2. Dynamic Expansion & Locking:
+   - When a Navigation Page is CHECKED [x], its sub-panel expands right below it, 
+     allowing you to configure the specific actions users can perform on that page.
+   - When a Navigation Page is UNCHECKED [ ], its action panel is locked:
+     "🔒 Check '[Page Name]' page above to configure its action permissions"
+     Disabling the page automatically prunes any un-navigable action permissions.
+
+
+================================================================================
+NAVIGATION PAGES & NESTED ACTION PERMISSIONS BREAKDOWN
+================================================================================
+
+1. DASHBOARD (navKey: dashboard)
+   - Description: Home overview dashboard showing system stats, room usage summaries, and pending approvals.
+   - Nested Actions: None (pure overview page).
+   - Recommended Roles: Check [x] for ALL roles.
+
+--------------------------------------------------------------------------------
+2. USER MANAGEMENT (navKey: systemAdmin)
+   - Description: Manage users, staff accounts, and custom role definitions.
+   - Nested Actions:
+     * System administration (system.admin)
+       - Function: Create, edit, and deactivate user accounts; assign custom roles & permissions.
+   - Recommended Roles: Super Admin / Registrar ONLY. (Uncheck for Deans, Teachers, Students).
+
+--------------------------------------------------------------------------------
+3. BUILDINGS (navKey: buildings)
+   - Description: Building cards, floor layouts, and room directory.
+   - Nested Actions:
+     * View room availability (room.availability.view)
+       - Function: See room schedules and availability timelines across floors.
+     * Manage assigned rooms (rooms.manage.assigned)
+       - Function: Edit room details, capacity, and equipment for rooms assigned to user's college.
+     * Manage buildings (buildings.manage)
+       - Function: Add new buildings, set room prefixes (e.g. PH), add floors, and edit building images.
+   - Recommended Roles: 
+     - Check [x] for ALL staff and faculty.
+     - Enable "Manage assigned rooms" for DEANS.
+     - Enable "Manage buildings" for REGISTRAR & GSD HEADS.
+
+--------------------------------------------------------------------------------
+4. ROOM FINDER (navKey: roomFinder)
+   - Description: Search for available rooms across buildings using list view & dynamic filters.
+   - Nested Actions:
+     * Search & filter rooms (room.availability.view)
+       - Function: Search room codes, filter by type, capacity range, floor, and equipment.
+     * Submit room reservations (reservation.submit)
+       - Function: Book and submit room reservation requests directly from Room Finder.
+   - Recommended Roles: Check [x] for ALL roles. Enable "Submit room reservations" for Teachers, Deans, & Staff.
+
+--------------------------------------------------------------------------------
+5. ACADEMIC CALENDAR (navKey: academicCalendar)
+   - Description: School year schedules, official holidays, no-class periods, and exam ranges.
+   - Nested Actions:
+     * View academic calendar (academic.calendar.view)
+       - Function: Read official school year dates, holidays, and exam periods.
+     * Manage academic calendar (calendar.manage)
+       - Function: Add/edit school year dates, official holidays, no-class periods, and exam ranges.
+   - Recommended Roles: 
+     - Check [x] for ALL roles.
+     - Enable "Manage academic calendar" for REGISTRAR / SUPER ADMIN ONLY.
+
+--------------------------------------------------------------------------------
+6. COURSE SCHEDULING (navKey: courseScheduling)
+   - Description: Plot and manage course schedules across rooms.
+   - Nested Actions:
+     * Submit course schedules (scheduling.submit)
+       - Function: Plot and submit class schedules for a college/department.
+     * View schedule history (room.schedules.view)
+       - Function: Access historical course schedule records.
+     * Manage scheduling operations (scheduling.manage)
+       - Function: Lock schedule batches, resolve room conflicts, and override class assignments.
+   - Recommended Roles: 
+     - Check [x] for DEANS & ACADEMIC SCHEDULERS.
+     - (Uncheck for GSD, Student Life, and Students).
+
+--------------------------------------------------------------------------------
+7. COLLEGE INVENTORY (navKey: collegeInventory)
+   - Description: Manage colleges, departments, and course inventory catalog.
+   - Nested Actions:
+     * Manage college inventory (system.admin)
+       - Function: Add/edit colleges, departments, and course inventory records.
+   - Recommended Roles: Super Admin / Registrar ONLY.
+
+--------------------------------------------------------------------------------
+8. APPROVAL WORKFLOW (navKey: approvalWorkflow)
+   - Description: Configure multi-tier approval workflows for academic & non-academic requests.
+   - Nested Actions:
+     * Manage approval workflows (approval.workflow.manage)
+       - Function: Create, edit, and re-order dynamic multi-level approval chains.
+   - Recommended Roles: Super Admin / Registrar ONLY.
+
+--------------------------------------------------------------------------------
+9. REQUEST MANAGEMENT (navKey: approvals)
+   - Description: Track, endorse, review, and approve room reservation requests.
+   - Nested Actions:
+     * Submit room reservations (reservation.submit)
+       - Function: Create new room reservation requests.
+     * Endorse activities (approval.endorse.activity)
+       - Function: Endorse/recommend academic & non-academic requests originating from user's college.
+     * Manage room activity approvals (approval.manage.room.activity)
+       - Function: Review and approve room usage requests for physical facilities (GSD).
+     * Manage student activity approvals (approval.manage.student.activity)
+       - Function: Review and approve student organization activities (Student Life).
+   - Recommended Roles:
+     - Check [x] for ALL requestors and approvers.
+     - Enable "Endorse activities" for DEANS.
+     - Enable "Manage room activity approvals" for GSD.
+     - Enable "Manage student activity approvals" for STUDENT LIFE.
+
+--------------------------------------------------------------------------------
+10. REPORTS & ANALYTICS (navKey: reports)
+    - Description: System reports, room utilization metrics, and exported analytics.
+    - Nested Actions:
+      * View reports & analytics (reports.view)
+        - Function: Access utilization metrics and analytics reports.
+    - Recommended Roles: Registrar, Deans, GSD Heads.
+
+--------------------------------------------------------------------------------
+11. MAINTENANCE DASHBOARD (navKey: maintenanceDashboard)
+    - Description: View and manage room maintenance logs and operational statuses.
+    - Nested Actions:
+      * Manage room maintenance (rooms.maintenance.manage)
+        - Function: Flag rooms as "Under Maintenance", set repair start/end dates and notes.
+    - Recommended Roles: GSD & Facilities Maintenance Staff ONLY.
+
+
+================================================================================
+COMPLETE PAGE & ACTION CHECKLIST PER ROLE
+================================================================================
+
+1. DEAN:
+   [x] Dashboard
+   [x] Buildings
+       -> [x] View room availability
+       -> [x] Manage assigned rooms
+   [x] Room Finder
+       -> [x] Search & filter rooms
+       -> [x] Submit room reservations
+   [x] Academic Calendar
+       -> [x] View academic calendar
+   [x] Course Scheduling
+       -> [x] Submit course schedules
+       -> [x] View schedule history
+   [x] Request Management
+       -> [x] Submit room reservations
+       -> [x] Endorse activities
+   [x] Reports & Analytics
+       -> [x] View reports & analytics
+
+2. TEACHER / INSTRUCTOR:
+   [x] Dashboard
+   [x] Buildings
+       -> [x] View room availability
+   [x] Room Finder
+       -> [x] Search & filter rooms
+       -> [x] Submit room reservations
+   [x] Academic Calendar
+       -> [x] View academic calendar
+   [x] Request Management
+       -> [x] Submit room reservations
+
+3. ORGANIZATION HEAD:
+   [x] Dashboard
+   [x] Buildings
+       -> [x] View room availability
+   [x] Room Finder
+       -> [x] Search & filter rooms
+       -> [x] Submit room reservations
+   [x] Academic Calendar
+       -> [x] View academic calendar
+   [x] Request Management
+       -> [x] Submit room reservations
+
+4. GSD (GENERAL SERVICES DIVISION):
+   [x] Dashboard
+   [x] Buildings
+       -> [x] View room availability
+       -> [x] Manage buildings
+   [x] Room Finder
+       -> [x] Search & filter rooms
+   [x] Maintenance Dashboard
+       -> [x] Manage room maintenance
+   [x] Request Management
+       -> [x] Manage room activity approvals
+   [x] Reports & Analytics
+       -> [x] View reports & analytics
+
+5. STUDENT LIFE OFFICE:
+   [x] Dashboard
+   [x] Buildings
+       -> [x] View room availability
+   [x] Room Finder
+       -> [x] Search & filter rooms
+       -> [x] Submit room reservations
+   [x] Academic Calendar
+       -> [x] View academic calendar
+   [x] Request Management
+       -> [x] Manage student activity approvals
+       -> [x] Submit room reservations
+
+6. REGISTRAR (SUPER ADMIN):
+   [x] FULL ACCESS — All 11 Navigation pages enabled + All nested action permissions enabled.
+================================================================================

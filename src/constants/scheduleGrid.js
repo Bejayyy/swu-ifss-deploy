@@ -1,7 +1,11 @@
 export const SCHEDULE_TYPE_COLORS = {
-  CAS: { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
   Lecture: { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
   Laboratory: { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
+  Reservation: { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
+  'Reservation (Academic)': { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
+  'Reservation (Non-Academic)': { bg: '#E0E7FF', text: '#3730A3', border: '#A5B4FC' },
+  Maintenance: { bg: '#FFEDD5', text: '#C2410C', border: '#FDBA74' },
+  CAS: { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
 };
 
 export const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];

@@ -27,12 +27,43 @@ export function getActivePendingRecord(approvalRecords = []) {
 }
 
 export function isReservationActionable(reservation, role, profile) {
-  if (!reservation || !role) return false;
+  if (!reservation || !role || !profile) return false;
   if ([RESERVATION_STATUS.APPROVED, RESERVATION_STATUS.REJECTED, RESERVATION_STATUS.DRAFT].includes(reservation.status)) {
     return false;
   }
   const pending = getActivePendingRecord(reservation.approvalRecords);
-  return pending?.roleId === role;
+  if (!pending) return false;
+
+  // Registrar can act on any pending request
+  if (role === 'registrar') return true;
+
+  // If this pending step is assigned to a specific customManagerUid (e.g. Dean room manager)
+  if (pending.customManagerUid) {
+    return profile.uid === pending.customManagerUid;
+  }
+
+  // If pending step role is 'room-manager-dean'
+  if (pending.roleId === 'room-manager-dean') {
+    if (pending.customManagerUid) {
+      return profile.uid === pending.customManagerUid;
+    }
+    return role === 'dean';
+  }
+
+  // If role matches pending step roleId directly
+  if (pending.roleId === role) {
+    // For deans without customManagerUid, check college matching
+    if (role === 'dean' && !pending.customManagerUid) {
+      if (profile.college && reservation.college) {
+        const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
+        const normalizedReservationCollege = (reservation.college || '').trim().toLowerCase();
+        return normalizedProfileCollege === normalizedReservationCollege;
+      }
+    }
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -53,10 +84,20 @@ export function filterReservationsForRole(reservations, role, profile) {
       return false;
     }
 
-    // Check if this role is in the approval workflow at all
-    const myRecord = reservation.approvalRecords.find((r) => r.roleId === role);
+    // Check if this role or custom manager is in the approval workflow
+    const myRecord = reservation.approvalRecords.find(
+      (r) => r.roleId === role || r.roleId === 'room-manager-dean' || (r.customManagerUid && r.customManagerUid === profile.uid)
+    );
     if (!myRecord) {
       return false; // This role is not part of the approval workflow
+    }
+
+    // For custom manager steps (e.g. room-manager-dean step with customManagerUid)
+    const roomManagerStep = reservation.approvalRecords.find((r) => r.customManagerUid || r.roleId === 'room-manager-dean');
+    if (roomManagerStep && roomManagerStep.customManagerUid === profile.uid) {
+      return roomManagerStep.status === APPROVAL_RECORD_STATUS.PENDING ||
+             roomManagerStep.status === APPROVAL_RECORD_STATUS.APPROVED ||
+             roomManagerStep.status === APPROVAL_RECORD_STATUS.REJECTED;
     }
 
     // Show if: 
@@ -79,17 +120,6 @@ export function filterReservationsForRole(reservations, role, profile) {
         return true; // This dean is the room manager
       }
       
-      // If reservation has a room-manager-dean role, check if it matches
-      const roomManagerStep = reservation.approvalRecords.find(r => r.roleId === 'room-manager-dean');
-      if (roomManagerStep?.customManagerUid) {
-        if (roomManagerStep.customManagerUid === profile.uid) {
-          // This is the room manager dean's step
-          return roomManagerStep.status === APPROVAL_RECORD_STATUS.PENDING || 
-                 roomManagerStep.status === APPROVAL_RECORD_STATUS.APPROVED ||
-                 roomManagerStep.status === APPROVAL_RECORD_STATUS.REJECTED;
-        }
-      }
-      
       // For standard college dean role (not room manager)
       if (myRecord.roleId === 'dean' && !myRecord.customManagerUid) {
         if (profile.college && reservation.college) {
@@ -99,8 +129,6 @@ export function filterReservationsForRole(reservations, role, profile) {
         }
         return true; // No college filter
       }
-      
-      return false;
     }
     
     return true;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Building2, Calendar } from 'lucide-react';
+import { Plus, Edit2, Building2, Calendar, ChevronRight, ChevronDown, Layers, DoorOpen } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
@@ -21,6 +21,18 @@ export default function BuildingManagement() {
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
+  const [expandedBuildings, setExpandedBuildings] = useState({});
+  const [expandedFloors, setExpandedFloors] = useState({});
+
+  const toggleBuildingExpand = (bId, e) => {
+    if (e) e.stopPropagation();
+    setExpandedBuildings((prev) => ({ ...prev, [bId]: !prev[bId] }));
+  };
+
+  const toggleFloorExpand = (fKey, e) => {
+    if (e) e.stopPropagation();
+    setExpandedFloors((prev) => ({ ...prev, [fKey]: !prev[fKey] }));
+  };
 
   useEffect(() => {
     if (!buildingList.length) {
@@ -66,27 +78,112 @@ export default function BuildingManagement() {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex border-b border-gray-100 overflow-x-auto">
-            {buildingList.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setSelectedBuilding(b)}
-                className="px-5 py-3.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-all flex-shrink-0"
-                style={
-                  selectedBuilding?.id === b.id
-                    ? { borderColor: '#7A0808', color: '#7A0808' }
-                    : { borderColor: 'transparent', color: '#2B3235' }
-                }
-              >
-                {b.name}
-              </button>
-            ))}
+        <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-5 items-start">
+          {/* Left Sidebar Building Tree List */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="text-[11px] font-bold tracking-widest uppercase text-gray-400">BUILDINGS</span>
+              {canManageBuildings() && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddBuilding(true)}
+                  className="p-1 rounded-lg hover:bg-gray-100 text-[#2B3235] hover:text-[#7A0808] transition-colors"
+                  title="Add Building"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              {buildingList.map((b) => {
+                const isSelected = selectedBuilding?.id === b.id;
+                const isExpanded = Boolean(expandedBuildings[b.id]);
+
+                return (
+                  <div key={b.id} className="space-y-1">
+                    {/* Building Row */}
+                    <div
+                      onClick={() => {
+                        setSelectedBuilding(b);
+                        toggleBuildingExpand(b.id);
+                      }}
+                      className={`w-full flex items-center gap-1.5 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-red-50/80 text-[#7A0808] font-bold border border-red-100 shadow-2xs'
+                          : 'text-[#2B3235] hover:bg-gray-50 font-medium'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => toggleBuildingExpand(b.id, e)}
+                        className="p-0.5 rounded hover:bg-gray-200/50 flex-shrink-0 text-gray-400 hover:text-[#7A0808]"
+                      >
+                        {isExpanded ? <ChevronDown size={14} className="text-[#7A0808]" /> : <ChevronRight size={14} />}
+                      </button>
+                      <Building2 size={15} className={`flex-shrink-0 ${isSelected ? 'text-[#7A0808]' : 'text-gray-500'}`} />
+                      <span className="text-xs truncate flex-1">{b.name}</span>
+                    </div>
+
+                    {/* Expanded Floors List */}
+                    {isExpanded && b.floorData?.map((floorObj) => {
+                      const floorKey = `${b.id}-${floorObj.floor}`;
+                      const isFloorExpanded = Boolean(expandedFloors[floorKey]);
+
+                      return (
+                        <div key={floorKey} className="ml-3 pl-2 border-l border-gray-100 space-y-1">
+                          {/* Floor Row */}
+                          <div
+                            onClick={(e) => toggleFloorExpand(floorKey, e)}
+                            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-xs font-semibold text-gray-600 hover:bg-gray-100/70 hover:text-[#7A0808] transition-colors"
+                          >
+                            <span className="text-gray-400">
+                              {isFloorExpanded ? <ChevronDown size={12} className="text-[#7A0808]" /> : <ChevronRight size={12} />}
+                            </span>
+                            <Layers size={12} className="text-gray-400" />
+                            <span className="flex-1 truncate">Floor {floorObj.floor}</span>
+                            <span className="text-[10px] text-gray-400 font-bold">{floorObj.rooms?.length || 0}</span>
+                          </div>
+
+                          {/* Expanded Rooms List */}
+                          {isFloorExpanded && floorObj.rooms?.map((room) => (
+                            <div
+                              key={room.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/room/${room.id}`, {
+                                  state: {
+                                    room,
+                                    buildingId: b.id,
+                                    buildingName: b.name,
+                                    floor: floorObj.floor,
+                                    floorId: floorObj.floorId,
+                                  },
+                                });
+                              }}
+                              className="ml-3 pl-2 border-l border-gray-100 flex items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer hover:bg-red-50/60 hover:text-[#7A0808] text-[11px] font-medium text-gray-600 transition-colors"
+                            >
+                              <DoorOpen size={12} className="text-gray-400 flex-shrink-0" />
+                              <span className="truncate flex-1 font-bold">{room.id}</span>
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                  room.status === 'Available' ? 'bg-green-500' : room.status === 'Occupied' ? 'bg-red-500' : 'bg-amber-500'
+                                }`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
+          {/* Right Main Building Details */}
           {building && (
-            <div className="p-6">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-6 flex-wrap gap-4 pb-5 border-b border-gray-100">
                 <div className="flex items-center gap-4">
                   {building.image ? (

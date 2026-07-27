@@ -38,20 +38,25 @@ export function normalizeCollegeValue(input) {
 }
 
 /**
- * Roles that require college assignment
- * GSD and Student Life are administrative offices, not part of any college
+ * Roles that belong to / require a college assignment (e.g. Dean, Teacher, Organization Head)
+ * Non-college roles (e.g. Guard, GSD, Student Life, Registrar) return false
  */
-export function requiresCollege(roleValue) {
+export function requiresCollege(roleValue, roleDefinitions = {}) {
   if (!roleValue) return false;
-  return roleValue !== 'gsd' && roleValue !== 'student-life';
+  const normalized = roleValue.toLowerCase();
+
+  // Check if defined in roleDefinitions
+  const def = roleDefinitions[roleValue] || roleDefinitions[normalized];
+  if (def && typeof def.requiresCollege === 'boolean') {
+    return def.requiresCollege;
+  }
+
+  // Built-in college roles
+  const COLLEGE_ROLES = ['dean', 'teacher', 'organization_head'];
+  return COLLEGE_ROLES.includes(normalized);
 }
 
-/**
- * Roles that require department assignment
- * GSD and Student Life are standalone administrative offices
- */
-export const DEPARTMENT_REQUIRED_ROLES = ['teacher', 'organization_head', 'dean', 'registrar'];
-
-export function requiresDepartment(roleValue) {
-  return DEPARTMENT_REQUIRED_ROLES.includes(roleValue);
+/** Department has been removed; College is the sole basis */
+export function requiresDepartment() {
+  return false;
 }

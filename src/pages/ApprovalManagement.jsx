@@ -35,11 +35,11 @@ export default function ApprovalManagement() {
   } = useRolePermissions();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
 
-  const showAcademicTab = isRegistrar || canEndorseActivity() || canCreateRequestType('academic');
-  const showNonAcademicTab = isRegistrar || canSubmitReservation() || canManageRoomActivityApproval() || canManageStudentActivityApproval();
+  const showAcademicTab = true;
+  const showNonAcademicTab = true;
 
   // Get initial values from navigation state (from notifications)
-  const initialTab = state?.tab || (showNonAcademicTab && !showAcademicTab ? 'non-academic' : 'academic');
+  const initialTab = state?.tab || 'academic';
   const initialSection = state?.section || 'approvals';
 
   const [tab, setTab] = useState(initialTab);
@@ -59,13 +59,8 @@ export default function ApprovalManagement() {
   // My own requests (for tracking)
   const myRequests = filterMyRequests(requests);
 
-  // Update tab visibility based on actual requests
-  // Show academic tab if user has permission OR has academic requests
-  const hasAcademicRequests = myRequests.some(r => r.type === 'academic');
-  const hasNonAcademicRequests = myRequests.some(r => r.type === 'non-academic');
-  
-  const showAcademicTabFinal = showAcademicTab || hasAcademicRequests;
-  const showNonAcademicTabFinal = showNonAcademicTab || hasNonAcademicRequests;
+  const showAcademicTabFinal = true;
+  const showNonAcademicTabFinal = true;
 
   // Helper function to get role-specific status
   const getRoleSpecificStatus = (reservation) => {
