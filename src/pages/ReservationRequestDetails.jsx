@@ -10,6 +10,7 @@ import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useModal } from '../hooks/useModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
+import { formatCollegeName } from '../constants/colleges';
 
 function formatReadableDate(dateInput) {
   if (!dateInput) return '—';
@@ -552,7 +553,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
               <div className="space-y-3">
                 <div>
                   <span className="font-bold text-gray-700 block">Name of Organization/College/Department:</span>
-                  <span className="font-semibold text-gray-900 border-b border-gray-200 block pb-0.5 mt-0.5">{request.nameOfOrg || request.department || '—'}</span>
+                  <span className="font-semibold text-gray-900 border-b border-gray-200 block pb-0.5 mt-0.5">{formatCollegeName(request.college || request.nameOfOrg || request.department) || '—'}</span>
                 </div>
                 <div>
                   <span className="font-bold text-gray-700 block">Name of Activity:</span>

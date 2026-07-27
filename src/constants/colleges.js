@@ -60,3 +60,69 @@ export function requiresCollege(roleValue, roleDefinitions = {}) {
 export function requiresDepartment() {
   return false;
 }
+
+const COLLEGE_ACRONYM_MAP = {
+  bsit: 'College of Information Technology',
+  it: 'College of Information Technology',
+  cit: 'College of Information Technology',
+  infotech: 'College of Information Technology',
+  'information technology': 'College of Information Technology',
+  cs: 'College of Computer Studies',
+
+  cas: 'College of Arts and Sciences',
+  arts: 'College of Arts and Sciences',
+  sciences: 'College of Arts and Sciences',
+
+  med: 'College of Medicine',
+  cmed: 'College of Medicine',
+  medicine: 'College of Medicine',
+
+  con: 'College of Nursing',
+  bsn: 'College of Nursing',
+  nursing: 'College of Nursing',
+
+  cba: 'College of Business Administration',
+  business: 'College of Business Administration',
+  accountancy: 'College of Business Administration',
+
+  sea: 'School of Engineering and Architecture',
+  engineering: 'School of Engineering and Architecture',
+  architecture: 'School of Engineering and Architecture',
+
+  educ: 'College of Education',
+  education: 'College of Education',
+
+  law: 'College of Law',
+  juris: 'College of Law',
+  pharma: 'College of Pharmacy',
+  pharmacy: 'College of Pharmacy',
+  dentistry: 'College of Dentistry',
+  optometry: 'College of Optometry',
+};
+
+export function formatCollegeName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  const lower = trimmed.toLowerCase();
+
+  // If already formal full name
+  if (lower.startsWith('college of') || lower.startsWith('school of') || lower.startsWith('department of')) {
+    return trimmed;
+  }
+
+  // Exact acronym lookup
+  if (COLLEGE_ACRONYM_MAP[lower]) {
+    return COLLEGE_ACRONYM_MAP[lower];
+  }
+
+  // Substring match
+  for (const [key, full] of Object.entries(COLLEGE_ACRONYM_MAP)) {
+    if (key.length > 2 && lower.includes(key)) {
+      return full;
+    }
+  }
+
+  return trimmed;
+}

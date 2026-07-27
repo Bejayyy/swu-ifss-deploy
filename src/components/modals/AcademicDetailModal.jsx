@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, CheckCircle, XCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { formatCollegeName } from '../../constants/colleges';
 
 export default function AcademicDetailModal({ request, onClose }) {
   const { updateRequest } = useApp();
@@ -49,7 +50,7 @@ export default function AcademicDetailModal({ request, onClose }) {
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 mb-5">
             {[
               ['Request Type', request.reqType],
-              ['Department', request.department],
+              ['Department', formatCollegeName(request.college || request.department || request.nameOfOrg)],
               ['Course Code', request.courseCode],
               ['Course Description', request.courseDesc],
               ['Instructor', request.instructor || request.requestor],

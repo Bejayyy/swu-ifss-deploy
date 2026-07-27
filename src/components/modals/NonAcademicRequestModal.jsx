@@ -1,10 +1,49 @@
-import React, { useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Upload, Trash2 } from 'lucide-react';
 import { useApp, defaultNonAcademicSteps } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../hooks/useModal';
+import { formatCollegeName } from '../../constants/colleges';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
+
+function formatContactInput(val) {
+  if (!val) return '';
+  let str = String(val).trim();
+  if (str.startsWith('+63')) {
+    str = str.slice(3).trim();
+  } else if (str.startsWith('63') && str.length > 10) {
+    str = str.slice(2).trim();
+  }
+  str = str.replace(/\D/g, '');
+  if (str.startsWith('0')) {
+    return str.slice(0, 11);
+  }
+  return str.slice(0, 10);
+}
+
+function getNormalizedContactNumber(val) {
+  const clean = formatContactInput(val);
+  if (!clean) return '';
+  const digits = clean.startsWith('0') ? clean.slice(1) : clean;
+  if (digits.length === 10) {
+    return `+63${digits}`;
+  }
+  return '';
+}
+
+function isValidContactNumber(num) {
+  return Boolean(getNormalizedContactNumber(num));
+}
+
+function getSavedSignature(profileUser) {
+  if (!profileUser) return localStorage.getItem('user_saved_signature') || '';
+  const userSig = profileUser.signatureUrl || profileUser.signature || profileUser.eSignature || profileUser.digitalSignature;
+  if (userSig) return userSig;
+  const localUidSig = profileUser.uid ? localStorage.getItem(`user_signature_${profileUser.uid}`) : null;
+  if (localUidSig) return localUidSig;
+  return localStorage.getItem('user_saved_signature') || '';
+}
 
 export default function NonAcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
@@ -12,13 +51,89 @@ export default function NonAcademicRequestModal({ onClose }) {
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
+  const userAutoOrg = profile?.college || profile?.department || profile?.nameOfOrg || profile?.orgName || profile?.roleLabel || '';
+  const initialSignature = useMemo(() => getSavedSignature(profile), [profile]);
+
   const [form, setForm] = useState({
-    nameOfOrg: '', activity: '', dateOfActivity: '', timeStart: '', timeEnd: '',
-    participants: '', building: '', room: '', designatedVenue: '', objectives: '', specialRequirements: '',
+    nameOfOrg: userAutoOrg,
+    requestedBy: profile?.displayName || profile?.email || '',
+    activity: '',
+    dateOfActivity: '',
+    timeStart: '',
+    timeEnd: '',
+    participants: '',
+    building: '',
+    room: '',
+    designatedVenue: '',
+    objectives: '',
+    specialRequirements: '',
+    contactNumber: '',
+    requestorSignatureUrl: initialSignature,
+    signatureUrl: initialSignature,
     dateFiled: new Date().toLocaleDateString('en-GB'),
     utilityUnderMedicine: false,
     approvalSteps: defaultNonAcademicSteps(false),
   });
+
+  useEffect(() => {
+    const savedSig = getSavedSignature(profile);
+    if (userAutoOrg || profile || savedSig) {
+      setForm((prev) => ({
+        ...prev,
+        requestorSignatureUrl: prev.requestorSignatureUrl || savedSig,
+        signatureUrl: prev.signatureUrl || savedSig,
+      }));
+    }
+  }, [userAutoOrg, profile]);
+
+  const handleSignatureFileUpload = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showNotification({
+        type: 'warning',
+        title: 'Invalid File',
+        message: 'Please upload an image file (PNG, JPG, or WEBP).',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showNotification({
+        type: 'warning',
+        title: 'File Too Large',
+        message: 'Signature image must be under 5MB.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      setForm((prev) => ({
+        ...prev,
+        requestorSignatureUrl: dataUrl,
+        signatureUrl: dataUrl,
+      }));
+      if (profile?.uid) {
+        localStorage.setItem(`user_signature_${profile.uid}`, dataUrl);
+      }
+      localStorage.setItem('user_saved_signature', dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleClearSignature = () => {
+    setForm((prev) => ({
+      ...prev,
+      requestorSignatureUrl: '',
+      signatureUrl: '',
+    }));
+    if (profile?.uid) {
+      localStorage.removeItem(`user_signature_${profile.uid}`);
+    }
+    localStorage.removeItem('user_saved_signature');
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const selectedBuilding = useMemo(
@@ -34,13 +149,38 @@ export default function NonAcademicRequestModal({ onClose }) {
 
   const handleSubmit = async (draft = false) => {
     const isDraft = draft === true;
+    const rawOrg = form.nameOfOrg || userAutoOrg || 'General';
+    const resolvedOrg = formatCollegeName(rawOrg);
+    const resolvedRequestedBy = profile?.displayName || profile?.email || form.requestedBy || 'Requestor';
     
     // Validate required fields for submission
-    if (!isDraft && (!form.nameOfOrg.trim() || !form.activity.trim())) {
+    if (!isDraft && !form.activity.trim()) {
       showNotification({
         type: 'warning',
         title: 'Missing information',
-        message: 'Please provide organization name and activity name.',
+        message: 'Please provide activity name.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    const normalizedContact = getNormalizedContactNumber(form.contactNumber);
+    if (!isDraft && !normalizedContact) {
+      showNotification({
+        type: 'warning',
+        title: 'Invalid Contact Number',
+        message: 'Contact number must be 10 digits (e.g. 9171234567) or 11 digits starting with 0 (e.g. 09171234567).',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    const activeSig = form.requestorSignatureUrl || form.signatureUrl;
+    if (!isDraft && !activeSig) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing Signature',
+        message: 'Digital E-Signature is required to submit a request.',
         autoCloseMs: 3000,
       });
       return;
@@ -65,10 +205,15 @@ export default function NonAcademicRequestModal({ onClose }) {
       await addRequest({
         type: 'non-academic',
         title: form.activity,
-        department: form.nameOfOrg,
-        requestor: form.nameOfOrg,
+        department: resolvedOrg,
+        nameOfOrg: resolvedOrg,
+        requestedBy: resolvedRequestedBy,
+        requestor: resolvedRequestedBy,
         ...form,
-        college: profile?.college || profile?.department || '', // Include college for dean filtering
+        contactNumber: normalizedContact || form.contactNumber,
+        requestorSignatureUrl: activeSig || null,
+        signatureUrl: activeSig || null,
+        college: profile?.college || profile?.department || resolvedOrg,
         status: isDraft ? 'Draft' : 'Pending',
       });
       
@@ -98,7 +243,7 @@ export default function NonAcademicRequestModal({ onClose }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-xl relative flex flex-col" style={{ maxHeight: '92vh' }} onClick={e => e.stopPropagation()}>
         <div className="px-8 pt-7 pb-4 border-b border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="absolute right-5 top-5 text-gray-400 hover:text-gray-700"><X size={20} /></button>
+          <button onClick={onClose} className="absolute right-5 top-5 p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"><X size={20} /></button>
           <div className="text-center mb-2">
             <p className="text-sm font-black tracking-widest" style={{ color: '#7A0808' }}>SOUTHWESTERN UNIVERSITY</p>
             <p className="text-xs font-bold tracking-widest" style={{ color: '#7A0808' }}>PHINMA</p>
@@ -120,33 +265,41 @@ export default function NonAcademicRequestModal({ onClose }) {
           </div>
 
           <h3 className="font-bold text-base mb-4 text-dark">Requestor's Information</h3>
-          <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="grid grid-cols-2 gap-4 mb-5">
             <div className="col-span-2">
-              <label className="form-label">Name of Organization / College / Department</label>
-              <input className="form-input" placeholder="Organization name" value={form.nameOfOrg} onChange={e => set('nameOfOrg', e.target.value)} />
+              <label className="form-label">
+                Name of Activity <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" placeholder="Activity name" value={form.activity} onChange={e => set('activity', e.target.value)} required />
+            </div>
+            <div>
+              <label className="form-label">
+                Date of Activity <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" type="date" value={form.dateOfActivity} onChange={e => set('dateOfActivity', e.target.value)} required />
+            </div>
+            <div>
+              <label className="form-label">
+                No. of Participants <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" type="number" placeholder="e.g., 100" value={form.participants} onChange={e => set('participants', e.target.value)} required />
+            </div>
+            <div>
+              <label className="form-label">
+                Time Start <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" type="time" value={form.timeStart} onChange={e => set('timeStart', e.target.value)} required />
+            </div>
+            <div>
+              <label className="form-label">
+                Time End <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" type="time" value={form.timeEnd} onChange={e => set('timeEnd', e.target.value)} required />
             </div>
             <div className="col-span-2">
-              <label className="form-label">Name of Activity</label>
-              <input className="form-input" placeholder="Activity name" value={form.activity} onChange={e => set('activity', e.target.value)} />
-            </div>
-            <div>
-              <label className="form-label">Date of Activity</label>
-              <input className="form-input" type="date" value={form.dateOfActivity} onChange={e => set('dateOfActivity', e.target.value)} />
-            </div>
-            <div>
-              <label className="form-label">No. of Participants</label>
-              <input className="form-input" type="number" placeholder="e.g., 100" value={form.participants} onChange={e => set('participants', e.target.value)} />
-            </div>
-            <div>
-              <label className="form-label">Time Start</label>
-              <input className="form-input" type="time" value={form.timeStart} onChange={e => set('timeStart', e.target.value)} />
-            </div>
-            <div>
-              <label className="form-label">Time End</label>
-              <input className="form-input" type="time" value={form.timeEnd} onChange={e => set('timeEnd', e.target.value)} />
-            </div>
-            <div className="col-span-2">
-              <label className="form-label">Building</label>
+              <label className="form-label">
+                Building <span className="text-red-600">*</span>
+              </label>
               <select
                 className="form-input"
                 value={form.building}
@@ -154,13 +307,16 @@ export default function NonAcademicRequestModal({ onClose }) {
                   const value = e.target.value;
                   setForm((f) => ({ ...f, building: value, room: '', designatedVenue: '' }));
                 }}
+                required
               >
                 <option value="">Select Building</option>
                 {buildingList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
               </select>
             </div>
             <div className="col-span-2">
-              <label className="form-label">Room</label>
+              <label className="form-label">
+                Room <span className="text-red-600">*</span>
+              </label>
               <select
                 className="form-input"
                 value={form.room}
@@ -173,6 +329,7 @@ export default function NonAcademicRequestModal({ onClose }) {
                   }));
                 }}
                 disabled={!form.building}
+                required
               >
                 <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
                 {roomsInSelectedBuilding.map((r) => (
@@ -181,15 +338,41 @@ export default function NonAcademicRequestModal({ onClose }) {
               </select>
             </div>
             <div className="col-span-2">
-              <label className="form-label">Designated Venue</label>
-              <input className="form-input" placeholder="e.g., Gymnasium, Main Campus" value={form.designatedVenue} onChange={e => set('designatedVenue', e.target.value)} />
+              <label className="form-label">
+                Designated Venue <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" placeholder="e.g., Gymnasium, Main Campus" value={form.designatedVenue} onChange={e => set('designatedVenue', e.target.value)} required />
             </div>
             <div className="col-span-2">
-              <label className="form-label">Objectives of the Activity</label>
-              <textarea className="form-input resize-none" rows={3} placeholder="Describe the objectives..." value={form.objectives} onChange={e => set('objectives', e.target.value)} />
+              <label className="form-label">
+                Objectives of the Activity <span className="text-red-600">*</span>
+              </label>
+              <textarea className="form-input resize-none" rows={3} placeholder="Describe the objectives..." value={form.objectives} onChange={e => set('objectives', e.target.value)} required />
             </div>
             <div className="col-span-2">
-              <label className="form-label">Special Requirements</label>
+              <label className="form-label">
+                Contact Number <span className="text-red-600">*</span>
+              </label>
+              <div className="flex items-stretch rounded-lg overflow-hidden border border-gray-300 focus-within:border-[#7A0808] focus-within:ring-1 focus-within:ring-[#7A0808]">
+                <span className="px-3.5 bg-gray-100 border-r border-gray-300 text-xs font-bold text-gray-700 select-none flex items-center justify-center">
+                  +63
+                </span>
+                <input
+                  className="w-full px-3 py-2 text-sm bg-white text-gray-800 outline-none border-none"
+                  placeholder="9171234567"
+                  value={form.contactNumber}
+                  onChange={(e) => set('contactNumber', formatContactInput(e.target.value))}
+                  required
+                />
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1">
+                Enter 10 digits (e.g. 9171234567). Typing 0 (e.g. 09171234567) is automatically adapted.
+              </p>
+            </div>
+            <div className="col-span-2">
+              <label className="form-label">
+                Special Requirements <span className="text-xs text-gray-400 font-normal">(Optional)</span>
+              </label>
               <textarea className="form-input resize-none" rows={2} placeholder="e.g., Sound system, stage, etc." value={form.specialRequirements} onChange={e => set('specialRequirements', e.target.value)} />
             </div>
             <div className="col-span-2">
@@ -210,9 +393,84 @@ export default function NonAcademicRequestModal({ onClose }) {
                 Utility is under Medicine (adds Medicine approver before GSD)
               </label>
             </div>
-            <div>
-              <label className="form-label">Date of Filed</label>
-              <input className="form-input" value={new Date().toLocaleDateString()} readOnly style={{ background: '#f9f9f9' }} />
+
+            {/* Upload E-Signature Section */}
+            <div className="col-span-2 bg-gray-50/90 border border-gray-200 rounded-xl p-4 mt-1">
+              <div className="flex items-center justify-between mb-2">
+                <label className="form-label mb-0 text-dark font-bold flex items-center gap-1.5">
+                  Digital E-Signature <span className="text-red-600">*</span>
+                </label>
+                {(form.requestorSignatureUrl || form.signatureUrl) && (
+                  <span className="text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    ✓ Saved Signature Loaded
+                  </span>
+                )}
+              </div>
+
+              {(form.requestorSignatureUrl || form.signatureUrl) ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="h-14 w-28 bg-gray-50 border border-dashed border-gray-300 rounded flex items-center justify-center p-1">
+                      <img
+                        src={form.requestorSignatureUrl || form.signatureUrl}
+                        alt="E-Signature Preview"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-800">Your E-Signature</p>
+                      <p className="text-[11px] text-gray-500">Automatically overprinted on permit</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-xs font-bold text-gray-700 flex items-center gap-1 shadow-sm transition-colors">
+                      <Upload size={13} />
+                      <span>Change</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => handleSignatureFileUpload(e.target.files?.[0])}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleClearSignature}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove Signature"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleSignatureFileUpload(file);
+                  }}
+                  className="border-2 border-dashed border-gray-300 hover:border-[#7A0808] bg-white rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors text-center group"
+                >
+                  <Upload size={22} className="text-gray-400 group-hover:text-[#7A0808] mb-1.5 transition-colors" />
+                  <p className="text-xs font-bold text-gray-700 group-hover:text-[#7A0808]">
+                    Click to upload or drag & drop E-Signature image
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Make sure background is removed/transparent. PNG, JPG, WEBP accepted (max 5MB).
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => handleSignatureFileUpload(e.target.files?.[0])}
+                  />
+                </label>
+              )}
+              <p className="text-[11px] text-gray-500 mt-2">
+                💡 Saved so you don't need to upload again for future reservations.
+              </p>
             </div>
           </div>
 

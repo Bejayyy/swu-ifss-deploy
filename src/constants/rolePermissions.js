@@ -349,7 +349,19 @@ export function canEditRoom(profile, room, roleDefinitions = {}) {
   return false;
 }
 
-export function getApprovalsNavLabel(role) {
+export function canApproveAnyRequest(role, roleDefinitions = {}, profile = null) {
+  if (role === ROLES.REGISTRAR) return true;
+  return (
+    canEndorseActivity(role, roleDefinitions, profile) ||
+    canManageRoomActivityApproval(role, roleDefinitions, profile) ||
+    canManageStudentActivityApproval(role, roleDefinitions, profile)
+  );
+}
+
+export function getApprovalsNavLabel(role, profile = null, roleDefinitions = {}) {
+  const canApprove = canApproveAnyRequest(role, roleDefinitions, profile);
+  if (!canApprove) return 'My Reservations';
+
   if (role === ROLES.TEACHER || role === ROLES.ORGANIZATION_HEAD) return 'Room Reservations';
   if (role === ROLES.GSD) return 'Room Activity Requests';
   if (role === ROLES.STUDENT_LIFE) return 'Activity Requests';
@@ -357,8 +369,9 @@ export function getApprovalsNavLabel(role) {
   return 'Request Management';
 }
 
-export function filterRequestsForRole(requests, role, profile) {
+export function filterRequestsForRole(requests, role, profile, roleDefinitions = {}) {
   if (!requests?.length || !role) return [];
+  if (profile && !canApproveAnyRequest(role, roleDefinitions, profile)) return [];
 
   const hasDynamicWorkflow = requests.some((r) => Array.isArray(r.approvalRecords) && r.approvalRecords.length);
   if (hasDynamicWorkflow) {

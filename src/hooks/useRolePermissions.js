@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRoleConfig } from '../context/RoleConfigContext';
 import {
   canAccessRouteForProfile,
+  canApproveAnyRequest,
   canCreateRequestType,
   canEditRoom,
   canEndorseActivity,
@@ -37,7 +38,7 @@ export function useRolePermissions() {
       roleLabel: getRoleLabel(role),
       permissions: getEffectivePermissions(profile, roleDefinitions),
       navItems: getEffectiveNavItems(profile, roleDefinitions),
-      approvalsNavLabel: getApprovalsNavLabel(role),
+      approvalsNavLabel: getApprovalsNavLabel(role, profile, roleDefinitions),
       hasPermission: (permission) => hasEffectivePermission(profile, permission, roleDefinitions),
       canAccessRoute: (pathname) => canAccessRouteForProfile(profile, pathname, roleDefinitions),
       canSubmitReservation: () => canSubmitReservation(role, roleDefinitions, profile),
@@ -45,6 +46,7 @@ export function useRolePermissions() {
       canEndorseActivity: () => canEndorseActivity(role, roleDefinitions, profile),
       canManageRoomActivityApproval: () => canManageRoomActivityApproval(role, roleDefinitions, profile),
       canManageStudentActivityApproval: () => canManageStudentActivityApproval(role, roleDefinitions, profile),
+      canApproveAny: () => canApproveAnyRequest(role, roleDefinitions, profile),
       canManageRoomMaintenance: () => canManageRoomMaintenance(role, roleDefinitions, profile),
       canManageAssignedRooms: () => canManageAssignedRooms(role, roleDefinitions, profile),
       canManageBuildings: () => canManageBuildings(role, roleDefinitions, profile),
@@ -53,7 +55,7 @@ export function useRolePermissions() {
       canManageAllRooms: () => canManageAllRooms(role),
       canEditRoom: (room) => canEditRoom(profile, room, roleDefinitions),
       canCreateRequestType: (type) => canCreateRequestType(role, type, roleDefinitions, profile),
-      filterRequests: (requests) => filterRequestsForRole(requests, role, profile),
+      filterRequests: (requests) => filterRequestsForRole(requests, role, profile, roleDefinitions),
       filterMyRequests: (requests) => filterMyRequests(requests, profile),
       getRoleDefinition: (roleKey) => getRoleDefinition(roleKey, roleDefinitions),
       isRegistrar: role === 'registrar',
