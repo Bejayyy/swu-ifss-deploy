@@ -129,7 +129,30 @@ export default function WeeklyScheduleGrid({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>{title}</h3>
+        <div>
+          <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>{title}</h3>
+          <p className="text-xs font-bold text-[#7A0808] mt-0.5 flex items-center gap-1.5">
+            <Calendar size={13} className="text-[#7A0808]" />
+            <span>
+              {(() => {
+                const startDate = weekStart || new Date();
+                const endDate = addDays(startDate, 6);
+                const startMonth = startDate.toLocaleString('en-US', { month: 'long' });
+                const endMonth = endDate.toLocaleString('en-US', { month: 'long' });
+                const startYear = startDate.getFullYear();
+                const endYear = endDate.getFullYear();
+
+                if (startYear !== endYear) {
+                  return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+                }
+                if (startMonth !== endMonth) {
+                  return `${startMonth} – ${endMonth} ${startYear}`;
+                }
+                return `${startMonth} ${startYear}`;
+              })()}
+            </span>
+          </p>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canPlot && onAddBlock && (
             <button type="button" className="btn-maroon text-xs gap-1.5 py-1.5 px-3" onClick={onAddBlock}>

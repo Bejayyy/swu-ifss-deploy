@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload } from 'lucide-react';
+import { X, Upload, Plus, Minus } from 'lucide-react';
 
 const R = 10;
 
@@ -8,6 +8,9 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
     name: building?.name || '',
     prefix: building?.prefix || building?.code || '',
     image: building?.image || '',
+    floors: building?.floorData?.length
+      ? building.floorData.map((f) => f.label || `Floor ${f.floor}`)
+      : Array.from({ length: building?.floors || 1 }, (_, i) => `Floor ${i + 1}`),
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -28,6 +31,12 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
     reader.readAsDataURL(file);
   };
 
+  const addFloorRow = () =>
+    setForm((f) => ({ ...f, floors: [...f.floors, `Floor ${f.floors.length + 1}`] }));
+
+  const removeFloor = (i) =>
+    setForm((f) => ({ ...f, floors: f.floors.filter((_, idx) => idx !== i) }));
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -37,6 +46,7 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
         name: form.name.trim() || building.name,
         prefix: form.prefix.trim().toUpperCase() || building.prefix || building.code,
         image: form.image,
+        floorNames: form.floors,
       });
       onClose();
     } catch (err) {
@@ -90,29 +100,78 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
 
           {/* Building Image */}
           <div>
-            <label className="form-label">Building Image</label>
+            <label className="form-label">Building Image / Photo</label>
             {form.image ? (
-              <div className="relative rounded-xl overflow-hidden h-36 border border-gray-200 group mb-2">
+              <div className="relative rounded-xl overflow-hidden h-40 border border-gray-200 group mb-3 shadow-sm bg-gray-50">
                 <img src={form.image} alt="Building preview" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, image: '' }))}
-                  className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-lg opacity-90 hover:opacity-100 transition-opacity"
-                >
-                  <X size={14} />
-                </button>
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
+                  <label className="btn-maroon text-xs gap-1.5 py-1.5 px-3 cursor-pointer shadow-md">
+                    <Upload size={14} /> Change Photo
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, image: '' }))}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-md"
+                  >
+                    <X size={14} /> Remove
+                  </button>
+                </div>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#7A0808] transition-colors bg-gray-50/50">
+              <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#7A0808] hover:bg-red-50/20 transition-all bg-gray-50/50 mb-3">
                 <div className="flex flex-col items-center gap-1">
-                  <Upload size={18} className="text-gray-400" />
-                  <span className="text-xs font-semibold text-gray-600">Upload building image</span>
+                  <div className="w-10 h-10 rounded-full bg-red-50 text-[#7A0808] flex items-center justify-center mb-1">
+                    <Upload size={18} />
+                  </div>
+                  <span className="text-xs font-bold text-gray-700">Click to upload building photo</span>
                   <span className="text-[10px] text-gray-400">PNG, JPG, WEBP up to 5MB</span>
                 </div>
                 <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
               </label>
             )}
           </div>
+
+          {/* Floors Section */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <label className="form-label mb-0">Floors ({form.floors.length} total)</label>
+              <button
+                type="button"
+                onClick={addFloorRow}
+                className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors"
+                style={{ color: '#7A0808', borderColor: '#7A0808' }}
+              >
+                <Plus size={12} /> Add Floor
+              </button>
+            </div>
+            <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+              {form.floors.map((fl, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className="form-input flex-1"
+                    value={fl}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        floors: f.floors.map((x, idx) => (idx === i ? e.target.value : x)),
+                      }))
+                    }
+                  />
+                  {form.floors.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeFloor(i)}
+                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Minus size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="flex gap-2 pt-2">
             <button
               type="button"

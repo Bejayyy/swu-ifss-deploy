@@ -5,7 +5,7 @@ import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserSe
 import { updateAllRoomsOnFloor } from '../../services/buildingService';
 
 export default function AddFloorModal({ buildingId, buildingName, onClose }) {
-  const { addFloor } = useApp();
+  const { addFloor, currentUser } = useApp();
   const [label, setLabel] = useState('');
   const [managedBy, setManagedBy] = useState(''); // Dean UID
   const [applyToAllRooms, setApplyToAllRooms] = useState(false);

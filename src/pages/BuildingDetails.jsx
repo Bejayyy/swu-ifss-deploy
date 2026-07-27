@@ -89,9 +89,6 @@ export default function BuildingDetails() {
           Back
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
-          {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowAddFloor(true)}>
-            <Plus size={14} /> Add Floor
-          </button>}
           {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
             <Edit2 size={14} /> Edit Building
           </button>}

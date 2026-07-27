@@ -119,7 +119,53 @@ export default function RoomFinder() {
     allRooms.forEach((r) => (r.equipment || []).forEach((e) => set.add(e)));
     return [...set].sort();
   }, [allRooms]);
-  const allFloors = useMemo(() => [...new Set(allRooms.map((r) => r.floor))].sort((a, b) => a - b), [allRooms]);
+  // Derive unique saved floors from buildingList and room data for filter options
+  const availableFloors = useMemo(() => {
+    const floorMap = new Map(); // floorNumber -> label
+
+    // Filter building list based on selected building filter if active
+    const targetBuildings = selectedBuildings.length
+      ? buildingList.filter((b) => selectedBuildings.includes(b.id))
+      : buildingList;
+
+    targetBuildings.forEach((b) => {
+      // 1. Check floorData array (saved floors of the building)
+      if (Array.isArray(b.floorData)) {
+        b.floorData.forEach((f) => {
+          const floorNum = Number(f.floor);
+          if (!isNaN(floorNum) && floorNum > 0) {
+            const label = f.label || `Floor ${floorNum}`;
+            if (!floorMap.has(floorNum)) {
+              floorMap.set(floorNum, label);
+            }
+          }
+        });
+      }
+
+      // 2. Check b.floors count
+      const floorsCount = Number(b.floors);
+      if (!isNaN(floorsCount) && floorsCount > 0) {
+        for (let i = 1; i <= floorsCount; i += 1) {
+          if (!floorMap.has(i)) {
+            floorMap.set(i, `Floor ${i}`);
+          }
+        }
+      }
+    });
+
+    // 3. Fallback: check allRooms
+    allRooms.forEach((r) => {
+      if (selectedBuildings.length && !selectedBuildings.includes(r.buildingId)) return;
+      const fNum = Number(r.floor);
+      if (!isNaN(fNum) && fNum > 0 && !floorMap.has(fNum)) {
+        floorMap.set(fNum, r.floorLabel || `Floor ${fNum}`);
+      }
+    });
+
+    return Array.from(floorMap.entries())
+      .map(([floor, label]) => ({ floor, label }))
+      .sort((a, b) => a.floor - b.floor);
+  }, [buildingList, selectedBuildings, allRooms]);
 
   // Active filter count
   const activeFilterCount = useMemo(() => {
@@ -338,8 +384,8 @@ export default function RoomFinder() {
                   onChange={(e) => { setSelectedFloor(e.target.value); setPage(1); }}
                 >
                   <option value="all">All Floors</option>
-                  {allFloors.map((f) => (
-                    <option key={f} value={f}>Floor {f}</option>
+                  {availableFloors.map(({ floor, label }) => (
+                    <option key={floor} value={floor}>{label}</option>
                   ))}
                 </select>
               </div>

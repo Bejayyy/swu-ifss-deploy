@@ -136,41 +136,41 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl w-full max-w-md p-7 relative"
+        className="bg-white rounded-3xl w-full max-w-md p-7 relative shadow-2xl border border-gray-100"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-5 top-5 text-gray-400 hover:text-gray-700"
+          className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100 transition-colors"
         >
-          <X size={20} />
+          <X size={18} />
         </button>
-        <h2 className="text-xl font-black mb-1" style={{ color: '#7A0808' }}>
+        <h2 className="text-xl font-black mb-0.5" style={{ color: '#7A0808' }}>
           Edit Floor
         </h2>
-        <p className="text-xs text-gray-400 mb-6">Update floor details and manager</p>
+        <p className="text-xs text-gray-400 mb-6 font-medium">Update floor details and manager</p>
         {error && (
-          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 mb-4">
             {error}
           </p>
         )}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="form-label">Floor Label</label>
+            <label className="form-label font-bold text-xs" style={{ color: '#2B3235' }}>Floor Label</label>
             <input
               type="text"
-              className="form-input"
+              className="form-input text-sm rounded-xl py-2.5 px-3 border-gray-200 mt-1"
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-              placeholder="e.g. Ground Floor, 1st Floor"
+              placeholder="Floor 1"
               required
             />
           </div>
           <div>
-            <label className="form-label">Floor Manager (Dean)</label>
+            <label className="form-label font-bold text-xs" style={{ color: '#2B3235' }}>Floor Manager (Dean)</label>
             <select
-              className="form-input"
+              className="form-input text-sm rounded-xl py-2.5 px-3 border-gray-200 mt-1"
               value={form.managedBy}
               onChange={handleManagerChange}
               style={{ color: '#2B3235' }}
@@ -182,24 +182,24 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-400 mt-1.5 font-medium">
               Rooms on this floor will inherit this manager by default
             </p>
           </div>
           
           {form.managedBy && rooms.length > 0 && (
             <div className="space-y-3">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <label className="flex items-start gap-2 cursor-pointer">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.applyToAllRooms}
                     onChange={toggleAllRooms}
-                    className="mt-0.5"
+                    className="mt-0.5 rounded text-[#7A0808]"
                   />
                   <div>
                     <span className="text-xs font-bold text-blue-900">Apply to all rooms</span>
-                    <p className="text-[10px] text-blue-700 mt-0.5">
+                    <p className="text-[10px] text-blue-700 mt-0.5 font-medium">
                       Update all {rooms.length} rooms on this floor to be managed by this dean
                     </p>
                   </div>
@@ -207,7 +207,7 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
               </div>
               
               {!form.applyToAllRooms && (
-                <div className="border border-gray-200 rounded-lg p-3 max-h-60 overflow-y-auto">
+                <div className="border border-gray-200 rounded-xl p-3 max-h-52 overflow-y-auto">
                   <p className="text-xs font-semibold text-gray-700 mb-2">
                     Select specific rooms ({selectedRooms.length} of {rooms.length} selected)
                   </p>
@@ -215,7 +215,7 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
                     {rooms.map((room) => (
                       <label
                         key={room.docId}
-                        className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                        className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg"
                       >
                         <input
                           type="checkbox"
@@ -233,18 +233,18 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
             </div>
           )}
           
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="btn-outline-maroon flex-1"
+              className="btn-outline-maroon flex-1 py-2.5 rounded-xl font-bold text-sm"
               disabled={loading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="btn-maroon flex-1 justify-center"
+              className="btn-maroon flex-1 justify-center py-2.5 rounded-xl font-bold text-sm"
               disabled={loading}
             >
               {loading ? 'Saving…' : 'Save changes'}

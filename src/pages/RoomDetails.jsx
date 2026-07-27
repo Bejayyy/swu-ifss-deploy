@@ -518,6 +518,27 @@ export default function RoomDetails() {
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div>
             <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>Room Schedule</h3>
+            <p className="text-xs font-bold text-[#7A0808] mt-0.5 flex items-center gap-1.5">
+              <CalendarIcon size={13} className="text-[#7A0808]" />
+              <span>
+                {(() => {
+                  const startDate = weekStartDate || new Date();
+                  const endDate = addDays(startDate, 6);
+                  const startMonth = startDate.toLocaleString('en-US', { month: 'long' });
+                  const endMonth = endDate.toLocaleString('en-US', { month: 'long' });
+                  const startYear = startDate.getFullYear();
+                  const endYear = endDate.getFullYear();
+
+                  if (startYear !== endYear) {
+                    return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+                  }
+                  if (startMonth !== endMonth) {
+                    return `${startMonth} – ${endMonth} ${startYear}`;
+                  }
+                  return `${startMonth} ${startYear}`;
+                })()}
+              </span>
+            </p>
             <p className="text-xs text-gray-500 mt-1">
               {courseSchedules.length > 0 && `${courseSchedules.length} course schedule${courseSchedules.length !== 1 ? 's' : ''} (repeats weekly)`}
               {courseSchedules.length > 0 && approvedReservations.length > 0 && ' • '}

@@ -184,11 +184,15 @@ export async function addFloorToBuilding(buildingId, floorData) {
 
   // Handle both old format (string) and new format (object)
   const label = typeof floorData === 'string' ? floorData : floorData.label;
+  const managedBy = typeof floorData === 'object' ? floorData.managedBy || null : null;
+  const managedByName = typeof floorData === 'object' ? floorData.managedByName || null : null;
 
   await setDoc(floorRef, {
     buildingId,
     floorNumber,
     label: (label || `Floor ${floorNumber}`).trim(),
+    managedBy,
+    managedByName,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -202,6 +206,7 @@ export async function addFloorToBuilding(buildingId, floorData) {
 }
 
 export async function updateBuildingRecord(buildingId, patch) {
+  const buildingRef = doc(db, COLLECTIONS.BUILDINGS, buildingId);
   const updates = { updatedAt: serverTimestamp() };
   if (patch.name !== undefined) updates.name = patch.name.trim();
   if (patch.prefix !== undefined) {
@@ -211,7 +216,41 @@ export async function updateBuildingRecord(buildingId, patch) {
   }
   if (patch.image !== undefined) updates.image = patch.image;
 
-  await updateDoc(doc(db, COLLECTIONS.BUILDINGS, buildingId), updates);
+  if (Array.isArray(patch.floorNames)) {
+    updates.floors = patch.floorNames.length;
+
+    const floorsColl = collection(buildingRef, COLLECTIONS.FLOORS);
+    const floorsSnap = await getDocs(query(floorsColl, orderBy('floorNumber', 'asc')));
+    const existingDocs = floorsSnap.docs;
+
+    for (let i = 0; i < patch.floorNames.length; i += 1) {
+      const label = patch.floorNames[i].trim() || `Floor ${i + 1}`;
+      if (i < existingDocs.length) {
+        await updateDoc(existingDocs[i].ref, {
+          label,
+          floorNumber: i + 1,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const newFloorRef = doc(floorsColl);
+        await setDoc(newFloorRef, {
+          buildingId,
+          floorNumber: i + 1,
+          label,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
+    if (existingDocs.length > patch.floorNames.length) {
+      for (let i = patch.floorNames.length; i < existingDocs.length; i += 1) {
+        await deleteDoc(existingDocs[i].ref);
+      }
+    }
+  }
+
+  await updateDoc(buildingRef, updates);
 }
 
 export async function addRoomToFloor(buildingId, floorId, floorNumber, room) {
