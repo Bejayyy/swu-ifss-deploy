@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wrench, AlertTriangle, Calendar, CheckCircle, Clock, XCircle, Filter, Search } from 'lucide-react';
+import { Wrench, AlertTriangle, Calendar, CheckCircle, Clock, XCircle, Filter, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import { 
   subscribeMaintenanceSchedules, 
@@ -29,6 +29,9 @@ export default function MaintenanceDashboard() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
   // Subscribe to maintenance schedules
   useEffect(() => {
     const unsubscribe = subscribeMaintenanceSchedules(
@@ -47,25 +50,47 @@ export default function MaintenanceDashboard() {
     return () => unsubscribe();
   }, []);
 
-  // Filter and search
-  const filteredReports = reports.filter((report) => {
-    const statusMatch = filterStatus === 'all' || report.status === filterStatus;
-    const searchMatch = !searchQuery || 
-      report.roomName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.buildingName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.issue?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.reportedByName?.toLowerCase().includes(searchQuery.toLowerCase());
-    return statusMatch && searchMatch;
-  });
+  // Reset pagination on tab, filter, or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, filterStatus, searchQuery]);
 
-  const filteredSchedules = schedules.filter((schedule) => {
-    const statusMatch = filterStatus === 'all' || schedule.status === filterStatus;
-    const searchMatch = !searchQuery ||
-      schedule.roomName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      schedule.buildingName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      schedule.reason?.toLowerCase().includes(searchQuery.toLowerCase());
-    return statusMatch && searchMatch;
-  });
+  // Filter and search
+  const filteredReports = useMemo(() => {
+    return reports.filter((report) => {
+      const statusMatch = filterStatus === 'all' || report.status === filterStatus;
+      const searchMatch = !searchQuery || 
+        report.roomName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        report.buildingName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        report.issue?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        report.reportedByName?.toLowerCase().includes(searchQuery.toLowerCase());
+      return statusMatch && searchMatch;
+    });
+  }, [reports, filterStatus, searchQuery]);
+
+  const filteredSchedules = useMemo(() => {
+    return schedules.filter((schedule) => {
+      const statusMatch = filterStatus === 'all' || schedule.status === filterStatus;
+      const searchMatch = !searchQuery ||
+        schedule.roomName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        schedule.buildingName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        schedule.reason?.toLowerCase().includes(searchQuery.toLowerCase());
+      return statusMatch && searchMatch;
+    });
+  }, [schedules, filterStatus, searchQuery]);
+
+  // Current active list and pagination math
+  const currentList = activeTab === 'reports' ? filteredReports : filteredSchedules;
+  const totalItems = currentList.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  const paginatedList = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return currentList.slice(start, start + itemsPerPage);
+  }, [currentList, currentPage, itemsPerPage]);
+
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endIndex = Math.min(currentPage * itemsPerPage, totalItems);
 
   // Stats
   const reportStats = {
@@ -399,226 +424,260 @@ export default function MaintenanceDashboard() {
         </div>
       </div>
 
-      {/* Content */}
-      {activeTab === 'reports' ? (
-        <div className="space-y-6">
-          {/* Pending Repair Tickets */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-bold text-base text-[#2B3235]">🔴 Pending Repair Tickets</h2>
-                <p className="text-xs text-gray-500 mt-1">New reports that need immediate attention</p>
-              </div>
-              <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
-                {filteredReports.filter(r => r.status === 'pending').length} NEW
-              </span>
-            </div>
-            
-            {filteredReports.filter(r => r.status === 'pending').length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <CheckCircle size={36} className="mx-auto mb-2" />
-                <p className="text-sm">No pending repair tickets. Great job!</p>
-              </div>
+      {/* Tabulated Content */}
+      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+        <h2 className="font-bold text-base mb-4 text-[#2B3235]">
+          {activeTab === 'reports' ? 'Maintenance Reports' : 'Maintenance Schedules'}
+        </h2>
+
+        {totalItems === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            {activeTab === 'reports' ? (
+              <AlertTriangle size={48} className="mx-auto mb-3" />
             ) : (
-              <div className="space-y-3">
-                {filteredReports.filter(r => r.status === 'pending').map((report) => (
-                  <div key={report.id} className="border-2 border-red-200 bg-red-50 rounded-xl p-5">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className={`p-2 rounded-lg ${report.priority === 'urgent' || report.priority === 'high' ? 'bg-red-200' : 'bg-orange-200'}`}>
-                          <AlertTriangle size={20} className={report.priority === 'urgent' || report.priority === 'high' ? 'text-red-700' : 'text-orange-700'} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getPriorityColor(report.priority)}`}>
+              <Calendar size={48} className="mx-auto mb-3" />
+            )}
+            <p className="text-sm font-bold mb-1">
+              No maintenance {activeTab === 'reports' ? 'reports' : 'schedules'} found
+            </p>
+            <p className="text-xs">
+              {activeTab === 'reports' 
+                ? 'Tickets will appear here when users report maintenance issues.' 
+                : 'Schedule maintenance from room details pages.'}
+            </p>
+          </div>
+        ) : (
+          <>
+            {activeTab === 'reports' ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[700px]">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50/50 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Priority & Status</th>
+                      <th className="py-3 px-4">Room & Building</th>
+                      <th className="py-3 px-4">Issue Description</th>
+                      <th className="py-3 px-4">Reported By & Date</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs">
+                    {paginatedList.map((report) => (
+                      <tr 
+                        key={report.id} 
+                        className={`hover:bg-gray-50/80 transition-colors ${
+                          report.status === 'pending' ? 'bg-red-50/30' : ''
+                        }`}
+                      >
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="flex flex-col gap-1.5 items-start">
+                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${getPriorityColor(report.priority)}`}>
                               {report.priority?.toUpperCase() || 'MEDIUM'} PRIORITY
                             </span>
-                            <span className="text-xs font-bold text-red-600">⚠️ NEEDS ACTION</span>
+                            <span className={getStatusBadge(report.status)}>
+                              {report.status?.replace('-', ' ').toUpperCase() || 'PENDING'}
+                            </span>
                           </div>
-                          <h3 className="font-bold text-sm text-[#2B3235] mb-1">
-                            {report.roomName} - {report.buildingName}
-                          </h3>
-                          <p className="text-xs text-gray-700 mb-2 font-semibold">{report.issue}</p>
-                          <div className="flex items-center gap-4 text-xs text-gray-600">
-                            <span>👤 {report.reportedByName}</span>
-                            <span>•</span>
-                            <span>📧 {report.reportedByEmail || 'N/A'}</span>
-                            <span>•</span>
-                            <span>🕐 {new Date(report.createdAt?.seconds * 1000 || Date.now()).toLocaleString()}</span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-gray-900 text-sm">{report.roomName}</div>
+                          <div className="text-gray-500 text-xs">{report.buildingName}</div>
+                        </td>
+                        <td className="py-3.5 px-4 max-w-xs">
+                          <p className="font-semibold text-gray-800 line-clamp-2">{report.issue}</p>
+                          {report.acknowledgedByName && (
+                            <p className="text-[11px] text-green-600 mt-0.5 font-medium">
+                              ✓ Ack by {report.acknowledgedByName}
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="font-semibold text-gray-800">{report.reportedByName || 'Unknown'}</div>
+                          <div className="text-gray-400 text-[11px]">
+                            {report.createdAt?.seconds ? new Date(report.createdAt.seconds * 1000).toLocaleString() : 'N/A'}
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => handleAcknowledge(report.id)}
-                        className="px-4 py-2 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition-all"
-                      >
-                        ✓ Acknowledge Report
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleScheduleFromReport(report)}
-                        className="px-4 py-2 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all"
-                      >
-                        📅 Schedule Maintenance
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* All Repair Tickets */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-            <h2 className="font-bold text-base mb-4 text-[#2B3235]">All Repair Tickets</h2>
-            
-            {filteredReports.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <AlertTriangle size={48} className="mx-auto mb-3" />
-                <p className="text-sm font-bold mb-1">No repair tickets found</p>
-                <p className="text-xs">Tickets will appear here when users report maintenance issues.</p>
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {report.status === 'pending' && !report.scheduleId && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcknowledge(report.id)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-600 text-green-700 hover:bg-green-50 transition-colors"
+                                >
+                                  Acknowledge
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleScheduleFromReport(report)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                                >
+                                  📅 Schedule
+                                </button>
+                              </>
+                            )}
+                            {report.status === 'acknowledged' && !report.scheduleId && (
+                              <button
+                                type="button"
+                                onClick={() => handleScheduleFromReport(report)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                              >
+                                📅 Schedule
+                              </button>
+                            )}
+                            {report.scheduleId && (report.status === 'pending' || report.status === 'acknowledged') && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartProgress(report.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                              >
+                                🔧 Start Repair
+                              </button>
+                            )}
+                            {report.status === 'in-progress' && (
+                              <button
+                                type="button"
+                                onClick={() => handleResolve(report.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition-colors"
+                              >
+                                ✓ Resolve
+                              </button>
+                            )}
+                            {report.status === 'resolved' && (
+                              <span className="text-xs font-semibold text-gray-500">Completed</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filteredReports.map((report) => (
-                  <div key={report.id} className="border border-gray-100 rounded-xl p-5 hover:shadow-sm transition-shadow">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getPriorityColor(report.priority)}`}>
-                            {report.priority?.toUpperCase() || 'MEDIUM'} PRIORITY
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[650px]">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50/50 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Room & Building</th>
+                      <th className="py-3 px-4">Reason / Notes</th>
+                      <th className="py-3 px-4">Schedule Window</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs">
+                    {paginatedList.map((schedule) => (
+                      <tr key={schedule.id} className="hover:bg-gray-50/80 transition-colors">
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className={getStatusBadge(schedule.status)}>
+                            {schedule.status?.replace('-', ' ').toUpperCase() || 'SCHEDULED'}
                           </span>
-                          <span className={getStatusBadge(report.status)}>
-                            {report.status?.replace('-', ' ').toUpperCase() || 'PENDING'}
-                          </span>
-                        </div>
-                        <h3 className="font-bold text-sm text-[#2B3235] mb-1">
-                          📍 {report.roomName} - {report.buildingName}
-                        </h3>
-                        <p className="text-xs text-gray-600 mb-2">{report.issue}</p>
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>Reported by: {report.reportedByName}</span>
-                          <span>•</span>
-                          <span>{new Date(report.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}</span>
-                        </div>
-                        {report.acknowledgedByName && (
-                          <p className="text-xs text-green-600 mt-1">
-                            ✓ Acknowledged by {report.acknowledgedByName}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      {report.status === 'pending' && !report.scheduleId && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleAcknowledge(report.id)}
-                            className="btn-outline-maroon text-xs py-2 px-4"
-                          >
-                            Acknowledge
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleScheduleFromReport(report)}
-                            className="px-4 py-2 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all"
-                          >
-                            📅 Schedule Maintenance
-                          </button>
-                        </>
-                      )}
-                      {report.status === 'acknowledged' && !report.scheduleId && (
-                        <button
-                          type="button"
-                          onClick={() => handleScheduleFromReport(report)}
-                          className="px-4 py-2 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all"
-                        >
-                          📅 Schedule Maintenance
-                        </button>
-                      )}
-                      {report.scheduleId && (report.status === 'pending' || report.status === 'acknowledged') && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-green-600">✓ Maintenance scheduled</span>
-                          <button
-                            type="button"
-                            onClick={() => handleStartProgress(report.id)}
-                            className="px-4 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-all"
-                          >
-                            🔧 Start Repair
-                          </button>
-                        </div>
-                      )}
-                      {report.status === 'in-progress' && (
-                        <button
-                          type="button"
-                          onClick={() => handleResolve(report.id)}
-                          className="px-4 py-2 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition-all"
-                        >
-                          ✓ Mark as Resolved
-                        </button>
-                      )}
-                      {report.status === 'resolved' && (
-                        <span className="text-xs font-semibold text-gray-500">✓ Resolved</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-gray-900 text-sm">{schedule.roomName}</div>
+                          <div className="text-gray-500 text-xs">{schedule.buildingName}</div>
+                        </td>
+                        <td className="py-3.5 px-4 max-w-xs">
+                          <p className="font-semibold text-gray-800 line-clamp-2">{schedule.reason}</p>
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="font-semibold text-gray-800">Start: {schedule.startDate}</div>
+                          <div className="text-gray-500 text-[11px]">End: {schedule.endDate}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          {schedule.status !== 'completed' && schedule.status !== 'cancelled' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteSchedule(schedule.id)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                            >
+                              Complete Maintenance
+                            </button>
+                          ) : (
+                            <span className="text-xs font-semibold text-gray-400">Restored</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-          <h2 className="font-bold text-base mb-4 text-[#2B3235]">Maintenance Schedules</h2>
-          
-          {filteredSchedules.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Calendar size={48} className="mx-auto mb-3" />
-              <p className="text-sm font-bold mb-1">No maintenance schedules found</p>
-              <p className="text-xs">Schedule maintenance from room details pages.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredSchedules.map((schedule) => (
-                <div key={schedule.id} className="border border-gray-100 rounded-xl p-5">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={getStatusBadge(schedule.status)}>
-                          {schedule.status?.replace('-', ' ') || 'Scheduled'}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-sm text-[#2B3235] mb-1">
-                        {schedule.roomName} - {schedule.buildingName}
-                      </h3>
-                      <p className="text-xs text-gray-600 mb-2">{schedule.reason}</p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span>Start: {schedule.startDate}</span>
-                        <span>•</span>
-                        <span>End: {schedule.endDate}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {schedule.status !== 'completed' && schedule.status !== 'cancelled' && (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCompleteSchedule(schedule.id)}
-                        className="btn-maroon text-xs py-2 px-4"
-                      >
-                        Complete Maintenance
-                      </button>
-                    </div>
-                  )}
+
+            {/* Pagination Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-gray-100 text-xs text-gray-500">
+              <div>
+                Showing <span className="font-bold text-gray-800">{startIndex}</span> to{' '}
+                <span className="font-bold text-gray-800">{endIndex}</span> of{' '}
+                <span className="font-bold text-gray-800">{totalItems}</span> entries
+              </div>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span>Rows:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-semibold focus:outline-none"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
                 </div>
-              ))}
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 transition-colors"
+                  >
+                    <ChevronLeft size={15} /> Prev
+                  </button>
+
+                  {Array.from({ length: totalPages }, (_, idx) => idx + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, i, arr) => {
+                      const prev = arr[i - 1];
+                      const showEllipsis = prev && p - prev > 1;
+
+                      return (
+                        <React.Fragment key={p}>
+                          {showEllipsis && <span className="px-1 text-gray-400 font-bold">…</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                              currentPage === p
+                                ? 'bg-[#800000] text-white shadow-xs'
+                                : 'text-gray-600 hover:bg-gray-100 border border-gray-200'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 transition-colors"
+                  >
+                    Next <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
@@ -633,7 +692,7 @@ export default function MaintenanceDashboard() {
           }}
           room={{
             id: selectedReport.roomId,
-            docId: selectedReport.roomDocId || selectedReport.roomId, // Use roomDocId if available
+            docId: selectedReport.roomDocId || selectedReport.roomId,
             name: selectedReport.roomName,
             buildingId: selectedReport.buildingId,
           }}

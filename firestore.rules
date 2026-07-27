@@ -57,11 +57,27 @@ service cloud.firestore {
             userDoc().data.permissions != null
             && permission in userDoc().data.permissions
           )
+          || (
+            userDoc().data.role == 'gsd'
+            && permission in [
+              'buildings.manage',
+              'rooms.maintenance.manage',
+              'approval.manage.room.activity',
+              'room.availability.view',
+              'room.schedules.view',
+              'academic.calendar.view'
+            ]
+          )
+          || (
+            roleDefinitionExists(userDoc().data.role)
+            && permission in get(/databases/$(database)/documents/role_definitions/$(userDoc().data.role)).data.permissions
+          )
         );
     }
 
     function canManageBuildings() {
-      return hasPermission('buildings.manage');
+      return hasPermission('buildings.manage')
+        || (isSignedIn() && userDocExists() && userDoc().data.role == 'gsd');
     }
 
     function canManageRoomActivityApproval() {

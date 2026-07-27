@@ -103,6 +103,7 @@ const ROLE_NAV_KEYS = {
     'approvalWorkflow',
     'approvals',
     'reports',
+    'maintenanceDashboard',
   ],
   [ROLES.DEAN]: [
     'dashboard',
@@ -213,14 +214,22 @@ export function sortNavKeys(navKeys = []) {
 
 export function getEffectiveNavKeys(profile, roleDefinitions = {}) {
   if (!profile?.role) return [];
-  if (profile.role === ROLES.REGISTRAR) return ROLE_NAV_KEYS[ROLES.REGISTRAR];
   let keys = [];
-  if (Array.isArray(profile.navKeys) && profile.navKeys.length > 0) {
+  if (profile.role === ROLES.REGISTRAR) {
+    keys = ROLE_NAV_KEYS[ROLES.REGISTRAR] || [];
+  } else if (Array.isArray(profile.navKeys) && profile.navKeys.length > 0) {
     keys = profile.navKeys;
   } else {
     keys = getRoleDefinition(profile.role, roleDefinitions).navKeys || [];
   }
-  return sortNavKeys(keys);
+
+  const sorted = sortNavKeys(keys);
+  const canMaintenance = profile.role === ROLES.GSD || profile.role === ROLES.REGISTRAR || hasEffectivePermission(profile, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE, roleDefinitions);
+  if (canMaintenance && !sorted.includes('maintenanceDashboard')) {
+    sorted.push('maintenanceDashboard');
+    return sortNavKeys(sorted);
+  }
+  return sorted;
 }
 
 export function hasEffectivePermission(profile, permission, roleDefinitions = {}) {
@@ -272,8 +281,13 @@ export function canAccessRoute(role, pathname, roleDefinitions = {}) {
 }
 
 export function getNavItemsForRole(role, roleDefinitions = {}) {
-  const keys = sortNavKeys(getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[ROLES.TEACHER] || []);
+  const rawKeys = getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[role] || ROLE_NAV_KEYS[ROLES.TEACHER] || [];
   const perms = getPermissionsForRole(role, roleDefinitions);
+  let keys = sortNavKeys(rawKeys);
+  if ((role === ROLES.GSD || role === ROLES.REGISTRAR || perms.includes(PERMISSIONS.ROOMS_MAINTENANCE_MANAGE)) && !keys.includes('maintenanceDashboard')) {
+    keys = sortNavKeys([...keys, 'maintenanceDashboard']);
+  }
+
   return keys
     .map((key) => NAV_ITEMS[key])
     .filter(Boolean)

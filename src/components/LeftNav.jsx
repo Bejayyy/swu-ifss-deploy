@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, BookOpen,
   Search, Clock, Building2, GraduationCap, BarChart2,
-  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch, Users,
+  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch, Users, Wrench,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
+import { isReservationActionable } from '../constants/approvalWorkflow';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import systemLogo from '../assets/logo.png';
 
@@ -24,7 +26,7 @@ const NAV_ICONS = {
   '/approval-workflow': GitBranch,
   '/approvals': CheckSquare,
   '/reports': BarChart2,
-  '/maintenance-dashboard': Building2,
+  '/maintenance-dashboard': Wrench,
 };
 
 export default function LeftNav({
@@ -35,11 +37,59 @@ export default function LeftNav({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { navItems, approvalsNavLabel, canManageBuildings, filterRequests } = useRolePermissions();
+  const { navItems, approvalsNavLabel, canManageBuildings } = useRolePermissions();
   const { buildingList, requests, expandedBuildings, expandedFloors, toggleBuilding, toggleFloor } = useApp();
-  const pendingCount = filterRequests(requests).filter(
-    (r) => r.status === 'Pending' || r.status === 'In Progress',
-  ).length;
+  const { profile } = useAuth();
+
+  const [viewedIds, setViewedIds] = useState(() => {
+    if (!profile?.uid) return [];
+    try {
+      const saved = localStorage.getItem(`viewed_approvals_${profile.uid}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (profile?.uid) {
+      try {
+        const saved = localStorage.getItem(`viewed_approvals_${profile.uid}`);
+        if (saved) setViewedIds(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, [profile?.uid]);
+
+  const actionableRequests = useMemo(() => {
+    if (!requests?.length || !profile?.role) return [];
+    return requests.filter((r) => isReservationActionable(r, profile.role, profile));
+  }, [requests, profile]);
+
+  const unviewedCount = useMemo(() => {
+    return actionableRequests.filter((r) => !viewedIds.includes(r.id)).length;
+  }, [actionableRequests, viewedIds]);
+
+  const markApprovalsAsViewed = () => {
+    if (!actionableRequests.length) return;
+    const currentIds = actionableRequests.map((r) => r.id);
+    const updated = Array.from(new Set([...viewedIds, ...currentIds]));
+    setViewedIds(updated);
+    if (profile?.uid) {
+      try {
+        localStorage.setItem(`viewed_approvals_${profile.uid}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+  };
+
+  useEffect(() => {
+    if (location.pathname === '/approvals' && actionableRequests.length > 0) {
+      const currentIds = actionableRequests.map((r) => r.id);
+      const hasUnviewed = currentIds.some((id) => !viewedIds.includes(id));
+      if (hasUnviewed) {
+        markApprovalsAsViewed();
+      }
+    }
+  }, [location.pathname, actionableRequests, viewedIds]);
 
   const resolvedNavItems = navItems.map((item) => ({
     ...item,
@@ -89,6 +139,9 @@ export default function LeftNav({
               key={path}
               type="button"
               onClick={() => {
+                if (path === '/approvals') {
+                  markApprovalsAsViewed();
+                }
                 navigate(path);
                 if (!isDesktop) onClose();
               }}
@@ -105,9 +158,9 @@ export default function LeftNav({
               >
                 {label}
               </span>
-              {path === '/approvals' && pendingCount > 0 && (
+              {path === '/approvals' && unviewedCount > 0 && (
                 <span className="bg-[#800000] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-md flex items-center justify-center flex-shrink-0">
-                  {pendingCount}
+                  {unviewedCount}
                 </span>
               )}
             </button>

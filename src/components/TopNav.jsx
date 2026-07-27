@@ -7,7 +7,7 @@ import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { getInitials } from '../firebase/authHelpers';
-import { getActivePendingRecord } from '../constants/approvalWorkflow';
+import { getActivePendingRecord, isReservationActionable } from '../constants/approvalWorkflow';
 import { subscribeMaintenanceReports } from '../services/maintenanceService';
 import { getRoleLabel } from '../constants/rolePermissions';
 
@@ -114,19 +114,9 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     const maintenanceNotifications = [];
 
     // Approval notifications
-    if (requests && profile?.role) {
+    if (requests && profile?.role && profile) {
       requests.forEach((req) => {
-        const pending = getActivePendingRecord(req.approvalRecords);
-        
-        // Only show notifications for requests where this user's role is pending
-        if (!pending || pending.roleId !== profile.role) return;
-
-        // Check if user is the correct dean by college
-        if (profile.role === 'dean' && req.college) {
-          const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
-          const normalizedReqCollege = (req.college || '').trim().toLowerCase();
-          if (normalizedProfileCollege !== normalizedReqCollege) return;
-        }
+        if (!isReservationActionable(req, profile.role, profile)) return;
 
         const timeAgo = getTimeAgo(req.createdAt);
         const requestType = req.type === 'academic' ? 'Academic' : 'Non-Academic';

@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Plus, ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
-import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import { useModal } from '../hooks/useModal';
 import ProgressStatCards from '../components/ProgressStatCards';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
@@ -13,6 +12,7 @@ import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS, isR
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
 import { formatCollegeName } from '../constants/colleges';
+import { deleteRoomReservation } from '../services/reservationService';
 
 function formatReadableDate(dateInput) {
   if (!dateInput) return '—';
@@ -65,7 +65,6 @@ export default function ApprovalManagement() {
     role,
     roleLabel,
     canSubmitReservation,
-    canCreateRequestType,
     canEndorseActivity,
     canManageRoomActivityApproval,
     canManageStudentActivityApproval,
@@ -87,7 +86,6 @@ export default function ApprovalManagement() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [showSection, setShowSection] = useState(initialSection);
-  const { openReservation } = useRoomReservationFlow();
 
   useEffect(() => {
     if (!hasApprovalPermission && showSection !== 'my-requests') {
@@ -97,8 +95,6 @@ export default function ApprovalManagement() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  const canCreateAny = canCreateRequestType('academic') || canCreateRequestType('non-academic');
 
   const actionableRoleRequests = useMemo(() => {
     if (!hasApprovalPermission || !requests?.length || !profile || !role) return [];
@@ -246,14 +242,6 @@ export default function ApprovalManagement() {
 
   return (
     <Layout title="Approval Management" subtitle={subtitle}>
-      {canCreateAny && (
-        <div className="flex justify-end mb-5 relative">
-          <button type="button" className="btn-maroon text-xs" onClick={() => openReservation()}>
-            <Plus size={16} /> New Reservation
-          </button>
-        </div>
-      )}
-
       <div className="mb-6">
         <ProgressStatCards items={stats} />
       </div>
