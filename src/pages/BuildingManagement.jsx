@@ -395,14 +395,16 @@ export default function BuildingManagement() {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => navigate(`/building/${building.id}`)}
-                className="w-full mt-5 py-3 rounded-xl font-bold text-sm transition-all"
-                style={{ background: '#7A0808', color: 'white' }}
-              >
-                Manage floors & rooms
-              </button>
+              {(canManageBuildings() || canManageAssignedRooms()) && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/building/${building.id}`)}
+                  className="w-full mt-5 py-3 rounded-xl font-bold text-sm transition-all"
+                  style={{ background: '#7A0808', color: 'white' }}
+                >
+                  Manage floors & rooms
+                </button>
+              )}
             </div>
           )}
         </div>

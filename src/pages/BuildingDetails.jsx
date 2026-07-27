@@ -145,7 +145,7 @@ export default function BuildingDetails() {
                 <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>
                   {floorEntry.label || `Floor ${activeFloor}`} Overview
                 </h3>
-                {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && (
+                {(canManageBuilding || canManageAssignedRooms()) && (
                   <button
                     type="button"
                     onClick={() => setEditFloor(floorEntry)}
@@ -247,7 +247,7 @@ export default function BuildingDetails() {
                         >
                           View
                         </button>
-                        {(canManageBuilding || canManageAssignedRooms() || canEditRoom(room) || isRegistrar) && (
+                        {(canManageBuilding || canManageAssignedRooms() || canEditRoom(room)) && (
                           <button
                             type="button"
                             onClick={() => setEditRoom(room)}
@@ -265,7 +265,7 @@ export default function BuildingDetails() {
               </div>
             )}
 
-            {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && (
+            {(canManageBuilding || canManageAssignedRooms()) && (
               <button
                 type="button"
                 onClick={() => setShowAddRoom(true)}
@@ -315,7 +315,7 @@ export default function BuildingDetails() {
 
       {modals}
 
-      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showAddRoom && floorEntry.floorId && (
+      {(canManageBuilding || canManageAssignedRooms()) && showAddRoom && floorEntry.floorId && (
         <AddRoomModal
           buildingId={building.id}
           buildingPrefix={building.prefix || building.code}
@@ -326,21 +326,21 @@ export default function BuildingDetails() {
           onClose={() => setShowAddRoom(false)}
         />
       )}
-      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showAddFloor && (
+      {(canManageBuilding || canManageAssignedRooms()) && showAddFloor && (
         <AddFloorModal
           buildingId={building.id}
           buildingName={building.name}
           onClose={() => setShowAddFloor(false)}
         />
       )}
-      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && showEditBuilding && (
+      {canManageBuilding && showEditBuilding && (
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
           onSave={updateBuilding}
         />
       )}
-      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && editRoom && floorEntry.floorId && (
+      {(canManageBuilding || canManageAssignedRooms() || (editRoom && canEditRoom(editRoom))) && editRoom && floorEntry.floorId && (
         <EditRoomModal
           room={editRoom}
           buildingId={building.id}
@@ -349,7 +349,7 @@ export default function BuildingDetails() {
           onClose={() => setEditRoom(null)}
         />
       )}
-      {(canManageBuilding || canManageAssignedRooms() || isRegistrar) && editFloor && (
+      {(canManageBuilding || canManageAssignedRooms()) && editFloor && (
         <EditFloorModal
           buildingId={building.id}
           floor={editFloor}
