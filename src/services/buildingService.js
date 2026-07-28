@@ -2,9 +2,12 @@ import {
   collection,
   collectionGroup,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -139,12 +142,27 @@ export function subscribeToBuildings(onData, onError) {
   };
 }
 
-export async function createBuilding({ name, prefix, manager, floorNames, image, contact, email }) {
+export async function createBuilding({
+  name,
+  prefix,
+  manager,
+  numFloors,
+  roomsPerFloor = 0,
+  floorNames,
+  image,
+  contact,
+  email,
+}) {
   const trimmedName = name.trim();
   if (!trimmedName) throw new Error('Building name is required.');
 
   const buildingRef = doc(collection(db, COLLECTIONS.BUILDINGS));
   const code = (prefix?.trim() || generateBuildingCode(trimmedName)).toUpperCase();
+
+  const totalFloors = Math.max(1, numFloors || (Array.isArray(floorNames) ? floorNames.length : 1));
+  const rPerFloor = Math.max(0, Number(roomsPerFloor) || 0);
+  const totalRooms = totalFloors * rPerFloor;
+
   const batch = writeBatch(db);
 
   batch.set(buildingRef, {
@@ -152,22 +170,48 @@ export async function createBuilding({ name, prefix, manager, floorNames, image,
     code,
     prefix: code,
     image: image || '',
-    totalRooms: 0,
-    floors: floorNames.length,
+    totalRooms,
+    floors: totalFloors,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  floorNames.forEach((label, index) => {
+  for (let fIndex = 1; fIndex <= totalFloors; fIndex += 1) {
+    const floorLabel = Array.isArray(floorNames) && floorNames[fIndex - 1]
+      ? floorNames[fIndex - 1].trim()
+      : `Floor ${fIndex}`;
+
     const floorRef = doc(collection(buildingRef, COLLECTIONS.FLOORS));
     batch.set(floorRef, {
       buildingId: buildingRef.id,
-      floorNumber: index + 1,
-      label: (label || `Floor ${index + 1}`).trim(),
+      floorNumber: fIndex,
+      label: floorLabel,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-  });
+
+    // Auto-generate rooms per floor: e.g. TH - 101, TH - 102, etc.
+    for (let rIndex = 1; rIndex <= rPerFloor; rIndex += 1) {
+      const roomNumPadded = String(rIndex).padStart(2, '0');
+      const roomName = `${code} - ${fIndex}${roomNumPadded}`;
+
+      const roomRef = doc(collection(floorRef, COLLECTIONS.ROOMS));
+      batch.set(roomRef, {
+        buildingId: buildingRef.id,
+        floorId: floorRef.id,
+        floorNumber: fIndex,
+        roomCode: roomName,
+        name: roomName,
+        type: 'Classroom',
+        status: 'Available',
+        capacity: 40,
+        equipment: [],
+        maintenanceStatus: 'operational',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
 
   await batch.commit();
   return buildingRef.id;
@@ -208,13 +252,60 @@ export async function addFloorToBuilding(buildingId, floorData) {
 export async function updateBuildingRecord(buildingId, patch) {
   const buildingRef = doc(db, COLLECTIONS.BUILDINGS, buildingId);
   const updates = { updatedAt: serverTimestamp() };
+
+  // Fetch current building snapshot to check for prefix changes
+  const buildingSnap = await getDoc(buildingRef);
+  const currentData = buildingSnap.exists() ? buildingSnap.data() : {};
+  const oldPrefix = (currentData.prefix || currentData.code || '').trim().toUpperCase();
+
   if (patch.name !== undefined) updates.name = patch.name.trim();
+
+  let newPrefix = oldPrefix;
   if (patch.prefix !== undefined) {
-    const p = patch.prefix.trim().toUpperCase();
-    updates.prefix = p;
-    updates.code = p;
+    newPrefix = patch.prefix.trim().toUpperCase();
+    updates.prefix = newPrefix;
+    updates.code = newPrefix;
   }
   if (patch.image !== undefined) updates.image = patch.image;
+
+  // Sync prefix across all existing rooms under this building if prefix has changed
+  if (oldPrefix && newPrefix && oldPrefix !== newPrefix) {
+    try {
+      const floorsColl = collection(buildingRef, COLLECTIONS.FLOORS);
+      const floorsSnap = await getDocs(floorsColl);
+
+      for (const floorDoc of floorsSnap.docs) {
+        const roomsColl = collection(floorDoc.ref, COLLECTIONS.ROOMS);
+        const roomsSnap = await getDocs(roomsColl);
+
+        for (const roomDoc of roomsSnap.docs) {
+          const roomData = roomDoc.data();
+          const oldName = roomData.name || roomData.roomCode || '';
+          const oldCode = roomData.roomCode || oldName;
+
+          let updatedName = oldName;
+          let updatedCode = oldCode;
+
+          if (oldName.toUpperCase().startsWith(oldPrefix)) {
+            updatedName = newPrefix + oldName.slice(oldPrefix.length);
+          }
+          if (oldCode.toUpperCase().startsWith(oldPrefix)) {
+            updatedCode = newPrefix + oldCode.slice(oldPrefix.length);
+          }
+
+          if (updatedName !== oldName || updatedCode !== oldCode) {
+            await updateDoc(roomDoc.ref, {
+              name: updatedName,
+              roomCode: updatedCode,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error updating room prefixes:', err);
+    }
+  }
 
   if (Array.isArray(patch.floorNames)) {
     updates.floors = patch.floorNames.length;

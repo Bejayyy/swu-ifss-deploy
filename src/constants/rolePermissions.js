@@ -28,7 +28,9 @@ const GENERAL_PERMISSIONS = [
 ];
 
 const ROLE_PERMISSIONS = {
-  [ROLES.REGISTRAR]: Object.values(PERMISSIONS),
+  [ROLES.REGISTRAR]: Object.values(PERMISSIONS).filter(
+    (p) => p !== PERMISSIONS.ROOMS_MAINTENANCE_MANAGE
+  ),
   [ROLES.DEAN]: [
     ...GENERAL_PERMISSIONS,
     PERMISSIONS.SCHEDULING_SUBMIT,
@@ -84,6 +86,7 @@ export const NAV_ITEMS = {
   roomFinder: { label: 'Room Finder', path: '/room-finder', permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
   academicCalendar: { label: 'Academic Calendar', path: '/academic-calendar', permission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
   courseScheduling: { label: 'Course Scheduling', path: '/course-scheduling', permission: PERMISSIONS.SCHEDULING_SUBMIT },
+  teachers: { label: 'Teachers', path: '/teachers', permission: null },
   collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: PERMISSIONS.SYSTEM_ADMIN },
   approvalWorkflow: { label: 'Approval Workflow', path: '/approval-workflow', permission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
   approvals: { label: 'Request Management', path: '/approvals', permission: null },
@@ -99,11 +102,11 @@ const ROLE_NAV_KEYS = {
     'roomFinder',
     'academicCalendar',
     'courseScheduling',
+    'teachers',
     'collegeInventory',
     'approvalWorkflow',
     'approvals',
     'reports',
-    'maintenanceDashboard',
   ],
   [ROLES.DEAN]: [
     'dashboard',
@@ -111,6 +114,7 @@ const ROLE_NAV_KEYS = {
     'roomFinder',
     'academicCalendar',
     'courseScheduling',
+    'teachers',
     'approvals',
   ],
   [ROLES.GSD]: [
@@ -195,11 +199,11 @@ export const REGISTRAR_NAV_ORDER = [
   'roomFinder',
   'academicCalendar',
   'courseScheduling',
+  'teachers',
   'collegeInventory',
   'approvalWorkflow',
   'approvals',
   'reports',
-  'maintenanceDashboard',
 ];
 
 export function sortNavKeys(navKeys = []) {
@@ -224,7 +228,7 @@ export function getEffectiveNavKeys(profile, roleDefinitions = {}) {
   }
 
   const sorted = sortNavKeys(keys);
-  const canMaintenance = profile.role === ROLES.GSD || profile.role === ROLES.REGISTRAR || hasEffectivePermission(profile, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE, roleDefinitions);
+  const canMaintenance = profile.role === ROLES.GSD || (profile.role !== ROLES.REGISTRAR && hasEffectivePermission(profile, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE, roleDefinitions));
   if (canMaintenance && !sorted.includes('maintenanceDashboard')) {
     sorted.push('maintenanceDashboard');
     return sortNavKeys(sorted);
@@ -234,7 +238,10 @@ export function getEffectiveNavKeys(profile, roleDefinitions = {}) {
 
 export function hasEffectivePermission(profile, permission, roleDefinitions = {}) {
   if (!profile?.role || !permission) return false;
-  if (profile.role === ROLES.REGISTRAR) return true;
+  if (profile.role === ROLES.REGISTRAR) {
+    if (permission === PERMISSIONS.ROOMS_MAINTENANCE_MANAGE) return false;
+    return true;
+  }
   return getEffectivePermissions(profile, roleDefinitions).includes(permission);
 }
 
@@ -249,6 +256,9 @@ export function getEffectiveNavItems(profile, roleDefinitions = {}) {
 
 export function canAccessRouteForProfile(profile, pathname, roleDefinitions = {}) {
   if (!profile?.role) return false;
+  if (pathname.startsWith('/maintenance-dashboard') && profile.role === ROLES.REGISTRAR) {
+    return false;
+  }
   if (profile.role === ROLES.REGISTRAR) return true;
 
   const basePath = pathname.split('/').slice(0, 2).join('/') || pathname;
@@ -270,12 +280,16 @@ export function getPermissionsForRole(role, roleDefinitions = {}) {
 
 export function hasPermission(role, permission, roleDefinitions = {}) {
   if (!role || !permission) return false;
-  if (role === ROLES.REGISTRAR) return true;
+  if (role === ROLES.REGISTRAR) {
+    if (permission === PERMISSIONS.ROOMS_MAINTENANCE_MANAGE) return false;
+    return true;
+  }
   return getPermissionsForRole(role, roleDefinitions).includes(permission);
 }
 
 export function canAccessRoute(role, pathname, roleDefinitions = {}) {
   if (!role) return false;
+  if (role === ROLES.REGISTRAR && pathname.startsWith('/maintenance-dashboard')) return false;
   if (role === ROLES.REGISTRAR) return true;
   return canAccessRouteForProfile({ role }, pathname, roleDefinitions);
 }
@@ -284,7 +298,7 @@ export function getNavItemsForRole(role, roleDefinitions = {}) {
   const rawKeys = getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[role] || ROLE_NAV_KEYS[ROLES.TEACHER] || [];
   const perms = getPermissionsForRole(role, roleDefinitions);
   let keys = sortNavKeys(rawKeys);
-  if ((role === ROLES.GSD || role === ROLES.REGISTRAR || perms.includes(PERMISSIONS.ROOMS_MAINTENANCE_MANAGE)) && !keys.includes('maintenanceDashboard')) {
+  if ((role === ROLES.GSD || (role !== ROLES.REGISTRAR && perms.includes(PERMISSIONS.ROOMS_MAINTENANCE_MANAGE))) && !keys.includes('maintenanceDashboard')) {
     keys = sortNavKeys([...keys, 'maintenanceDashboard']);
   }
 
@@ -348,17 +362,24 @@ export function canManageAllRooms(role) {
   return role === ROLES.REGISTRAR;
 }
 
-/** Dean/GSD scoped room access via profile.assignedRoomIds / assignedBuildingIds */
+/** Dean/GSD scoped room access via profile.assignedRoomIds / assignedBuildingIds or room.managedBy */
 export function canEditRoom(profile, room, roleDefinitions = {}) {
   if (!profile || !room) return false;
+  if (canManageBuildings(profile.role, roleDefinitions, profile)) return true;
   if (canManageAllRooms(profile.role)) return true;
   if (canManageRoomMaintenance(profile.role, roleDefinitions, profile)) return true;
   if (canManageAssignedRooms(profile.role, roleDefinitions, profile)) {
     const roomId = room.docId || room.id || room.roomCode;
     const assignedRooms = profile.assignedRoomIds || [];
     const assignedBuildings = profile.assignedBuildingIds || [];
-    if (assignedRooms.length === 0 && assignedBuildings.length === 0) return true;
-    return assignedRooms.includes(roomId) || assignedBuildings.includes(String(room.buildingId));
+
+    // Check direct assignment on room doc
+    if (room.managedBy && (room.managedBy === profile.uid || room.managedBy === profile.id)) return true;
+    if (profile.name && room.managedByName && room.managedByName.toLowerCase() === profile.name.toLowerCase()) return true;
+
+    // Check profile's explicit assigned rooms or buildings
+    if (assignedRooms.includes(roomId) || assignedRooms.includes(room.docId) || assignedRooms.includes(room.roomCode)) return true;
+    if (assignedBuildings.includes(String(room.buildingId))) return true;
   }
   return false;
 }

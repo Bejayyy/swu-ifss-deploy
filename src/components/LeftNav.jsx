@@ -22,6 +22,7 @@ const NAV_ICONS = {
   '/room-finder': Search,
   '/academic-calendar': GraduationCap,
   '/course-scheduling': Calendar,
+  '/teachers': Users,
   '/college-inventory': GraduationCap,
   '/approval-workflow': GitBranch,
   '/approvals': CheckSquare,

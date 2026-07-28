@@ -55,6 +55,12 @@ export const NAV_PERMISSIONS_CATALOG = [
     ],
   },
   {
+    navKey: 'teachers',
+    label: 'Teachers Directory',
+    description: 'View teachers and manage course schedules & weekly timetables',
+    actions: [],
+  },
+  {
     navKey: 'collegeInventory',
     label: 'College Inventory',
     description: 'Manage colleges and department catalogs',

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Filter, Plus, MoreVertical, Shield, UserCog, Users, Building2, KeyRound, Trash2, Pencil } from 'lucide-react';
+import { Filter, Plus, MoreVertical, Shield, UserCog, Users, Building2, KeyRound, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import Layout from '../components/Layout';
 import ProgressStatCards from '../components/ProgressStatCards';
 import AddUserModal from '../components/modals/AddUserModal';
 import UserFilterModal from '../components/modals/UserFilterModal';
 import UserActionsModal from '../components/modals/UserActionsModal';
 import EditUserModal from '../components/modals/EditUserModal';
+import ViewUserModal from '../components/modals/ViewUserModal';
 import RoleAccessModal from '../components/modals/RoleAccessModal';
 import AddRoleModal from '../components/modals/AddRoleModal';
 import LoadingModal from '../components/modals/LoadingModal';
@@ -44,7 +45,12 @@ export default function SystemAdministration() {
   const [showAdd, setShowAdd] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [filter, setFilter] = useState({ role: 'Any', status: 'Any' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [actionUser, setActionUser] = useState(null);
+  const [viewUser, setViewUser] = useState(null);
   const [editUser, setEditUser] = useState(null);
   const [editRole, setEditRole] = useState(null);
   const [showAddRole, setShowAddRole] = useState(false);
@@ -77,39 +83,63 @@ export default function SystemAdministration() {
     return unsub;
   }, [roleValues, roleDefinitions]);
 
-  const addUser = async (form) => {
+  const addUser = async (formOrArray) => {
+    const usersToAdd = Array.isArray(formOrArray) ? formOrArray : [formOrArray];
     setIsLoading(true);
-    setLoadingMessage('Creating user...');
-    
-    try {
-      await createStaffUserByEmailInvite(
-        {
-          name: form.name,
-          email: form.email,
-          department: form.department,
-          college: form.college,
-          roleValue: form.role,
-          permissions: form.permissions,
-          navKeys: form.navKeys,
-        },
-        profile?.uid,
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    for (let i = 0; i < usersToAdd.length; i++) {
+      const form = usersToAdd[i];
+      setLoadingMessage(
+        usersToAdd.length > 1
+          ? `Creating user ${i + 1} of ${usersToAdd.length}: ${form.name}...`
+          : 'Creating user...'
       );
+      try {
+        await createStaffUserByEmailInvite(
+          {
+            name: form.name,
+            email: form.email,
+            department: form.department,
+            college: form.college,
+            roleValue: form.role,
+            permissions: form.permissions,
+            navKeys: form.navKeys,
+          },
+          profile?.uid,
+        );
+        successCount++;
+      } catch (error) {
+        failCount++;
+        errors.push(`${form.email}: ${error.message || 'Failed to create'}`);
+      }
+    }
+
+    if (successCount > 0) {
       showNotification({
         type: 'success',
-        title: 'User added',
-        message: `${form.name} has been added successfully.`,
+        title: successCount > 1 ? 'Bulk creation complete' : 'User added',
+        message:
+          successCount > 1
+            ? `Successfully created ${successCount} user accounts. Welcome/credential emails have been sent.`
+            : `${usersToAdd[0].name} has been added successfully. Welcome email sent.`,
+        autoCloseMs: 3000,
       });
       setShowAdd(false);
-    } catch (error) {
+    }
+
+    if (failCount > 0) {
       showNotification({
         type: 'error',
-        title: 'Failed to add user',
-        message: error.message || 'An error occurred while adding the user.',
+        title: `${failCount} account(s) failed`,
+        message: errors.join('\n'),
+        autoCloseMs: 0,
       });
-      throw error;
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
   const saveUserEdits = async (payload) => {
@@ -180,31 +210,54 @@ export default function SystemAdministration() {
     }
   };
 
-  const createRole = async (payload) => {
+  const createRole = async (payloadOrArray) => {
+    const rolesToAdd = Array.isArray(payloadOrArray) ? payloadOrArray : [payloadOrArray];
     setIsLoading(true);
-    setLoadingMessage('Creating role...');
     setSavingRole(true);
-    
-    try {
-      const roleKey = await saveRoleDefinition(payload, roleDefinitionsList);
+    let successCount = 0;
+    let lastKey = '';
+    const errors = [];
+
+    for (let i = 0; i < rolesToAdd.length; i++) {
+      const payload = rolesToAdd[i];
+      setLoadingMessage(
+        rolesToAdd.length > 1
+          ? `Creating role ${i + 1} of ${rolesToAdd.length}: ${payload.label}...`
+          : 'Creating role...'
+      );
+      try {
+        lastKey = await saveRoleDefinition(payload, roleDefinitionsList);
+        successCount++;
+      } catch (error) {
+        errors.push(`${payload.label}: ${error.message || 'Failed to create'}`);
+      }
+    }
+
+    if (successCount > 0) {
       showNotification({
         type: 'success',
-        title: 'Role created',
-        message: `"${payload.label}" role has been created successfully.`,
+        title: successCount > 1 ? 'Bulk roles created' : 'Role created',
+        message:
+          successCount > 1
+            ? `Successfully created ${successCount} custom roles.`
+            : `"${rolesToAdd[0].label}" role has been created successfully.`,
+        autoCloseMs: 3000,
       });
       setShowAddRole(false);
-      return roleKey;
-    } catch (error) {
+    }
+
+    if (errors.length > 0) {
       showNotification({
         type: 'error',
-        title: 'Creation failed',
-        message: error.message || 'Failed to create role.',
+        title: 'Role creation issue',
+        message: errors.join('\n'),
+        autoCloseMs: 0,
       });
-      throw error;
-    } finally {
-      setSavingRole(false);
-      setIsLoading(false);
     }
+
+    setSavingRole(false);
+    setIsLoading(false);
+    return lastKey;
   };
 
   const removeRole = async (role) => {
@@ -290,13 +343,114 @@ export default function SystemAdministration() {
     }
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedUserIds([]);
+  }, [filter, searchQuery]);
+
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       if (filter.role !== 'Any' && u.roleValue !== filter.role) return false;
       if (filter.status !== 'Any' && u.status !== filter.status) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = u.name?.toLowerCase().includes(q);
+        const matchEmail = u.email?.toLowerCase().includes(q);
+        const matchDept = u.department?.toLowerCase().includes(q);
+        const matchCollege = u.college?.toLowerCase().includes(q);
+        const matchRole = u.role?.toLowerCase().includes(q);
+        const matchStatus = u.status?.toLowerCase().includes(q);
+        if (!matchName && !matchEmail && !matchDept && !matchCollege && !matchRole && !matchStatus) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [users, filter]);
+  }, [users, filter, searchQuery]);
+
+  const totalItems = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredUsers.slice(start, start + itemsPerPage);
+  }, [filteredUsers, currentPage, itemsPerPage]);
+
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endIndex = Math.min(currentPage * itemsPerPage, totalItems);
+
+  const toggleSelectUser = (uid) => {
+    setSelectedUserIds((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    const pageUids = paginatedUsers.map((u) => u.uid);
+    const allSelected = pageUids.length > 0 && pageUids.every((uid) => selectedUserIds.includes(uid));
+
+    if (allSelected) {
+      setSelectedUserIds((prev) => prev.filter((id) => !pageUids.includes(id)));
+    } else {
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...pageUids])));
+    }
+  };
+
+  const bulkDeleteSelectedUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    const count = selectedUserIds.length;
+    const confirmed = await showConfirm({
+      title: count > 1 ? `Delete ${count} users?` : 'Delete user?',
+      message: count > 1
+        ? `Are you sure you want to delete the ${count} selected users? This will remove their access to the system.`
+        : `Are you sure you want to delete this user? This will remove their access to the system.`,
+      confirmText: count > 1 ? `Delete ${count} users` : 'Delete user',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    for (let i = 0; i < selectedUserIds.length; i++) {
+      const uid = selectedUserIds[i];
+      const u = users.find((usr) => usr.uid === uid);
+      const name = u?.name || uid;
+      setLoadingMessage(`Deleting user ${i + 1} of ${count}: ${name}...`);
+      try {
+        await deleteStaffUser(uid);
+        successCount++;
+      } catch (error) {
+        failCount++;
+        errors.push(`${name}: ${error.message || 'Failed to delete'}`);
+      }
+    }
+
+    if (successCount > 0) {
+      showNotification({
+        type: 'success',
+        title: successCount > 1 ? `${successCount} users deleted` : 'User deleted',
+        message: successCount > 1
+          ? `Successfully removed ${successCount} users from the system.`
+          : 'User has been removed from the system.',
+      });
+      setSelectedUserIds([]);
+    }
+
+    if (failCount > 0) {
+      showNotification({
+        type: 'error',
+        title: `${failCount} deletion(s) failed`,
+        message: errors.join('\n'),
+      });
+    }
+
+    setIsLoading(false);
+  };
 
   const deans = users.filter((u) => u.roleValue === 'dean').length;
   const teachers = users.filter((u) => u.roleValue === 'teacher').length;
@@ -339,17 +493,44 @@ export default function SystemAdministration() {
       {tab === 'users' && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <button type="button" className="btn-maroon gap-2" style={{ borderRadius: 10 }} onClick={() => setShowFilter(true)}>
-              <Filter size={16} /> Filter
-            </button>
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              <div className="relative min-w-[220px] max-w-xs flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search name, email, role, department..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-[10px] bg-white focus:outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]"
+                />
+              </div>
+
+              <button type="button" className="btn-maroon gap-2" style={{ borderRadius: 10 }} onClick={() => setShowFilter(true)}>
+                <Filter size={16} /> Filter
+              </button>
+
+              {selectedUserIds.length > 0 && (
+                <button
+                  type="button"
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-[10px] transition-colors shadow-sm"
+                  onClick={bulkDeleteSelectedUsers}
+                  title="Delete selected users"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete ({selectedUserIds.length})</span>
+                </button>
+              )}
+            </div>
+
             <button type="button" className="btn-maroon gap-2" style={{ borderRadius: 10 }} onClick={() => setShowAdd(true)} disabled={rolesLoading}>
               <Plus size={16} /> Add user
             </button>
           </div>
 
-          {(filter.role !== 'Any' || filter.status !== 'Any') && (
+          {(filter.role !== 'Any' || filter.status !== 'Any' || searchQuery.trim()) && (
             <p className="text-xs font-semibold mb-2" style={{ color: '#800000' }}>
-              Filtered: {filter.role} · {filter.status} ({filteredUsers.length} shown)
+              Filtered: {filter.role} · {filter.status}
+              {searchQuery.trim() ? ` · Search: "${searchQuery}"` : ''} ({filteredUsers.length} shown)
             </p>
           )}
 
@@ -358,54 +539,161 @@ export default function SystemAdministration() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80">
+                    <th className="py-3 px-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={paginatedUsers.length > 0 && paginatedUsers.every((u) => selectedUserIds.includes(u.uid))}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                      />
+                    </th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Name</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Email</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Role</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Access</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>College/Dept</th>
-                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Status</th>
-                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider w-12" style={{ color: '#2B3235' }} />
+                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider text-center" style={{ color: '#2B3235' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#800000', borderRadius: 10 }}>
-                            {u.initials}
-                          </div>
-                          <span className="font-bold" style={{ color: '#2B3235' }}>{u.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.85 }}>{u.email}</td>
-                      <td className="py-3 px-4">
-                        <span className={`text-[10px] font-black px-2 py-1 uppercase ${roleStyle(u.role)}`} style={{ borderRadius: 8 }}>{u.role}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-[10px] font-bold px-2 py-1 rounded-full border border-gray-200" style={{ color: '#2B3235' }}>
-                          {u.useCustomAccess ? 'Custom' : 'Role default'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>{u.department}</td>
-                      <td className="py-3 px-4">
-                        <span className="flex items-center gap-1.5 text-xs font-bold" style={{ color: '#2B3235' }}>
-                          <span className={`w-2 h-2 rounded-full ${u.status === 'Active' ? 'bg-green-500' : 'bg-red-500'}`} />
-                          {u.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <button type="button" className="p-1.5 hover:bg-gray-100" style={{ borderRadius: 10 }} onClick={() => setActionUser(u)}>
-                          <MoreVertical size={16} style={{ color: '#2B3235', opacity: 0.55 }} />
-                        </button>
+                  {paginatedUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs font-semibold text-gray-500">
+                        No users found matching criteria.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    paginatedUsers.map((u) => {
+                      const isSelected = selectedUserIds.includes(u.uid);
+                      return (
+                        <tr key={u.id} className={`border-b border-gray-50 hover:bg-gray-50/50 ${isSelected ? 'bg-red-50/20' : ''}`}>
+                          <td className="py-3 px-4">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectUser(u.uid)}
+                              className="w-4 h-4 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#800000', borderRadius: 10 }}>
+                                {u.initials}
+                              </div>
+                              <span className="font-bold" style={{ color: '#2B3235' }}>{u.name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.85 }}>{u.email}</td>
+                          <td className="py-3 px-4">
+                            <span className={`text-[10px] font-black px-2 py-1 uppercase ${roleStyle(u.role)}`} style={{ borderRadius: 8 }}>{u.role}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-full border border-gray-200" style={{ color: '#2B3235' }}>
+                              {u.useCustomAccess ? 'Custom' : 'Role default'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>{u.department}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                className="p-1.5 text-gray-500 hover:text-[#800000] hover:bg-gray-100 rounded-lg transition-colors"
+                                title="View & Edit Details"
+                                onClick={() => setViewUser(u)}
+                              >
+                                <Eye size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Delete User"
+                                onClick={() => deleteUser(u)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-gray-100 text-xs font-semibold" style={{ color: '#2B3235', opacity: 0.75 }}>
-              <span>Showing {filteredUsers.length} user(s)</span>
+
+            {/* Pagination Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-100 text-xs font-semibold text-gray-600">
+              <div>
+                Showing <span className="font-bold text-gray-800">{startIndex}</span> to{' '}
+                <span className="font-bold text-gray-800">{endIndex}</span> of{' '}
+                <span className="font-bold text-gray-800">{totalItems}</span> users
+                {selectedUserIds.length > 0 && (
+                  <span className="ml-2 text-[#800000] font-bold">({selectedUserIds.length} selected)</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span>Rows per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-semibold focus:outline-none focus:border-[#800000]"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 transition-colors"
+                  >
+                    <ChevronLeft size={15} /> Prev
+                  </button>
+
+                  {Array.from({ length: totalPages }, (_, idx) => idx + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, i, arr) => {
+                      const prev = arr[i - 1];
+                      const showEllipsis = prev && p - prev > 1;
+
+                      return (
+                        <React.Fragment key={p}>
+                          {showEllipsis && <span className="px-1 text-gray-400">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-7 h-7 rounded-lg text-xs font-bold transition-colors ${
+                              currentPage === p
+                                ? 'bg-[#800000] text-white'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages || totalPages === 0}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 transition-colors"
+                  >
+                    Next <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </>
@@ -486,6 +774,16 @@ export default function SystemAdministration() {
           onClose={() => setActionUser(null)}
           onEdit={setEditUser}
           onDelete={deleteUser}
+        />
+      )}
+      {viewUser && (
+        <ViewUserModal
+          user={viewUser}
+          roleDefinitionsList={roleDefinitionsList}
+          roleDefinitions={roleDefinitions}
+          onClose={() => setViewUser(null)}
+          onSave={saveUserEdits}
+          saving={savingUser}
         />
       )}
       {editUser && (

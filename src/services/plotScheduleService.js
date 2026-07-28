@@ -780,56 +780,53 @@ export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, de
  * @param {function} onError - Error callback
  * @returns {function} Unsubscribe function
  */
-export function subscribePlotEntriesForTeacher(teacherName, semester, onData, onError) {
-  if (!teacherName) {
-    console.warn('subscribePlotEntriesForTeacher: teacherName is required');
+export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, onError) {
+  const teacherName = typeof teacherInput === 'object' ? (teacherInput?.name || teacherInput?.displayName || '') : String(teacherInput || '');
+  const teacherEmail = typeof teacherInput === 'object' ? (teacherInput?.email || '') : '';
+  const cleanName = teacherName.trim();
+  const cleanEmail = teacherEmail.trim().toLowerCase();
+
+  if (!cleanName && !cleanEmail) {
+    console.warn('subscribePlotEntriesForTeacher: teacher name or email is required');
     onData([]);
     return () => {};
   }
 
-  console.log('subscribePlotEntriesForTeacher called with:', { teacherName, semester });
-
-  // Query all entries where instructor matches the teacher name
-  // This searches across all deans' sections
   const entriesRef = collectionGroup(db, 'entries');
-  
-  // Simplified query - only filter by instructor to avoid needing composite index
-  const q = query(
-    entriesRef,
-    where('instructor', '==', teacherName)
-  );
 
   return onSnapshot(
-    q,
+    entriesRef,
     (snapshot) => {
-      let entries = snapshot.docs.map(doc => ({
+      let entries = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
-      
-      console.log('subscribePlotEntriesForTeacher: raw entries', entries.length);
-      
-      // Filter by scheduleMode and semester in memory
-      entries = entries.filter(e => {
+
+      entries = entries.filter((e) => {
+        const inst = (e.instructor || '').trim().toLowerCase();
+        if (!inst) return false;
+
+        const matchesName = cleanName && (inst === cleanName.toLowerCase() || inst.includes(cleanName.toLowerCase()));
+        const matchesEmail = cleanEmail && (inst === cleanEmail || inst.includes(cleanEmail.split('@')[0]));
+        const isMatchedTeacher = matchesName || matchesEmail;
+
+        if (!isMatchedTeacher) return false;
+
         const isRegular = !e.scheduleMode || e.scheduleMode === 'regular';
-        const matchesSemester = !semester || !e.semester || e.semester === semester || e.semester === Number(semester);
+        const matchesSemester = !semester || !e.semester || String(e.semester) === String(semester);
         return isRegular && matchesSemester;
       });
 
-      // Sort by date and time in memory
       entries.sort((a, b) => {
-        // Sort by day first (Monday=0, Tuesday=1, etc.)
         const dayA = a.day ?? 0;
         const dayB = b.day ?? 0;
         if (dayA !== dayB) return dayA - dayB;
-        
-        // Then by start hour
+
         const hourA = a.startHour ?? 0;
         const hourB = b.startHour ?? 0;
         return hourA - hourB;
       });
 
-      console.log('subscribePlotEntriesForTeacher: filtered/sorted', entries.length, 'entries');
       onData(entries);
     },
     (err) => {

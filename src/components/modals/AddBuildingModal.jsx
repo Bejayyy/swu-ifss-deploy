@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
-import { X, Plus, Minus, Upload, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Upload, Layers, DoorOpen, Info } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function AddBuildingModal({ onClose }) {
-  const { addBuilding, currentUser } = useApp();
-  const [form, setForm] = useState({ name: '', manager: '', floors: ['Floor 1'], image: '' });
+  const { addBuilding } = useApp();
+  const [form, setForm] = useState({
+    name: '',
+    prefix: '',
+    prefixCustom: false,
+    numFloors: 1,
+    roomsPerFloor: 5,
+    image: '',
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const isRegistrar = currentUser?.role === 'registrar';
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
@@ -24,16 +29,40 @@ export default function AddBuildingModal({ onClose }) {
     reader.readAsDataURL(file);
   };
 
-  const addFloorRow = () =>
-    setForm((f) => ({ ...f, floors: [...f.floors, `Floor ${f.floors.length + 1}`] }));
-  const removeFloor = (i) =>
-    setForm((f) => ({ ...f, floors: f.floors.filter((_, idx) => idx !== i) }));
-
   const generatePrefix = (val) => {
     const words = val.trim().split(/\s+/).filter(Boolean);
     if (words.length >= 2) return words.map((w) => w[0]).join('').toUpperCase();
     return val.slice(0, 3).toUpperCase();
   };
+
+  const computedPrefix = useMemo(() => {
+    if (form.prefixCustom && form.prefix.trim()) return form.prefix.trim().toUpperCase();
+    return generatePrefix(form.name) || 'BLD';
+  }, [form.name, form.prefix, form.prefixCustom]);
+
+  const previewRooms = useMemo(() => {
+    const floors = Math.max(1, parseInt(form.numFloors, 10) || 1);
+    const rPerFloor = Math.max(0, parseInt(form.roomsPerFloor, 10) || 0);
+    const prefix = computedPrefix;
+
+    const list = [];
+    for (let f = 1; f <= Math.min(floors, 5); f += 1) {
+      const sampleRooms = [];
+      const countToDisplay = Math.min(rPerFloor, 4);
+      for (let r = 1; r <= countToDisplay; r += 1) {
+        const numPadded = String(r).padStart(2, '0');
+        sampleRooms.push(`${prefix} - ${f}${numPadded}`);
+      }
+      if (rPerFloor > 4) {
+        sampleRooms.push(`... (+${rPerFloor - 4} more)`);
+      }
+      list.push({ floor: f, rooms: sampleRooms });
+    }
+    if (floors > 5) {
+      list.push({ floor: '...', rooms: [`+ ${floors - 5} more floor(s)`] });
+    }
+    return { floors, rPerFloor, totalRooms: floors * rPerFloor, list };
+  }, [form.numFloors, form.roomsPerFloor, computedPrefix]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,13 +70,23 @@ export default function AddBuildingModal({ onClose }) {
       setError('Building name is required.');
       return;
     }
+    const finalPrefix = (form.prefix?.trim() || generatePrefix(form.name)).toUpperCase();
+    if (!finalPrefix) {
+      setError('Building prefix is required.');
+      return;
+    }
+
+    const floorsNum = Math.max(1, parseInt(form.numFloors, 10) || 1);
+    const roomsNum = Math.max(0, parseInt(form.roomsPerFloor, 10) || 0);
+
     setLoading(true);
     setError('');
     try {
       await addBuilding({
-        name: form.name,
-        prefix: form.prefix || generatePrefix(form.name),
-        floorNames: form.floors,
+        name: form.name.trim(),
+        prefix: finalPrefix,
+        numFloors: floorsNum,
+        roomsPerFloor: roomsNum,
         image: form.image,
       });
       onClose();
@@ -60,26 +99,39 @@ export default function AddBuildingModal({ onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md p-7 relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <button type="button" onClick={onClose} className="absolute right-5 top-5 text-gray-400 hover:text-gray-700">
+      <div
+        className="bg-white rounded-2xl w-full max-w-lg p-7 relative max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+        >
           <X size={20} />
         </button>
-        <h2 className="text-xl font-black mb-1" style={{ color: '#7A0808' }}>Add New Building</h2>
-        <p className="text-xs text-gray-400 mb-6">Create a new building and specify its prefix, image, and floors.</p>
+
+        <h2 className="text-xl font-black mb-1" style={{ color: '#7A0808' }}>
+          Add New Building
+        </h2>
+        <p className="text-xs text-gray-400 mb-5">
+          Create a new building and automatically generate its floors and room numbers.
+        </p>
 
         {error && (
-          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3.5 py-2.5 mb-4">
             {error}
           </p>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {/* Building Name & Building Prefix */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="form-label">Building Name</label>
+              <label className="form-label font-bold text-gray-700 mb-1">Building Name</label>
               <input
                 className="form-input"
-                placeholder="e.g., Phinma Hall"
+                placeholder="e.g., Techhub"
                 value={form.name}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -93,23 +145,94 @@ export default function AddBuildingModal({ onClose }) {
               />
             </div>
             <div>
-              <label className="form-label">Building Prefix</label>
+              <label className="form-label font-bold text-gray-700 mb-1">Building Prefix</label>
               <input
-                className="form-input"
-                placeholder="e.g., PH"
+                className="form-input font-bold uppercase"
+                placeholder="e.g., TH"
                 value={form.prefix}
-                onChange={(e) => setForm((f) => ({ ...f, prefix: e.target.value.toUpperCase(), prefixCustom: true }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, prefix: e.target.value.toUpperCase(), prefixCustom: true }))
+                }
                 required
               />
-              <p className="text-[10px] text-gray-400 mt-1">Used for rooms (e.g. PH - 101)</p>
+              <p className="text-[10px] text-gray-400 mt-1">e.g. TH for Techhub</p>
             </div>
           </div>
 
+          {/* Number of Floors & Rooms per Floor */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-gray-50/70 border border-gray-200 rounded-xl">
+            <div>
+              <label className="form-label font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                <Layers size={14} className="text-[#7A0808]" /> Number of Floors
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                className="form-input bg-white font-bold"
+                value={form.numFloors}
+                onChange={(e) => setForm((f) => ({ ...f, numFloors: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="form-label font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                <DoorOpen size={14} className="text-[#7A0808]" /> Rooms per Floor
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="99"
+                className="form-input bg-white font-bold"
+                value={form.roomsPerFloor}
+                onChange={(e) => setForm((f) => ({ ...f, roomsPerFloor: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Live Automatic Room Format & Preview */}
+          <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                <Info size={14} className="text-amber-700" /> Automatic Room Format
+              </span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900">
+                {previewRooms.totalRooms} total room(s)
+              </span>
+            </div>
+
+            <p className="text-[11px] text-amber-900 font-medium">
+              Format: <span className="font-black text-[#7A0808]">{computedPrefix} - 101</span> where <span className="font-bold">1</span> = Floor number, and <span className="font-bold">01</span> = Room number.
+            </p>
+
+            {previewRooms.totalRooms > 0 && (
+              <div className="pt-2 border-t border-amber-200/60 space-y-1.5">
+                <p className="text-[10px] font-bold uppercase text-amber-900 tracking-wider">Preview Generated Rooms:</p>
+                {previewRooms.list.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-[11px]">
+                    <span className="font-bold text-amber-900 min-w-[50px]">Floor {item.floor}:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {item.rooms.map((rm, rIdx) => (
+                        <span
+                          key={rIdx}
+                          className="px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-950 font-bold text-[10px]"
+                        >
+                          {rm}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Building Image Upload */}
-          <div className="mb-4">
-            <label className="form-label">Building Image</label>
+          <div>
+            <label className="form-label font-bold text-gray-700 mb-1">Building Image (Optional)</label>
             {form.image ? (
-              <div className="relative rounded-xl overflow-hidden h-36 border border-gray-200 group mb-2">
+              <div className="relative rounded-xl overflow-hidden h-32 border border-gray-200 group">
                 <img src={form.image} alt="Building preview" className="w-full h-full object-cover" />
                 <button
                   type="button"
@@ -120,9 +243,9 @@ export default function AddBuildingModal({ onClose }) {
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#7A0808] transition-colors bg-gray-50/50">
+              <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#7A0808] transition-colors bg-gray-50/50">
                 <div className="flex flex-col items-center gap-1">
-                  <Upload size={20} className="text-gray-400" />
+                  <Upload size={18} className="text-gray-400" />
                   <span className="text-xs font-semibold text-gray-600">Click to upload building image</span>
                   <span className="text-[10px] text-gray-400">PNG, JPG, WEBP up to 5MB</span>
                 </div>
@@ -131,51 +254,24 @@ export default function AddBuildingModal({ onClose }) {
             )}
           </div>
 
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <label className="form-label mb-0">Floors ({form.floors.length} total)</label>
-              <button
-                type="button"
-                onClick={addFloorRow}
-                className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors"
-                style={{ color: '#7A0808', borderColor: '#7A0808' }}
-              >
-                <Plus size={12} /> Add Floor
-              </button>
-            </div>
-            <div className="space-y-2 max-h-44 overflow-y-auto">
-              {form.floors.map((fl, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    className="form-input flex-1"
-                    value={fl}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        floors: f.floors.map((x, idx) => (idx === i ? e.target.value : x)),
-                      }))
-                    }
-                  />
-                  {form.floors.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeFloor(i)}
-                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Minus size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-outline-maroon flex-1" disabled={loading}>
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-outline-maroon flex-1 justify-center py-2.5 text-xs"
+              style={{ borderRadius: 10 }}
+              disabled={loading}
+            >
               Cancel
             </button>
-            <button type="submit" className="btn-maroon flex-1 justify-center" disabled={loading}>
-              {loading ? 'Creating…' : 'Create Building'}
+            <button
+              type="submit"
+              className="btn-maroon flex-1 justify-center py-2.5 text-xs"
+              style={{ borderRadius: 10 }}
+              disabled={loading}
+            >
+              {loading ? 'Creating…' : 'Create Building & Rooms'}
             </button>
           </div>
         </form>

@@ -39,12 +39,20 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.name.trim()) {
+      setError('Building name is required.');
+      return;
+    }
+    if (!form.prefix.trim()) {
+      setError('Building prefix is required.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       await onSave(building.id, {
-        name: form.name.trim() || building.name,
-        prefix: form.prefix.trim().toUpperCase() || building.prefix || building.code,
+        name: form.name.trim(),
+        prefix: form.prefix.trim().toUpperCase(),
         image: form.image,
         floorNames: form.floors,
       });

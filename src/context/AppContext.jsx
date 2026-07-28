@@ -237,8 +237,10 @@ export function AppProvider({ children }) {
   const addBuilding = async (b) => {
     await createBuilding({
       name: b.name,
-      manager: b.manager,
-      floorNames: b.floorNames || b.floors || ['Floor 1'],
+      prefix: b.prefix,
+      numFloors: b.numFloors,
+      roomsPerFloor: b.roomsPerFloor,
+      floorNames: b.floorNames,
       image: b.image,
       contact: b.contact,
       email: b.email,

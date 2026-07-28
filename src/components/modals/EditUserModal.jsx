@@ -6,6 +6,18 @@ import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
 
+const parseFullName = (nameStr = '') => {
+  const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: '', middleName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], middleName: '', lastName: '' };
+  if (parts.length === 2) return { firstName: parts[0], middleName: '', lastName: parts[1] };
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+};
+
 export default function EditUserModal({
   user,
   roleDefinitionsList = [],
@@ -21,11 +33,24 @@ export default function EditUserModal({
     [roleDefinitionsList],
   );
 
+  const initialNames = useMemo(() => {
+    if (user?.firstName || user?.lastName) {
+      return {
+        firstName: user?.firstName || '',
+        middleName: user?.middleName || '',
+        lastName: user?.lastName || '',
+      };
+    }
+    return parseFullName(user?.name || '');
+  }, [user]);
+
   const [form, setForm] = useState({
-    name: user?.name || '',
+    firstName: initialNames.firstName,
+    middleName: initialNames.middleName,
+    lastName: initialNames.lastName,
     email: user?.email || '',
     department: user?.department || '',
-    college: user?.college || user?.department || '', // Initialize college from department for backward compatibility
+    college: user?.college || user?.department || '',
     roleValue: user?.roleValue || roleOptions[0]?.value || 'dean',
     status: user?.status === 'Inactive' ? USER_STATUS.INACTIVE : USER_STATUS.ACTIVE,
     useCustomAccess: Boolean(user?.permissions?.length || user?.navKeys?.length),
@@ -33,6 +58,11 @@ export default function EditUserModal({
     navKeys: user?.navKeys || [],
   });
   const [error, setError] = useState('');
+
+  const computedFullName = useMemo(() => {
+    const parts = [form.firstName, form.middleName, form.lastName].map((s) => s.trim()).filter(Boolean);
+    return parts.join(' ') || user?.name || '';
+  }, [form.firstName, form.middleName, form.lastName, user]);
 
   // Subscribe to colleges from Firestore
   useEffect(() => {
@@ -62,8 +92,16 @@ export default function EditUserModal({
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.name.trim()) {
-      setError('Name is required.');
+    if (!form.firstName.trim()) {
+      setError('First Name is required.');
+      return;
+    }
+    if (!form.middleName.trim()) {
+      setError('Middle Name is required.');
+      return;
+    }
+    if (!form.lastName.trim()) {
+      setError('Last Name is required.');
       return;
     }
     if (!form.email.trim()) {
@@ -81,7 +119,10 @@ export default function EditUserModal({
     try {
       const saveData = {
         uid: user.uid,
-        name: form.name.trim(),
+        name: computedFullName,
+        firstName: form.firstName.trim(),
+        middleName: form.middleName.trim(),
+        lastName: form.lastName.trim(),
         email: form.email.trim(),
         department: showCollegeField ? form.college : '',
         college: showCollegeField ? form.college : '',
@@ -120,22 +161,57 @@ export default function EditUserModal({
           )}
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* First Name, Middle Name, Last Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="form-label">Full name</label>
-                <input className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} required />
-              </div>
-              <div>
-                <label className="form-label">Email</label>
-                <input 
-                  type="email" 
-                  className="form-input" 
-                  placeholder={`name@${INSTITUTIONAL_EMAIL_DOMAIN}`}
-                  value={form.email} 
-                  onChange={(e) => set('email', e.target.value)} 
-                  required 
+                <label className="form-label">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="form-input"
+                  value={form.firstName}
+                  onChange={(e) => set('firstName', e.target.value)}
+                  placeholder="e.g. John"
+                  required
                 />
               </div>
+              <div>
+                <label className="form-label">
+                  Middle Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="form-input"
+                  value={form.middleName}
+                  onChange={(e) => set('middleName', e.target.value)}
+                  placeholder="e.g. Santos"
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="form-input"
+                  value={form.lastName}
+                  onChange={(e) => set('lastName', e.target.value)}
+                  placeholder="e.g. Doe"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="form-label">Email</label>
+              <input 
+                type="email" 
+                className="form-input" 
+                placeholder={`name@${INSTITUTIONAL_EMAIL_DOMAIN}`}
+                value={form.email} 
+                onChange={(e) => set('email', e.target.value)} 
+                required 
+              />
             </div>
 
             <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-4`}>

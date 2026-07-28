@@ -231,10 +231,16 @@ export default function CollegeInventory() {
   const handleSaveCourse = async () => {
     setCourseError('');
 
-    console.log('Course form data:', courseForm);
-
-    if (!courseForm.code.trim() || !courseForm.title.trim() || !courseForm.units) {
-      setCourseError('Course code, title, and units are required.');
+    if (!courseForm.code.trim()) {
+      setCourseError('Course code is required.');
+      return;
+    }
+    if (!courseForm.title.trim()) {
+      setCourseError('Course title is required.');
+      return;
+    }
+    if (!courseForm.units) {
+      setCourseError('Units are required.');
       return;
     }
 
@@ -244,57 +250,57 @@ export default function CollegeInventory() {
       return;
     }
 
+    const targetCollegeCode = viewingCollegeCourses?.code || '';
+    if (!targetCollegeCode) {
+      setCourseError('Active college code is missing. Please select a college first.');
+      return;
+    }
+
     // Check for duplicate code within the same college
-    if (!editingCourse || editingCourse.code !== courseForm.code) {
+    if (!editingCourse || (editingCourse.code || '').toUpperCase() !== courseForm.code.trim().toUpperCase()) {
       const duplicate = collegeCourses.find(
-        c => c.code.toLowerCase() === courseForm.code.trim().toLowerCase()
+        (c) => (c.code || '').trim().toUpperCase() === courseForm.code.trim().toUpperCase()
       );
       if (duplicate) {
-        setCourseError('A course with this code already exists in this college.');
+        setCourseError(`A course with code "${courseForm.code.trim().toUpperCase()}" already exists in ${targetCollegeCode}.`);
         return;
       }
     }
 
     setIsLoading(true);
     setLoadingMessage(editingCourse ? 'Updating course...' : 'Adding course...');
-    setShowCourseModal(false);
 
     try {
       const courseData = {
         code: courseForm.code.trim().toUpperCase(),
         title: courseForm.title.trim(),
-        type: courseForm.type,
-        yearLevel: courseForm.yearLevel,
+        type: courseForm.type || 'lecture',
+        yearLevel: courseForm.yearLevel || '1st Year',
         units,
-        description: courseForm.description.trim(),
-        collegeCode: viewingCollegeCourses.code,
+        description: (courseForm.description || '').trim(),
+        collegeCode: targetCollegeCode.trim().toUpperCase(),
       };
-
-      console.log('Saving course data:', courseData);
 
       if (editingCourse) {
         await updateCourse(editingCourse.id, courseData);
         setNotification({
           type: 'success',
           title: 'Course Updated!',
-          message: `${courseForm.title} has been successfully updated.`,
+          message: `${courseData.code} - ${courseData.title} has been updated successfully.`,
         });
       } else {
         await addCourse(courseData);
         setNotification({
           type: 'success',
           title: 'Course Added!',
-          message: `${courseForm.title} has been successfully added.`,
+          message: `${courseData.code} - ${courseData.title} has been added to ${targetCollegeCode}.`,
         });
       }
+      setShowCourseModal(false);
       resetCourseForm();
     } catch (err) {
       console.error('Error saving course:', err);
-      setNotification({
-        type: 'error',
-        title: 'Failed to Save Course',
-        message: err.message || 'An error occurred while saving the course.',
-      });
+      setCourseError(err.message || 'An error occurred while saving the course.');
     } finally {
       setIsLoading(false);
     }
@@ -828,7 +834,6 @@ export default function CollegeInventory() {
               <button
                 type="button"
                 onClick={handleSaveCourse}
-                disabled={!courseForm.code.trim() || !courseForm.title.trim() || !courseForm.units}
                 className="btn-maroon flex-1 flex items-center justify-center gap-2"
               >
                 <Plus size={16} /> {editingCourse ? 'Update Course' : 'Add Course'}

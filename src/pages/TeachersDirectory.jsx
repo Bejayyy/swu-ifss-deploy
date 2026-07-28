@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
 import { subscribeStaffUsers } from '../services/systemUserService';
 import { subscribeCollegeCourses, assignTeacherToCourse, unassignTeacherFromCourse } from '../services/courseService';
+import { formatCollegeName } from '../constants/colleges';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 
@@ -34,15 +35,21 @@ export default function TeachersDirectory() {
     return subscribeStaffUsers(
       (users) => {
         // Filter only teachers from the same department/college
-        const filteredTeachers = users.filter(user => {
+        const filteredTeachers = users.filter((user) => {
           if (user.roleValue !== 'teacher') return false;
-          
+
           // If dean, only show teachers from same department/college
           if (isDean && myDepartment) {
             const teacherDept = user.department || user.college;
-            return teacherDept && teacherDept.toLowerCase() === myDepartment.toLowerCase();
+            const formattedTeacherDept = formatCollegeName(teacherDept);
+            const formattedMyDept = formatCollegeName(myDepartment);
+            return (
+              formattedTeacherDept &&
+              formattedMyDept &&
+              formattedTeacherDept.toLowerCase() === formattedMyDept.toLowerCase()
+            );
           }
-          
+
           return true; // Registrar sees all
         });
         
