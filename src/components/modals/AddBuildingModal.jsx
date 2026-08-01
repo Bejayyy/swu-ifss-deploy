@@ -25,6 +25,7 @@ export default function AddBuildingModal({ onClose }) {
     const reader = new FileReader();
     reader.onload = (event) => {
       setForm((f) => ({ ...f, image: event.target?.result || '' }));
+      setError('');
     };
     reader.readAsDataURL(file);
   };
@@ -73,6 +74,10 @@ export default function AddBuildingModal({ onClose }) {
     const finalPrefix = (form.prefix?.trim() || generatePrefix(form.name)).toUpperCase();
     if (!finalPrefix) {
       setError('Building prefix is required.');
+      return;
+    }
+    if (!form.image) {
+      setError('Building image is required. Please upload a building photo.');
       return;
     }
 
@@ -128,7 +133,9 @@ export default function AddBuildingModal({ onClose }) {
           {/* Building Name & Building Prefix */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="form-label font-bold text-gray-700 mb-1">Building Name</label>
+              <label className="form-label font-bold text-gray-700 mb-1">
+                Building Name <span className="text-red-500">*</span>
+              </label>
               <input
                 className="form-input"
                 placeholder="e.g., Techhub"
@@ -145,7 +152,9 @@ export default function AddBuildingModal({ onClose }) {
               />
             </div>
             <div>
-              <label className="form-label font-bold text-gray-700 mb-1">Building Prefix</label>
+              <label className="form-label font-bold text-gray-700 mb-1">
+                Building Prefix <span className="text-red-500">*</span>
+              </label>
               <input
                 className="form-input font-bold uppercase"
                 placeholder="e.g., TH"
@@ -163,7 +172,7 @@ export default function AddBuildingModal({ onClose }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-gray-50/70 border border-gray-200 rounded-xl">
             <div>
               <label className="form-label font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-                <Layers size={14} className="text-[#7A0808]" /> Number of Floors
+                <Layers size={14} className="text-[#7A0808]" /> Number of Floors <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -177,7 +186,7 @@ export default function AddBuildingModal({ onClose }) {
             </div>
             <div>
               <label className="form-label font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-                <DoorOpen size={14} className="text-[#7A0808]" /> Rooms per Floor
+                <DoorOpen size={14} className="text-[#7A0808]" /> Rooms per Floor <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -228,28 +237,33 @@ export default function AddBuildingModal({ onClose }) {
             )}
           </div>
 
-          {/* Building Image Upload */}
+          {/* Building Image Upload (Required) */}
           <div>
-            <label className="form-label font-bold text-gray-700 mb-1">Building Image (Optional)</label>
+            <label className="form-label font-bold text-gray-700 mb-1">
+              Building Image <span className="text-red-500">*</span>
+            </label>
             {form.image ? (
-              <div className="relative rounded-xl overflow-hidden h-32 border border-gray-200 group">
+              <div className="relative rounded-xl overflow-hidden h-36 border border-gray-200 group shadow-sm">
                 <img src={form.image} alt="Building preview" className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, image: '' }))}
-                  className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-lg opacity-90 hover:opacity-100 transition-opacity"
+                  className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white p-1.5 rounded-lg transition-colors shadow-md"
+                  title="Remove image"
                 >
                   <X size={14} />
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#7A0808] transition-colors bg-gray-50/50">
+              <label className={`flex flex-col items-center justify-center h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                error && !form.image ? 'border-red-400 bg-red-50/50' : 'border-gray-300 hover:border-[#7A0808] bg-gray-50/50 hover:bg-gray-50'
+              }`}>
                 <div className="flex flex-col items-center gap-1">
-                  <Upload size={18} className="text-gray-400" />
-                  <span className="text-xs font-semibold text-gray-600">Click to upload building image</span>
-                  <span className="text-[10px] text-gray-400">PNG, JPG, WEBP up to 5MB</span>
+                  <Upload size={20} className={error && !form.image ? 'text-red-500' : 'text-gray-400'} />
+                  <span className="text-xs font-semibold text-gray-700">Click to upload building image</span>
+                  <span className="text-[10px] text-gray-400">PNG, JPG, WEBP up to 5MB (Required)</span>
                 </div>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} required />
               </label>
             )}
           </div>
@@ -259,7 +273,7 @@ export default function AddBuildingModal({ onClose }) {
             <button
               type="button"
               onClick={onClose}
-              className="btn-outline-maroon flex-1 justify-center py-2.5 text-xs"
+              className="btn-outline-maroon flex-1 justify-center py-2.5 text-xs font-bold"
               style={{ borderRadius: 10 }}
               disabled={loading}
             >
@@ -267,7 +281,7 @@ export default function AddBuildingModal({ onClose }) {
             </button>
             <button
               type="submit"
-              className="btn-maroon flex-1 justify-center py-2.5 text-xs"
+              className="btn-maroon flex-1 justify-center py-2.5 text-xs font-bold shadow-md"
               style={{ borderRadius: 10 }}
               disabled={loading}
             >

@@ -3,9 +3,10 @@ import { X, Edit2, Layers, CheckSquare } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { subscribeStaffUsers } from '../../services/systemUserService';
+import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
+import ConfirmModal from './ConfirmModal';
 
 const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'Conference Room', 'Gymnasium'];
-const equipmentOptions = ['Projector', 'Whiteboard', 'Air Conditioning', 'Audio System', 'Computers', 'Smart Board', 'CCTV'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
 
 export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId, onClose }) {
@@ -26,10 +27,11 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
     managedByName: '',
   });
 
-  const [equipmentChoices, setEquipmentChoices] = useState(equipmentOptions);
+  const [equipmentChoices, setEquipmentChoices] = useState(DEFAULT_EQUIPMENT_OPTIONS);
   const [newEquipment, setNewEquipment] = useState('');
   const [staffUsers, setStaffUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [error, setError] = useState('');
 
   const canAssignManager = Boolean(
@@ -40,10 +42,20 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
       profile?.permissions?.includes('buildings.manage')
   );
 
+  // Subscribe to Firestore Staff Users (Deans)
   useEffect(() => {
     const unsub = subscribeStaffUsers(
       (users) => setStaffUsers(users),
       (err) => console.error('Error fetching staff:', err)
+    );
+    return unsub;
+  }, []);
+
+  // Subscribe to Firestore Equipments database
+  useEffect(() => {
+    const unsub = subscribeEquipments(
+      (equipments) => setEquipmentChoices(equipments),
+      (err) => console.error('Error fetching equipments:', err)
     );
     return unsub;
   }, []);
@@ -74,12 +86,15 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
     });
   };
 
-  const addCustomEquipment = () => {
+  const addCustomEquipment = async () => {
     const item = newEquipment.trim();
     if (!item) return;
+
     if (!equipmentChoices.some((x) => x.toLowerCase() === item.toLowerCase())) {
       setEquipmentChoices((prev) => [...prev, item]);
+      await addEquipmentItem(item);
     }
+
     setForm((f) => ({
       ...f,
       equipment: f.equipment.some((x) => x.toLowerCase() === item.toLowerCase())
@@ -90,7 +105,7 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
     setNewEquipment('');
   };
 
-  const handleSubmit = async (e) => {
+  const handleInitialSubmit = (e) => {
     e.preventDefault();
     if (
       !form.changeType &&
@@ -102,7 +117,11 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
       setError('Please select at least one field to update.');
       return;
     }
+    setError('');
+    setShowConfirmModal(true);
+  };
 
+  const handleExecuteSubmit = async () => {
     setLoading(true);
     setError('');
 
@@ -121,225 +140,253 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
         selectedRooms.map((rm) => updateRoom(buildingId, floorId, rm.docId || rm.id, patch))
       );
 
+      setShowConfirmModal(false);
       onClose(true);
     } catch (err) {
       setError(err.message || 'Failed to update selected rooms.');
+      setShowConfirmModal(false);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="modal-overlay" onClick={() => onClose(false)}>
-      <div
-        className="bg-white rounded-2xl w-full max-w-lg p-7 relative max-h-[90vh] overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={() => onClose(false)}
-          className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+    <>
+      <div className="modal-overlay" onClick={() => onClose(false)}>
+        <div
+          className="bg-white rounded-2xl w-full max-w-lg p-7 relative max-h-[90vh] overflow-y-auto shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X size={20} />
-        </button>
+          <button
+            type="button"
+            onClick={() => onClose(false)}
+            className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={20} />
+          </button>
 
-        <h2 className="text-xl font-black mb-1 flex items-center gap-2" style={{ color: '#7A0808' }}>
-          <Edit2 size={20} /> Bulk Edit Rooms
-        </h2>
-        <p className="text-xs text-gray-400 mb-4">
-          Updating <span className="font-bold text-gray-700">{selectedRooms.length} selected room(s)</span>. Check the boxes next to the fields you want to update.
-        </p>
-
-        {/* Selected Rooms Preview Pills */}
-        <div className="mb-5 p-3 bg-red-50/60 border border-red-100 rounded-xl">
-          <p className="text-[10px] font-bold text-[#7A0808] uppercase tracking-wider mb-1.5">
-            Selected Rooms ({selectedRooms.length}):
+          <h2 className="text-xl font-black mb-1 flex items-center gap-2" style={{ color: '#7A0808' }}>
+            <Edit2 size={20} /> Bulk Edit Rooms
+          </h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Updating <span className="font-bold text-gray-700">{selectedRooms.length} selected room(s)</span>. Check the boxes next to the fields you want to update.
           </p>
-          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-            {selectedRooms.map((rm) => (
-              <span
-                key={rm.docId || rm.id}
-                className="px-2.5 py-0.5 rounded-md bg-white border border-red-200 text-[#7A0808] font-bold text-xs shadow-2xs"
-              >
-                {rm.id || rm.name}
-              </span>
-            ))}
-          </div>
-        </div>
 
-        {error && (
-          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3.5 py-2.5 mb-4">
-            {error}
-          </p>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {/* Room Type */}
-          <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
-            <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.changeType}
-                onChange={(e) => setForm((f) => ({ ...f, changeType: e.target.checked }))}
-                className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
-              />
-              <span>Update Room Type</span>
-            </label>
-            {form.changeType && (
-              <select
-                className="form-input bg-white font-bold"
-                value={form.type}
-                onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-              >
-                {roomTypes.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            )}
+          {/* Selected Rooms Preview Pills */}
+          <div className="mb-5 p-3 bg-red-50/60 border border-red-100 rounded-xl">
+            <p className="text-[10px] font-bold text-[#7A0808] uppercase tracking-wider mb-1.5">
+              Selected Rooms ({selectedRooms.length}):
+            </p>
+            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+              {selectedRooms.map((rm) => (
+                <span
+                  key={rm.docId || rm.id}
+                  className="px-2.5 py-0.5 rounded-md bg-white border border-red-200 text-[#7A0808] font-bold text-xs shadow-2xs"
+                >
+                  {rm.id || rm.name}
+                </span>
+              ))}
+            </div>
           </div>
 
-          {/* Capacity */}
-          <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
-            <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.changeCapacity}
-                onChange={(e) => setForm((f) => ({ ...f, changeCapacity: e.target.checked }))}
-                className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
-              />
-              <span>Update Capacity</span>
-            </label>
-            {form.changeCapacity && (
-              <input
-                type="number"
-                min="1"
-                className="form-input bg-white font-bold"
-                value={form.capacity}
-                onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
-                placeholder="e.g. 40"
-              />
-            )}
-          </div>
+          {error && (
+            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3.5 py-2.5 mb-4">
+              {error}
+            </p>
+          )}
 
-          {/* Status */}
-          <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
-            <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.changeStatus}
-                onChange={(e) => setForm((f) => ({ ...f, changeStatus: e.target.checked }))}
-                className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
-              />
-              <span>Update Status</span>
-            </label>
-            {form.changeStatus && (
-              <select
-                className="form-input bg-white font-bold"
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              >
-                {statuses.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Equipment / Facilities */}
-          <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
-            <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.changeEquipment}
-                onChange={(e) => setForm((f) => ({ ...f, changeEquipment: e.target.checked }))}
-                className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
-              />
-              <span>Update Equipment / Facilities</span>
-            </label>
-            {form.changeEquipment && (
-              <div className="space-y-2 pt-1">
-                <div className="flex flex-wrap gap-1.5">
-                  {equipmentChoices.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => toggleEquip(item)}
-                      className="px-2.5 py-1 rounded-full text-xs font-semibold border transition-all"
-                      style={
-                        form.equipment.includes(item)
-                          ? { background: '#7A0808', color: 'white', borderColor: '#7A0808' }
-                          : { background: 'white', color: '#2B3235', borderColor: '#e2e5e8' }
-                      }
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    className="form-input bg-white"
-                    placeholder="Add custom equipment"
-                    value={newEquipment}
-                    onChange={(e) => setNewEquipment(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomEquipment())}
-                  />
-                  <button type="button" className="btn-outline-maroon whitespace-nowrap" onClick={addCustomEquipment}>
-                    Add
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Room Manager */}
-          {canAssignManager && (
+          <form onSubmit={handleInitialSubmit} className="space-y-4 text-xs">
+            {/* Room Type */}
             <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
               <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={form.changeManager}
-                  onChange={(e) => setForm((f) => ({ ...f, changeManager: e.target.checked }))}
+                  checked={form.changeType}
+                  onChange={(e) => setForm((f) => ({ ...f, changeType: e.target.checked }))}
                   className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
                 />
-                <span>Update Room Manager (Dean)</span>
+                <span>Update Room Type</span>
               </label>
-              {form.changeManager && (
+              {form.changeType && (
                 <select
                   className="form-input bg-white font-bold"
-                  value={form.managedBy}
-                  onChange={handleManagerChange}
+                  value={form.type}
+                  onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
                 >
-                  <option value="">No manager (Registrar managed)</option>
-                  {getActiveDeans().map((d) => (
-                    <option key={d.uid} value={d.uid}>{d.name}</option>
+                  {roomTypes.map((t) => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               )}
             </div>
-          )}
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => onClose(false)}
-              className="btn-outline-maroon flex-1 justify-center py-2.5"
-              style={{ borderRadius: 10 }}
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-maroon flex-1 justify-center py-2.5"
-              style={{ borderRadius: 10 }}
-              disabled={loading}
-            >
-              {loading ? 'Saving…' : `Update ${selectedRooms.length} Rooms`}
-            </button>
-          </div>
-        </form>
+            {/* Capacity */}
+            <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
+              <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.changeCapacity}
+                  onChange={(e) => setForm((f) => ({ ...f, changeCapacity: e.target.checked }))}
+                  className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
+                />
+                <span>Update Capacity</span>
+              </label>
+              {form.changeCapacity && (
+                <input
+                  type="number"
+                  min="1"
+                  className="form-input bg-white font-bold"
+                  value={form.capacity}
+                  onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
+                  placeholder="e.g. 40"
+                />
+              )}
+            </div>
+
+            {/* Status */}
+            <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
+              <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.changeStatus}
+                  onChange={(e) => setForm((f) => ({ ...f, changeStatus: e.target.checked }))}
+                  className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
+                />
+                <span>Update Status</span>
+              </label>
+              {form.changeStatus && (
+                <select
+                  className="form-input bg-white font-bold"
+                  value={form.status}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                >
+                  {statuses.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Equipment / Facilities */}
+            <div className="p-3 border border-gray-100 rounded-xl space-y-2.5 bg-gray-50/50">
+              <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.changeEquipment}
+                  onChange={(e) => setForm((f) => ({ ...f, changeEquipment: e.target.checked }))}
+                  className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
+                />
+                <span>Update Equipment / Facilities</span>
+              </label>
+              {form.changeEquipment && (
+                <div className="space-y-3 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-white rounded-xl border border-gray-200">
+                    {equipmentChoices.map((item) => {
+                      const isChecked = form.equipment.includes(item);
+                      return (
+                        <label
+                          key={item}
+                          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border text-xs font-semibold transition-all ${
+                            isChecked
+                              ? 'bg-red-50/90 border-[#7A0808] text-[#7A0808] font-bold shadow-2xs'
+                              : 'bg-gray-50/50 border-gray-200 text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleEquip(item)}
+                            className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
+                          />
+                          <span className="truncate">{item}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      className="form-input bg-white text-xs"
+                      placeholder="Add custom equipment (e.g. Smart TV)"
+                      value={newEquipment}
+                      onChange={(e) => setNewEquipment(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomEquipment())}
+                    />
+                    <button
+                      type="button"
+                      className="btn-outline-maroon text-xs whitespace-nowrap px-3.5 font-bold"
+                      onClick={addCustomEquipment}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Room Manager */}
+            {canAssignManager && (
+              <div className="p-3 border border-gray-100 rounded-xl space-y-2 bg-gray-50/50">
+                <label className="flex items-center gap-2 font-bold text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.changeManager}
+                    onChange={(e) => setForm((f) => ({ ...f, changeManager: e.target.checked }))}
+                    className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
+                  />
+                  <span>Update Room Manager (Dean)</span>
+                </label>
+                {form.changeManager && (
+                  <select
+                    className="form-input bg-white font-bold"
+                    value={form.managedBy}
+                    onChange={handleManagerChange}
+                  >
+                    <option value="">No manager (Registrar managed)</option>
+                    {getActiveDeans().map((d) => (
+                      <option key={d.uid} value={d.uid}>{d.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => onClose(false)}
+                className="btn-outline-maroon flex-1 justify-center py-2.5 font-bold"
+                style={{ borderRadius: 10 }}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn-maroon flex-1 justify-center py-2.5 font-bold shadow-md"
+                style={{ borderRadius: 10 }}
+                disabled={loading}
+              >
+                {loading ? 'Saving…' : `Update ${selectedRooms.length} Rooms`}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <ConfirmModal
+          title="Confirm Bulk Room Update"
+          message={`Are you sure you want to update the selected ${selectedRooms.length} room(s) with these changes?`}
+          confirmText="Yes, Update Rooms"
+          cancelText="Cancel"
+          variant="primary"
+          isProcessing={loading}
+          onConfirm={handleExecuteSubmit}
+          onCancel={() => setShowConfirmModal(false)}
+        />
+      )}
+    </>
   );
 }

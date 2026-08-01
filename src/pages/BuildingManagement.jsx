@@ -9,6 +9,7 @@ import AddBuildingModal from '../components/modals/AddBuildingModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
+import EditRoomModal from '../components/modals/EditRoomModal';
 import BulkEditRoomsModal from '../components/modals/BulkEditRoomsModal';
 import PageSkeleton from '../components/SkeletonLoader';
 
@@ -35,6 +36,7 @@ export default function BuildingManagement() {
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
   const [editFloor, setEditFloor] = useState(null);
+  const [editRoom, setEditRoom] = useState(null);
   const [expandedBuildings, setExpandedBuildings] = useState({});
   const [expandedFloors, setExpandedFloors] = useState({});
 
@@ -56,17 +58,25 @@ export default function BuildingManagement() {
     setExpandedFloors((prev) => ({ ...prev, [fKey]: !prev[fKey] }));
   };
 
+  // Sync selectedBuilding with real-time updates from buildingList so edits show instantly without refresh!
   useEffect(() => {
     if (!buildingList.length) {
       setSelectedBuilding(null);
       return;
     }
-    const stillExists = selectedBuilding && buildingList.some((b) => b.id === selectedBuilding.id);
-    if (!stillExists) {
+    if (selectedBuilding) {
+      const freshBuilding = buildingList.find((b) => b.id === selectedBuilding.id);
+      if (freshBuilding) {
+        setSelectedBuilding(freshBuilding);
+      } else {
+        setSelectedBuilding(buildingList[0]);
+        setSelectedFloor('all');
+      }
+    } else {
       setSelectedBuilding(buildingList[0]);
       setSelectedFloor('all');
     }
-  }, [buildingList, selectedBuilding]);
+  }, [buildingList]);
 
   useEffect(() => {
     setFloorCurrentPage(1);
@@ -84,8 +94,9 @@ export default function BuildingManagement() {
     const start = (floorCurrentPage - 1) * floorItemsPerPage;
     return floorData.slice(start, start + floorItemsPerPage);
   }, [floorData, floorCurrentPage, floorItemsPerPage]);
+
   const allRooms =
-    building?.floorData?.flatMap((f) => f.rooms.map((r) => ({ ...r, floor: f.floor, floorLabel: f.label }))) || [];
+    building?.floorData?.flatMap((f) => f.rooms.map((r) => ({ ...r, floor: f.floor, floorId: f.floorId, floorLabel: f.label }))) || [];
 
   const displayedRooms = selectedFloor === 'all'
     ? allRooms
@@ -124,7 +135,7 @@ export default function BuildingManagement() {
     >
       <div className="flex justify-end gap-2 mb-5">
         {canManageBuildings() && (
-          <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
+          <button type="button" className="btn-maroon font-bold" onClick={() => setShowAddBuilding(true)}>
             <Plus size={16} /> Add Building
           </button>
         )}
@@ -249,356 +260,263 @@ export default function BuildingManagement() {
                       </div>
                     )}
                     {canManageBuildings() && (
-                      <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
                         <Camera size={18} />
                       </div>
                     )}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h2 className="font-black text-xl text-dark">{building.name}</h2>
-                      {(building.prefix || building.code) && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">
-                          Prefix: {building.prefix || building.code}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-black text-[#2B3235]">{building.name}</h2>
+                      <span className="px-2.5 py-0.5 rounded-md bg-red-50 text-[#7A0808] font-black text-xs border border-red-100">
+                        {building.prefix || building.code || 'BLD'}
+                      </span>
                     </div>
-                    <div className="flex gap-4 text-xs text-gray-500 font-medium">
-                      <span>Floors: {building.floors}</span>
-                      <span>Total Rooms: {building.totalRooms ?? allRooms.length}</span>
-                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {totalFloorsCount} Floor(s) • {allRooms.length} Total Room(s)
+                    </p>
                   </div>
                 </div>
 
-                {canManageBuildings() && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button type="button" className="btn-outline-maroon flex items-center gap-2" onClick={() => { setSelectedBuilding(building); setShowEditBuilding(true); }}>
-                      <Edit2 size={14} /> Edit Building
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {canManageBuildings() && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowEditBuilding(true)}
+                        className="btn-outline-maroon text-xs px-3 py-2 font-bold"
+                      >
+                        <Edit2 size={14} /> Edit Building
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddFloor(true)}
+                        className="btn-maroon text-xs px-3 py-2 font-bold"
+                      >
+                        <Plus size={14} /> Add Floor
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
-              {selectedFloor !== 'all' && (
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFloor('all')}
-                    className="flex items-center gap-1.5 text-xs font-bold text-[#7A0808] hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors border border-red-100"
-                  >
-                    <ArrowLeft size={14} /> Back to All Floors ({building.name})
-                  </button>
-                  <span className="text-xs font-bold text-gray-500">
-                    Rooms on {building.floorData?.find((f) => f.floor === selectedFloor)?.label || `Floor ${selectedFloor}`}
-                  </span>
+              {/* Floors Overview Table */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-bold text-sm text-[#2B3235] flex items-center gap-2">
+                    <Layers size={16} className="text-[#7A0808]" /> Floors Overview
+                  </h3>
+
+                  {/* Floor Filter pills */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFloor('all')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        selectedFloor === 'all'
+                          ? 'bg-[#7A0808] text-white shadow-2xs'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      All Floors ({allRooms.length})
+                    </button>
+                    {floorData.map((f) => (
+                      <button
+                        key={f.floor}
+                        type="button"
+                        onClick={() => setSelectedFloor(f.floor)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                          selectedFloor === f.floor
+                            ? 'bg-[#7A0808] text-white shadow-2xs'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {f.label || `Floor ${f.floor}`} ({f.rooms?.length || 0})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
 
-              <div className="overflow-x-auto">
-                {selectedFloor === 'all' ? (
-                  <>
-                    {/* Building Floor View: List of Floors */}
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          {['Floor', 'Rooms', 'Room Types', 'Manager', 'Actions'].map((h) => (
-                            <th key={h} className="text-left text-[10px] font-black uppercase tracking-wider text-gray-400 py-3 pr-4">
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {!building.floorData?.length ? (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-sm text-gray-400">
-                              No floors added yet. Edit building to add floors.
-                            </td>
-                          </tr>
-                        ) : (
-                          paginatedFloors.map((floorObj) => (
-                            <tr key={floorObj.floorId || floorObj.floor} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
-                              <td className="py-3 pr-4 text-sm font-bold text-dark flex items-center gap-2">
-                                <Layers size={15} className="text-[#7A0808]" />
-                                <span>{floorObj.label || `Floor ${floorObj.floor}`}</span>
-                              </td>
-                              <td className="py-3 pr-4 text-sm text-gray-600 font-semibold">
-                                {floorObj.rooms?.length || 0} {floorObj.rooms?.length === 1 ? 'room' : 'rooms'}
-                              </td>
-                              <td className="py-3 pr-4 text-xs text-gray-600">
-                                {getRoomTypesSummary(floorObj.rooms)}
-                              </td>
-                              <td className="py-3 pr-4 text-sm text-gray-600 font-medium">
-                                {floorObj.managedByName || 'Registrar'}
-                              </td>
-                              <td className="py-3 pr-4">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedFloor(floorObj.floor)}
-                                    className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                                    style={{ color: '#7A0808' }}
-                                    title="View floor rooms"
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-                                  {canManageBuildings() && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditFloor(floorObj)}
-                                      className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                                      style={{ color: '#7A0808' }}
-                                      title="Edit floor details and manager"
-                                    >
-                                      <Edit2 size={14} />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                {/* Multi-Selection Bulk Edit Action Bar */}
+                {canManageBuildings() && selectedRoomDocIds.length > 0 && (
+                  <div className="bg-[#7A0808] text-white px-4 py-3 rounded-2xl flex items-center justify-between shadow-lg animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 text-xs font-bold">
+                      <CheckSquare size={16} />
+                      <span>{selectedRoomDocIds.length} room(s) selected</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkEditRooms(true)}
+                        className="px-3.5 py-1.5 bg-white text-[#7A0808] rounded-xl text-xs font-black hover:bg-gray-100 transition-colors shadow-sm flex items-center gap-1.5"
+                      >
+                        <Edit2 size={14} /> Bulk Edit Rooms
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRoomDocIds([])}
+                        className="px-3 py-1.5 bg-black/20 hover:bg-black/30 text-white rounded-xl text-xs font-bold transition-colors"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                    {totalFloorsCount > 0 && (
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-gray-100 text-xs text-gray-500 font-medium">
-                        <div>
-                          Showing <span className="font-bold text-gray-700">{floorStartIndex}</span> to{' '}
-                          <span className="font-bold text-gray-700">{floorEndIndex}</span> of{' '}
-                          <span className="font-bold text-gray-700">{totalFloorsCount}</span> floors
-                        </div>
-
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <span>Floors per page:</span>
-                            <select
-                              value={floorItemsPerPage}
-                              onChange={(e) => {
-                                setFloorItemsPerPage(Number(e.target.value));
-                                setFloorCurrentPage(1);
-                              }}
-                              className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-bold text-gray-700 focus:outline-none focus:border-[#7A0808]"
-                            >
-                              <option value={5}>5</option>
-                              <option value={10}>10</option>
-                              <option value={20}>20</option>
-                            </select>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setFloorCurrentPage((p) => Math.max(1, p - 1))}
-                              disabled={floorCurrentPage === 1}
-                              className="px-2.5 py-1 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex items-center gap-1"
-                            >
-                              <ChevronLeft size={14} /> Prev
-                            </button>
-                            <span className="px-2 font-bold text-gray-700">
-                              Page {floorCurrentPage} of {totalFloorPages}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setFloorCurrentPage((p) => Math.min(totalFloorPages, p + 1))}
-                              disabled={floorCurrentPage >= totalFloorPages}
-                              className="px-2.5 py-1 rounded-lg border border-gray-200 font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex items-center gap-1"
-                            >
-                              Next <ChevronRight size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  /* Specific Floor View: List of Rooms on this Floor */
-                  <>
-                    {selectedRoomDocIds.length > 0 && (
-                      <div className="flex items-center justify-between bg-red-50/90 border border-red-200 rounded-xl px-4 py-2.5 mb-3 shadow-2xs">
-                        <div className="flex items-center gap-2">
-                          <CheckSquare size={16} className="text-[#7A0808]" />
-                          <span className="text-xs font-bold text-[#7A0808]">
-                            {selectedRoomDocIds.length} room(s) selected
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedRoomDocIds([])}
-                            className="text-[11px] font-semibold text-gray-500 hover:text-gray-700 underline ml-2"
-                          >
-                            Clear selection
-                          </button>
-                        </div>
-
-                        {(canManageBuildings() || canManageAssignedRooms()) && (
-                          <button
-                            type="button"
-                            onClick={() => setShowBulkEditRooms(true)}
-                            className="btn-maroon text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-sm"
-                          >
-                            <Edit2 size={13} /> Bulk Edit Rooms
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="w-10 py-3 pr-2 text-center">
+                {/* Rooms Grid Table */}
+                <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100 uppercase tracking-wider text-[10px]">
+                      <tr>
+                        {canManageBuildings() && (
+                          <th className="p-3 w-10 text-center">
                             <input
                               type="checkbox"
                               checked={isAllRoomsSelected}
                               onChange={toggleSelectAllRooms}
                               className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
-                              title="Select all rooms"
+                              title="Select all rooms on this floor"
                             />
                           </th>
-                          {['Room', 'Capacity', 'Facilities / Equipment', 'Actions'].map((h) => (
-                            <th key={h} className="text-left text-[10px] font-black uppercase tracking-wider text-gray-400 py-3 pr-4">
-                              {h}
-                            </th>
-                          ))}
+                        )}
+                        <th className="p-3">Room / Number</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Capacity</th>
+                        <th className="p-3">Equipment / Facilities</th>
+                        <th className="p-3">Manager</th>
+                        <th className="p-3 text-center w-24">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-medium">
+                      {displayedRooms.length === 0 ? (
+                        <tr>
+                          <td colSpan={canManageBuildings() ? 7 : 6} className="p-8 text-center text-gray-400 italic">
+                            No rooms found for this selection.
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {displayedRooms.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-sm text-gray-400">
-                              No rooms found on this floor.
-                            </td>
-                          </tr>
-                        ) : (
-                          displayedRooms.map((room) => {
-                            const floorObj = building.floorData.find((f) => f.floor === room.floor);
-                            const rId = room.docId || room.id;
-                            const isChecked = selectedRoomDocIds.includes(rId);
+                      ) : (
+                        displayedRooms.map((rm) => {
+                          const docId = rm.docId || rm.id;
+                          const isSelected = selectedRoomDocIds.includes(docId);
 
-                            return (
-                              <tr
-                                key={rId}
-                                className={`border-b border-gray-50 hover:bg-gray-50/60 transition-colors ${
-                                  isChecked ? 'bg-red-50/30' : ''
-                                }`}
-                              >
-                                <td className="w-10 py-3 pr-2 text-center">
+                          return (
+                            <tr key={docId} className={`hover:bg-red-50/30 transition-colors ${isSelected ? 'bg-red-50/50' : ''}`}>
+                              {canManageBuildings() && (
+                                <td className="p-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => toggleSelectRoom(rId)}
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectRoom(docId)}
                                     className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
                                   />
                                 </td>
-                                <td className="py-3 pr-4 text-sm font-bold text-dark">{room.id}</td>
-                                <td className="py-3 pr-4 text-sm text-gray-600">{room.capacity}</td>
-                                <td className="py-3 pr-4">
-                                  <div className="text-xs text-gray-600">
-                                    {room.equipment?.length > 0 ? (
-                                      room.equipment.slice(0, 3).join(', ')
-                                    ) : (
-                                      <span className="text-gray-400">—</span>
-                                    )}
+                              )}
+                              <td className="p-3 font-bold text-[#2B3235]">{rm.id || rm.name}</td>
+                              <td className="p-3 font-semibold text-gray-700">{rm.type || 'Classroom'}</td>
+                              <td className="p-3 font-bold text-gray-800">{rm.capacity || '—'} pax</td>
+                              <td className="p-3">
+                                {rm.equipment && rm.equipment.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1 max-w-xs">
+                                    {rm.equipment.map((eq, eIdx) => (
+                                      <span key={eIdx} className="px-2 py-0.5 bg-gray-100 text-gray-700 font-medium text-[10px] rounded-md border border-gray-200">
+                                        {eq}
+                                      </span>
+                                    ))}
                                   </div>
-                                </td>
-                                <td className="py-3 pr-4">
-                                  <div className="flex gap-2">
-                                    {canSubmitReservation() && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openReservation({
-                                          building: building.name,
+                                ) : (
+                                  <span className="text-gray-400 italic">None</span>
+                                )}
+                              </td>
+                              <td className="p-3 font-semibold text-gray-700">
+                                {rm.managedByName || (rm.managedBy ? 'Assigned' : 'Registrar')}
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigate(`/room/${rm.id || rm.name}`, {
+                                        state: {
+                                          room: rm,
                                           buildingId: building.id,
-                                          room: room.id,
-                                          roomDocId: room.docId,
-                                          floor: room.floor,
-                                          floorId: floorObj?.floorId,
-                                          designatedVenue: `${room.id}, ${building.name} Floor ${room.floor}`,
-                                        })}
-                                        className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                                        style={{ color: '#7A0808' }}
-                                        title="Reserve room"
-                                      >
-                                        <Calendar size={14} />
-                                      </button>
-                                    )}
+                                          buildingName: building.name,
+                                          floor: rm.floor,
+                                          floorId: rm.floorId,
+                                        },
+                                      })
+                                    }
+                                    className="p-1.5 text-gray-500 hover:text-[#7A0808] hover:bg-red-50 rounded-lg transition-colors"
+                                    title="View Room Details & Schedule"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                  {canManageBuildings() && (
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        navigate(`/room/${room.id}`, {
-                                          state: {
-                                            room,
-                                            buildingId: building.id,
-                                            buildingName: building.name,
-                                            floor: room.floor,
-                                            floorId: floorObj?.floorId,
-                                          },
-                                        })
-                                      }
-                                      className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                                      style={{ color: '#7A0808' }}
-                                      title="View room details"
+                                      onClick={() => setEditRoom(rm)}
+                                      className="p-1.5 text-gray-500 hover:text-[#7A0808] hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Edit Room"
                                     >
-                                      <Eye size={14} />
+                                      <Edit2 size={15} />
                                     </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </>
-                )}
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-
-              {canManageBuildings() && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/building/${building.id}`)}
-                  className="w-full mt-5 py-3 rounded-xl font-bold text-sm transition-all"
-                  style={{ background: '#7A0808', color: 'white' }}
-                >
-                  Manage floors & rooms
-                </button>
-              )}
             </div>
           )}
         </div>
       )}
 
-      {modals}
-
-      {canManageBuildings() && showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}
-      {canManageBuildings() && showAddFloor && building && (
+      {/* Modals */}
+      {showAddBuilding && (
+        <AddBuildingModal onClose={() => setShowAddBuilding(false)} />
+      )}
+      {showAddFloor && building && (
         <AddFloorModal
           buildingId={building.id}
-          buildingName={building.name}
+          existingFloors={building.floorData || []}
           onClose={() => setShowAddFloor(false)}
         />
       )}
-      {canManageBuildings() && showEditBuilding && building && (
+      {showEditBuilding && building && (
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
           onSave={updateBuilding}
         />
       )}
-      {canManageBuildings() && editFloor && building && (
+      {editFloor && building && (
         <EditFloorModal
           buildingId={building.id}
           floor={editFloor}
           onClose={() => setEditFloor(null)}
         />
       )}
+      {editRoom && building && (
+        <EditRoomModal
+          room={editRoom}
+          buildingId={building.id}
+          floorId={editRoom.floorId || building.floorData?.find((f) => f.floor === editRoom.floor)?.floorId}
+          floorManagedBy={building.floorData?.find((f) => f.floor === editRoom.floor)?.managedBy}
+          onClose={() => setEditRoom(null)}
+        />
+      )}
       {showBulkEditRooms && building && (
         <BulkEditRoomsModal
           selectedRooms={selectedRoomsObjects}
           buildingId={building.id}
-          floorId={building.floorData?.find((f) => f.floor === selectedFloor)?.floorId}
-          onClose={() => {
+          floorId={displayedRooms[0]?.floorId || building.floorData[0]?.floorId}
+          onClose={(updated) => {
             setShowBulkEditRooms(false);
-            setSelectedRoomDocIds([]);
+            if (updated) setSelectedRoomDocIds([]);
           }}
         />
       )}
