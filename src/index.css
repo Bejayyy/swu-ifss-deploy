@@ -4,6 +4,17 @@
 
 * { box-sizing: border-box; }
 
+/* Remove up/down spinner arrows from number inputs globally */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
   color: #2B3235;
@@ -48,168 +59,139 @@ body {
 
 .nav-item.active .nav-icon,
 .nav-item.active .nav-label {
-  color: #800000;
+  color: #800000 !important;
 }
 
-.nav-item.active {
+.badge-green {
+  background: #EAF9F1;
+  color: #0E8345;
+  font-size: 11px;
   font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
 }
 
-.scrollbar-thin::-webkit-scrollbar { width: 4px; }
-.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 4px; }
-
-.stat-card {
-  background: white;
-  border-radius: 10px;
-  border-left: 5px solid #800000;
-  padding: 24px 20px 24px 18px;
-  min-height: 150px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+.badge-yellow {
+  background: #FFF8E6;
+  color: #B47D00;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
 }
 
-.stat-icon-box {
-  width: 44px;
-  height: 44px;
+.btn-maroon {
+  background: #7A0808;
+  color: white;
+  padding: 8px 16px;
   border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
   border: none;
-  background: #FFFBFB;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #800000;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-maroon:hover {
+  background: #5E0606;
+}
+
+.btn-outline-maroon {
+  background: transparent;
+  color: #7A0808;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1.5px solid #7A0808;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-outline-maroon:hover {
+  background: #FFF0F0;
+}
+
+.card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  padding: 20px;
 }
 
 .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.45);
-  z-index: 1000;
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  z-index: 50;
 }
 
-.btn-maroon {
-  background: #800000;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  padding: 9px 20px;
-  font-size: 13.5px;
+.form-label {
+  display: block;
+  font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: background 0.15s;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  color: #2B3235;
+  margin-bottom: 6px;
 }
-
-.btn-maroon:hover { background: #600000; }
-
-.btn-outline-maroon {
-  background: white;
-  color: #800000;
-  border: 1.5px solid #800000;
-  border-radius: 10px;
-  padding: 8px 20px;
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-}
-
-.btn-outline-maroon:hover { background: #800000; color: #fff; }
 
 .form-input {
   width: 100%;
-  border: 1.5px solid #e2e5e8;
-  border-radius: 8px;
   padding: 9px 12px;
-  font-size: 13.5px;
-  color: #2B3235;
+  border-radius: 10px;
+  border: 1px solid #E2E8F0;
+  font-size: 13px;
   outline: none;
-  font-family: 'Plus Jakarta Sans', sans-serif;
   transition: border-color 0.15s;
-  background: white;
+}
+.form-input:focus {
+  border-color: #7A0808;
+  box-shadow: 0 0 0 3px rgba(122,8,8,0.1);
 }
 
-.form-input:focus { border-color: #800000; }
-
-.form-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #2B3235;
-  margin-bottom: 5px;
-  display: block;
-}
-
-.badge-pending { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-.badge-approved { background: #D1FAE5; color: #065F46; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-.badge-rejected { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-.badge-available { background: #D1FAE5; color: #065F46; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
-.badge-occupied { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
-.badge-maintenance { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
-
-.priority-high { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-.priority-medium { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-
-.request-card {
-  border: 1.5px solid #e8eaec;
+.room-card {
   border-radius: 12px;
-  background: white;
-  padding: 18px 20px;
-  margin-bottom: 14px;
-  transition: box-shadow 0.15s;
+  border: 1.5px solid #E2E8F0;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.room-card:hover {
+  border-color: #7A0808;
+}
+.room-card.selected {
+  border-color: #7A0808;
+  background: #FFF0F0;
 }
 
-.request-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
-
-/* Modal animations */
-@keyframes fadeIn {
-  from {
+@keyframes modalPop {
+  0% {
     opacity: 0;
     transform: scale(0.95);
   }
-  to {
+  100% {
     opacity: 1;
     transform: scale(1);
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.animate-modal-pop {
+  animation: modalPop 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.2s ease-out;
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.animate-spin {
-  animation: spin 1s linear infinite;
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
 }
-
-/* Skeleton pulse animation */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
 }
-
-.animate-pulse {
-  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.skeleton {
-  background-color: #e5e7eb;
-  border-radius: 8px;
+::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
 }

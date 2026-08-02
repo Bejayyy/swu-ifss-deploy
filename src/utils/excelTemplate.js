@@ -1,99 +1,137 @@
 import * as XLSX from 'xlsx';
-import { INSTITUTIONAL_EMAIL_DOMAIN } from '../firebase/constants';
-import { requiresCollege } from '../constants/colleges';
 
 /**
- * Downloads a dynamic Excel (.xlsx) template for bulk adding users.
- * Automatically configures in-cell Data Validation (dropdowns) for Roles and Colleges
- * referencing the Roles & Colleges Reference tab and inline list.
+ * Smart Title Case Formatter: Capitalizes the first letter of each word.
+ * e.g., "introduction to programming" -> "Introduction To Programming"
  */
-export function downloadBulkUserTemplate(roleOptions = [], colleges = []) {
-  const wb = XLSX.utils.book_new();
+export const toTitleCase = (str) => {
+  if (!str) return '';
+  return String(str).replace(/\b\w/g, (char) => char.toUpperCase());
+};
 
-  // Primary Sheet: Users Template
-  const templateHeaders = [
-    ['First Name *', 'Middle Name *', 'Last Name *', 'Email *', 'Role *', 'College'],
+/**
+ * Smart Normalizer for Course Type:
+ * Handles inputs like "laboratory and lecture", "lecture/laboratory", "lab & lec", "both" -> "both"
+ * "laboratory", "lab" -> "laboratory"
+ * "lecture", "lec" -> "lecture"
+ */
+export const normalizeCourseType = (rawType) => {
+  if (!rawType) return 'lecture';
+  const s = String(rawType).toLowerCase().trim();
+  const hasLab = s.includes('lab') || s.includes('laboratory');
+  const hasLec = s.includes('lec') || s.includes('lecture');
+
+  if (s === 'both' || (hasLab && hasLec) || (s.includes('both') && (hasLab || hasLec))) {
+    return 'both';
+  }
+  if (hasLab && hasLec) return 'both';
+  if (hasLab) return 'laboratory';
+  if (hasLec) return 'lecture';
+  return 'lecture';
+};
+
+/**
+ * Smart Normalizer for Year Level
+ */
+export const normalizeYearLevel = (rawYear) => {
+  if (!rawYear) return '1st Year';
+  const s = String(rawYear).toLowerCase().trim();
+  if (s.includes('5') || s.includes('fifth')) return '5th Year';
+  if (s.includes('4') || s.includes('fourth')) return '4th Year';
+  if (s.includes('3') || s.includes('third')) return '3rd Year';
+  if (s.includes('2') || s.includes('second')) return '2nd Year';
+  if (s.includes('1') || s.includes('first')) return '1st Year';
+  return '1st Year';
+};
+
+/**
+ * Smart Normalizer for Semester
+ */
+export const normalizeSemester = (rawSem) => {
+  if (!rawSem) return '1st Semester';
+  const s = String(rawSem).toLowerCase().trim();
+  if (s.includes('summer') || s.includes('midyear')) return 'Summer';
+  if (s.includes('2') || s.includes('second') || s.includes('2nd')) return '2nd Semester';
+  if (s.includes('1') || s.includes('first') || s.includes('1st')) return '1st Semester';
+  return '1st Semester';
+};
+
+/**
+ * Generates an Excel template file (.xlsx) for bulk importing users.
+ */
+export function downloadBulkUserTemplate() {
+  const headers = [
+    'First Name *',
+    'Middle Name *',
+    'Last Name *',
+    'Role *',
+    'Email Address *',
+    'College Code (Req for Registrar/Teacher/Student)',
   ];
 
-  const sampleRole = roleOptions[0]?.label || 'Dean';
-  const sampleCollege = colleges[0]?.code || 'CAS';
-
-  // Exactly ONE example row for user reference
   const sampleRows = [
-    ['Juan', 'Dela', 'Cruz', `juan.cruz@${INSTITUTIONAL_EMAIL_DOMAIN}`, sampleRole, sampleCollege],
+    [
+      'Juan',
+      'Dela',
+      'Cruz',
+      'student',
+      'juan.cruz@swu.edu.ph',
+      'CEIT',
+    ],
   ];
 
-  const wsData = [...templateHeaders, ...sampleRows];
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const sheetData = [headers, ...sampleRows];
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Set column widths for clean presentation
-  ws['!cols'] = [
-    { wch: 18 }, // First Name
-    { wch: 18 }, // Middle Name
-    { wch: 18 }, // Last Name
-    { wch: 32 }, // Email
-    { wch: 24 }, // Role
-    { wch: 18 }, // College
+  worksheet['!cols'] = [
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 30 },
+    { wch: 45 },
   ];
 
-  // Configure Data Validation (Dropdowns) for Role (Column E) and College (Column F)
-  const roleListStr = roleOptions.map((r) => r.label).join(',');
-  const collegeListStr = colleges.map((c) => c.code).join(',');
+  const validRoles = [
+    'super_admin',
+    'asset_manager',
+    'department_head',
+    'working_scholar',
+    'custodian',
+    'registrar',
+    'teacher',
+    'student',
+  ];
 
-  ws['!dataValidation'] = [
+  const optionsData = [
+    ['Valid Roles'],
+    ...validRoles.map((role) => [role]),
+  ];
+  const optionsWorksheet = XLSX.utils.aoa_to_sheet(optionsData);
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'User Import Template');
+  XLSX.utils.book_append_sheet(workbook, optionsWorksheet, 'Reference Options');
+
+  worksheet['!dataValidation'] = [
     {
-      sqref: 'E2:E200',
+      sqref: 'D2:D1000',
       type: 'list',
       operator: 'equal',
-      formula1: roleOptions.length > 0 ? `'Roles & Colleges Reference'!$A$2:$A$${roleOptions.length + 1}` : `"${roleListStr}"`,
-      allowBlank: true,
+      formula1: "'Reference Options'!$A$2:$A$9",
       showErrorMessage: true,
       errorTitle: 'Invalid Role',
-      error: 'Please select a role from the dropdown list.',
-    },
-    {
-      sqref: 'F2:F200',
-      type: 'list',
-      operator: 'equal',
-      formula1: colleges.length > 0 ? `'Roles & Colleges Reference'!$C$2:$C$${colleges.length + 1}` : `"${collegeListStr}"`,
-      allowBlank: true,
-      showErrorMessage: true,
-      errorTitle: 'Invalid College',
-      error: 'Please select a college from the dropdown list.',
+      error: 'Please select a valid role from the dropdown list.',
     },
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Users Template');
-
-  // Secondary Sheet: Roles & Colleges Reference
-  const refHeaders = [['Valid Roles (Label)', 'Role Key (Internal)', 'College Code', 'College Full Name']];
-  const maxRows = Math.max(roleOptions.length, colleges.length);
-  const refRows = [];
-
-  for (let i = 0; i < maxRows; i++) {
-    const r = roleOptions[i];
-    const c = colleges[i];
-    refRows.push([
-      r ? r.label : '',
-      r ? r.value : '',
-      c ? c.code : '',
-      c ? c.name : '',
-    ]);
-  }
-
-  const wsRef = XLSX.utils.aoa_to_sheet([...refHeaders, ...refRows]);
-  wsRef['!cols'] = [{ wch: 26 }, { wch: 22 }, { wch: 16 }, { wch: 35 }];
-  XLSX.utils.book_append_sheet(wb, wsRef, 'Roles & Colleges Reference');
-
-  // Write and trigger download
-  XLSX.writeFile(wb, `swu_bulk_users_template.xlsx`);
+  XLSX.writeFile(workbook, 'swu_bulk_user_import_template.xlsx');
 }
 
 /**
- * Parses an uploaded Excel or CSV file and validates each row.
- * Filters out the template's example row automatically.
+ * Parses and validates an uploaded Excel/CSV file containing users.
  */
-export async function parseBulkUserSpreadsheet(file, roleOptions = [], roleDefinitions = {}, colleges = []) {
+export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = [], existingUsers = []) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -102,18 +140,19 @@ export async function parseBulkUserSpreadsheet(file, roleOptions = [], roleDefin
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
 
-        // Get first worksheet
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          return resolve({ rows: [], errors: ['No worksheets found in the file.'] });
+        }
+
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-
-        // Convert to 2D array
         const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
         if (!rawRows || rawRows.length === 0) {
           return resolve({ rows: [], errors: ['The uploaded file is empty.'] });
         }
 
-        // Find header index
+        // Locate header row
         let headerIndex = -1;
         for (let i = 0; i < rawRows.length; i++) {
           const rowStr = rawRows[i].map((c) => String(c).toLowerCase()).join(' ');
@@ -123,113 +162,75 @@ export async function parseBulkUserSpreadsheet(file, roleOptions = [], roleDefin
           }
         }
 
-        if (headerIndex === -1) {
-          headerIndex = 0; // fallback to line 0
-        }
-
-        const headers = rawRows[headerIndex].map((h) => String(h).trim().toLowerCase());
-        const dataRows = rawRows.slice(headerIndex + 1);
-
-        // Find column indices
-        const fnIdx = headers.findIndex((h) => h.includes('first'));
-        const mnIdx = headers.findIndex((h) => h.includes('middle'));
-        const lnIdx = headers.findIndex((h) => h.includes('last'));
-        const emailIdx = headers.findIndex((h) => h.includes('email'));
-        const roleIdx = headers.findIndex((h) => h.includes('role'));
-        const collegeIdx = headers.findIndex((h) => h.includes('college'));
-
+        const dataRows = headerIndex !== -1 ? rawRows.slice(headerIndex + 1) : rawRows;
         const parsedRows = [];
         const seenEmails = new Set();
 
+        const validRoleValues = [
+          'super_admin',
+          'asset_manager',
+          'department_head',
+          'working_scholar',
+          'custodian',
+          'registrar',
+          'teacher',
+          'student',
+        ];
+
         dataRows.forEach((row, rowIdx) => {
-          // Skip entirely empty rows
-          if (!row || row.every((val) => String(val).trim() === '')) return;
-
-          const rawFn = fnIdx !== -1 && row[fnIdx] !== undefined ? String(row[fnIdx]).trim() : '';
-          const rawMn = mnIdx !== -1 && row[mnIdx] !== undefined ? String(row[mnIdx]).trim() : '';
-          const rawLn = lnIdx !== -1 && row[lnIdx] !== undefined ? String(row[lnIdx]).trim() : '';
-          const rawEmail = emailIdx !== -1 && row[emailIdx] !== undefined ? String(row[emailIdx]).trim().toLowerCase() : '';
-          const rawRole = roleIdx !== -1 && row[roleIdx] !== undefined ? String(row[roleIdx]).trim() : '';
-          const rawCollege = collegeIdx !== -1 && row[collegeIdx] !== undefined ? String(row[collegeIdx]).trim().toUpperCase() : '';
-
-          // Filter out template's single example row (e.g. Juan Dela Cruz, juan.cruz@swu.edu.ph)
-          const isExampleRow =
-            (rawFn.toLowerCase() === 'juan' && rawLn.toLowerCase() === 'cruz' && rawEmail.includes('juan.cruz')) ||
-            rawEmail === `juan.cruz@${INSTITUTIONAL_EMAIL_DOMAIN}` ||
-            rawEmail.includes('sample.user') ||
-            rawEmail.includes('example.user');
-
-          if (isExampleRow) {
-            return; // Exclude sample row from import
+          if (!row || row.length === 0 || row.every((cell) => String(cell).trim() === '')) {
+            return;
           }
 
-          // Match role to role value
-          let matchedRoleValue = '';
-          const foundRole = roleOptions.find((r) =>
-            r.value.toLowerCase() === rawRole.toLowerCase() ||
-            r.label.toLowerCase() === rawRole.toLowerCase() ||
-            r.label.toLowerCase().replace(/\s+/g, '') === rawRole.toLowerCase().replace(/\s+/g, '')
-          );
-          if (foundRole) {
-            matchedRoleValue = foundRole.value;
-          } else if (roleOptions.length > 0) {
-            matchedRoleValue = roleOptions[0].value;
-          }
+          const rawFirstName = String(row[0] || '').trim();
+          const rawMiddleName = String(row[1] || '').trim();
+          const rawLastName = String(row[2] || '').trim();
+          const rawRole = String(row[3] || '').trim().toLowerCase();
+          const rawEmail = String(row[4] || '').trim().toLowerCase();
+          const rawCollegeCode = String(row[5] || '').trim().toUpperCase();
 
-          // Match college code
-          let matchedCollege = '';
-          const foundCollege = colleges.find((c) =>
-            c.code.toLowerCase() === rawCollege.toLowerCase() ||
-            c.name.toLowerCase() === rawCollege.toLowerCase()
-          );
-          if (foundCollege) {
-            matchedCollege = foundCollege.code;
-          } else {
-            matchedCollege = rawCollege;
+          // Exclude sample row ("Juan", "Dela", "Cruz", "student", "juan.cruz@swu.edu.ph")
+          if (rawEmail === 'juan.cruz@swu.edu.ph' && rawFirstName.toLowerCase() === 'juan') {
+            return;
           }
 
           const rowErrors = [];
 
-          if (!rawFn) rowErrors.push('First name is required');
-          if (!rawMn) rowErrors.push('Middle name is required');
-          if (!rawLn) rowErrors.push('Last name is required');
+          if (!rawFirstName) rowErrors.push('First name is required');
+          if (!rawMiddleName) rowErrors.push('Middle name is required');
+          if (!rawLastName) rowErrors.push('Last name is required');
+
+          if (!rawRole) {
+            rowErrors.push('Role is required');
+          } else if (!validRoleValues.includes(rawRole)) {
+            rowErrors.push(`Invalid role "${rawRole}"`);
+          }
+
           if (!rawEmail) {
             rowErrors.push('Email is required');
-          } else if (!rawEmail.endsWith(`@${INSTITUTIONAL_EMAIL_DOMAIN}`)) {
-            rowErrors.push(`Email must end with @${INSTITUTIONAL_EMAIL_DOMAIN}`);
+          } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+            rowErrors.push('Invalid email format');
           } else if (seenEmails.has(rawEmail)) {
-            rowErrors.push(`Duplicate email in file`);
+            rowErrors.push(`Duplicate email "${rawEmail}" in file`);
+          } else if (existingUsers.some((u) => (u.email || '').toLowerCase() === rawEmail)) {
+            rowErrors.push(`Email "${rawEmail}" already registered`);
           } else {
             seenEmails.add(rawEmail);
           }
 
-          if (!foundRole && rawRole) {
-            rowErrors.push(`Unrecognized role "${rawRole}"`);
-          }
-
-          const showCollege = requiresCollege(matchedRoleValue, roleDefinitions);
-          if (showCollege && !matchedCollege) {
-            rowErrors.push(`College is required for role`);
-          } else if (matchedCollege && colleges.length > 0) {
-            const validCol = colleges.some((c) => c.code.toLowerCase() === matchedCollege.toLowerCase());
-            if (!validCol && showCollege) {
-              rowErrors.push(`Invalid college code "${matchedCollege}"`);
-            }
+          const requiresCol = ['registrar', 'teacher', 'student'].includes(rawRole);
+          if (requiresCol && !rawCollegeCode) {
+            rowErrors.push(`College code required for role "${rawRole}"`);
           }
 
           parsedRows.push({
-            id: `bulk_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
-            firstName: rawFn,
-            middleName: rawMn,
-            lastName: rawLn,
+            id: `bulk_usr_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
+            firstName: toTitleCase(rawFirstName),
+            middleName: toTitleCase(rawMiddleName),
+            lastName: toTitleCase(rawLastName),
+            role: validRoleValues.includes(rawRole) ? rawRole : 'student',
             email: rawEmail,
-            role: matchedRoleValue || (roleOptions[0]?.value || 'dean'),
-            rawRole: rawRole,
-            college: matchedCollege,
-            rawCollege: rawCollege,
-            useCustomAccess: false,
-            permissions: [],
-            navKeys: [],
+            collegeCode: rawCollegeCode,
             isValid: rowErrors.length === 0,
             errors: rowErrors,
           });
@@ -237,7 +238,199 @@ export async function parseBulkUserSpreadsheet(file, roleOptions = [], roleDefin
 
         resolve({ rows: parsedRows });
       } catch (err) {
-        reject(new Error('Failed to parse spreadsheet file: ' + err.message));
+        reject(new Error('Failed to parse user spreadsheet: ' + err.message));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Generates a dynamic Excel template file (.xlsx) for bulk importing courses/subjects.
+ */
+export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
+  const headers = [
+    'Course Code *',
+    'Course Title *',
+    'Year Level *',
+    'Semester *',
+    'Units *',
+    'Course Type *',
+  ];
+
+  const sampleRows = [
+    [
+      'IT101',
+      'Programming 1',
+      '1st Year',
+      '1st Semester',
+      3,
+      'lecture',
+    ],
+  ];
+
+  const sheetData = [headers, ...sampleRows];
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+  worksheet['!cols'] = [
+    { wch: 16 },
+    { wch: 32 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 16 },
+  ];
+
+  const validYears = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+  const validSemesters = ['1st Semester', '2nd Semester', 'Summer'];
+  const validTypes = ['lecture', 'laboratory', 'both'];
+
+  const optionsData = [
+    ['Year Levels', 'Semesters', 'Course Types'],
+    ['1st Year', '1st Semester', 'lecture'],
+    ['2nd Year', '2nd Semester', 'laboratory'],
+    ['3rd Year', 'Summer', 'both'],
+    ['4th Year', '', ''],
+    ['5th Year', '', ''],
+  ];
+  const optionsWorksheet = XLSX.utils.aoa_to_sheet(optionsData);
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Course Import Template');
+  XLSX.utils.book_append_sheet(workbook, optionsWorksheet, 'Reference Options');
+
+  worksheet['!dataValidation'] = [
+    {
+      sqref: 'C2:C1000',
+      type: 'list',
+      formula1: "'Reference Options'!$A$2:$A$6",
+      showErrorMessage: true,
+      errorTitle: 'Invalid Year Level',
+      error: 'Please select a valid Year Level from the dropdown list.',
+    },
+    {
+      sqref: 'D2:D1000',
+      type: 'list',
+      formula1: "'Reference Options'!$B$2:$B$4",
+      showErrorMessage: true,
+      errorTitle: 'Invalid Semester',
+      error: 'Please select a valid Semester from the dropdown list.',
+    },
+    {
+      sqref: 'F2:F1000',
+      type: 'list',
+      formula1: "'Reference Options'!$C$2:$C$4",
+      showErrorMessage: true,
+      errorTitle: 'Invalid Course Type',
+      error: 'Please select a valid Course Type from the dropdown list.',
+    },
+  ];
+
+  const filename = `swu_bulk_courses_template_${collegeCode.toLowerCase()}.xlsx`;
+  XLSX.writeFile(workbook, filename);
+}
+
+/**
+ * Parses and validates an uploaded Excel/CSV file containing courses/subjects.
+ * Automatically excludes sample rows and applies smart normalization for Title, Year Level, Semester, and Type.
+ */
+export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          return resolve({ rows: [], errors: ['No worksheets found in the file.'] });
+        }
+
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+        if (!rawRows || rawRows.length === 0) {
+          return resolve({ rows: [], errors: ['The uploaded file is empty.'] });
+        }
+
+        // Locate header row
+        let headerIndex = -1;
+        for (let i = 0; i < rawRows.length; i++) {
+          const rowStr = rawRows[i].map((c) => String(c).toLowerCase()).join(' ');
+          if (rowStr.includes('course code') || rowStr.includes('course title') || rowStr.includes('units')) {
+            headerIndex = i;
+            break;
+          }
+        }
+
+        const dataRows = headerIndex !== -1 ? rawRows.slice(headerIndex + 1) : rawRows;
+        const parsedRows = [];
+        const seenCodes = new Set();
+
+        dataRows.forEach((row, rowIdx) => {
+          if (!row || row.length === 0 || row.every((cell) => String(cell).trim() === '')) {
+            return;
+          }
+
+          const rawCode = String(row[0] || '').trim().toUpperCase();
+          // Smart Title Case: Capitalizes first letter of each word
+          const rawTitle = toTitleCase(String(row[1] || ''));
+          const rawYear = String(row[2] || '').trim();
+          const rawSem = String(row[3] || '').trim();
+          const rawUnits = Number(row[4]);
+          const rawType = String(row[5] || '').trim();
+
+          // Auto-exclude sample row ("IT101", "Programming 1")
+          if (rawCode === 'IT101' && rawTitle.toLowerCase() === 'programming 1') {
+            return;
+          }
+
+          const rowErrors = [];
+
+          if (!rawCode) {
+            rowErrors.push('Course code is required');
+          } else if (seenCodes.has(rawCode)) {
+            rowErrors.push(`Duplicate course code "${rawCode}" in file`);
+          } else if (existingCourses.some((c) => (c.code || '').toUpperCase() === rawCode)) {
+            rowErrors.push(`Course code "${rawCode}" already exists in college`);
+          } else {
+            seenCodes.add(rawCode);
+          }
+
+          if (!rawTitle) {
+            rowErrors.push('Course title is required');
+          }
+
+          // Smart Normalizers
+          const yearLevel = normalizeYearLevel(rawYear);
+          const semester = normalizeSemester(rawSem);
+          const type = normalizeCourseType(rawType);
+
+          let units = isNaN(rawUnits) || rawUnits <= 0 ? 3 : rawUnits;
+          if (isNaN(rawUnits) || rawUnits <= 0) {
+            rowErrors.push('Units must be a positive number');
+          }
+
+          parsedRows.push({
+            id: `bulk_crs_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
+            code: rawCode,
+            title: rawTitle,
+            yearLevel,
+            semester,
+            units,
+            type,
+            isValid: rowErrors.length === 0,
+            errors: rowErrors,
+          });
+        });
+
+        resolve({ rows: parsedRows });
+      } catch (err) {
+        reject(new Error('Failed to parse course spreadsheet: ' + err.message));
       }
     };
 

@@ -31,6 +31,9 @@ export function subscribeCollegeCourses(collegeCode, onData, onError) {
         const yA = a.yearLevel || '';
         const yB = b.yearLevel || '';
         if (yA !== yB) return yA.localeCompare(yB);
+        const sA = a.semester || '';
+        const sB = b.semester || '';
+        if (sA !== sB) return sA.localeCompare(sB);
         return (a.code || '').localeCompare(b.code || '');
       });
 
@@ -85,9 +88,10 @@ export async function addCourse(courseData) {
     title: (courseData.title || '').trim(),
     type: courseData.type || 'lecture',
     yearLevel: courseData.yearLevel || '1st Year',
+    semester: courseData.semester || '1st Semester',
     units: Number(courseData.units) || 0,
-    description: (courseData.description || '').trim(),
     collegeCode: (courseData.collegeCode || '').trim().toUpperCase(),
+    programCode: (courseData.programCode || '').trim().toUpperCase(),
     assignedTeacherUid: courseData.assignedTeacherUid || null,
     assignedTeacherName: courseData.assignedTeacherName || null,
     assignedTeacherEmail: courseData.assignedTeacherEmail || null,
@@ -111,8 +115,10 @@ export async function updateCourse(courseId, updates) {
 
   if (updates.code) cleanUpdates.code = updates.code.trim().toUpperCase();
   if (updates.title) cleanUpdates.title = updates.title.trim();
-  if (updates.description !== undefined) cleanUpdates.description = updates.description.trim();
+  if (updates.semester) cleanUpdates.semester = updates.semester;
+  if (updates.yearLevel) cleanUpdates.yearLevel = updates.yearLevel;
   if (updates.collegeCode) cleanUpdates.collegeCode = updates.collegeCode.trim().toUpperCase();
+  if (updates.programCode) cleanUpdates.programCode = updates.programCode.trim().toUpperCase();
 
   await updateDoc(docRef, cleanUpdates);
 }
