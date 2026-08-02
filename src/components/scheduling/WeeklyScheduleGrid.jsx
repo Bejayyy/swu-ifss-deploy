@@ -243,8 +243,6 @@ export default function WeeklyScheduleGrid({
             {[
               { type: 'Lecture', label: 'Lecture' },
               { type: 'Laboratory', label: 'Laboratory' },
-              { type: 'Reservation', label: 'Reservation' },
-              { type: 'Maintenance', label: 'Maintenance' },
             ].map(({ type, label }) => {
               const colors = SCHEDULE_TYPE_COLORS[type];
               const isSelected = typeFilter === type;
@@ -258,12 +256,12 @@ export default function WeeklyScheduleGrid({
                     isSelected ? 'ring-2 ring-offset-1 ring-[#800000] shadow-2xs' : 'hover:opacity-90'
                   }`}
                   style={{
-                    background: colors.bg,
-                    borderColor: colors.border,
-                    color: colors.text,
+                    background: colors?.bg || '#EFF6FF',
+                    borderColor: colors?.border || '#BFDBFE',
+                    color: colors?.text || '#1E40AF',
                   }}
                 >
-                  <div className="w-2.5 h-2.5 rounded-xs flex-shrink-0" style={{ background: colors.text }} />
+                  <div className="w-2.5 h-2.5 rounded-xs flex-shrink-0" style={{ background: colors?.text || '#1E40AF' }} />
                   <span>{label}</span>
                 </button>
               );
@@ -281,8 +279,6 @@ export default function WeeklyScheduleGrid({
               <option value="All">All Types ({blocks.length})</option>
               <option value="Lecture">Lecture ({blocks.filter((b) => b.type === 'Lecture').length})</option>
               <option value="Laboratory">Laboratory ({blocks.filter((b) => b.type === 'Laboratory').length})</option>
-              <option value="Reservation">Reservation ({blocks.filter((b) => b.type === 'Reservation' || b.type?.startsWith('Reservation')).length})</option>
-              <option value="Maintenance">Maintenance ({blocks.filter((b) => b.type === 'Maintenance').length})</option>
             </select>
           </div>
         </div>

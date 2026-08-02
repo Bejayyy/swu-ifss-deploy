@@ -1217,6 +1217,7 @@ export default function CourseSchedulingNew() {
           deanCollege={selectedDean?.college || selectedDean?.department}
           deanUid={selectedDeanUid}
           semester={semester}
+          sectionYearLevel={deanSections.find((s) => s.name === selectedSection)?.yearLevel || '1st Year'}
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
         />
       ) : entryModal ? (
