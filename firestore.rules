@@ -488,6 +488,28 @@ service cloud.firestore {
         ]);
     }
 
+    // Academic Calendars collection (including PDF calendar & chunks subcollection)
+    match /academic_calendars/{calendarId} {
+      allow read: if isSignedIn();
+      allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+
+      match /{allSubcollections=**} {
+        allow read: if isSignedIn();
+        allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      }
+    }
+
+    // System Settings collection
+    match /system_settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+
+      match /{allSubcollections=**} {
+        allow read: if isSignedIn();
+        allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      }
+    }
+
     // Simple Schedule Access Control - Registrar grants colleges access
     match /schedule_access_control/{accessId} {
       // Registrar can manage

@@ -67,11 +67,13 @@ export const ROUTE_PERMISSIONS = {
   '/course-scheduling': PERMISSIONS.SCHEDULING_SUBMIT,
   '/teachers': null,
   '/courses': null,
-  '/room-availability': PERMISSIONS.ROOM_AVAILABILITY_VIEW,
-  '/room-finder': PERMISSIONS.ROOM_AVAILABILITY_VIEW,
-  '/schedule-history': PERMISSIONS.ROOM_SCHEDULES_VIEW,
-  '/building-management': PERMISSIONS.ROOM_AVAILABILITY_VIEW,
+  '/room-availability': null,
+  '/room-finder': null,
+  '/schedule-history': null,
+  '/building-management': null,
+  '/assigned-rooms': null,
   '/academic-calendar': PERMISSIONS.ACADEMIC_CALENDAR_VIEW,
+  '/system-settings': null,
   '/reports': PERMISSIONS.REPORTS_VIEW,
   '/college-inventory': PERMISSIONS.SYSTEM_ADMIN,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
@@ -82,9 +84,11 @@ export const ROUTE_PERMISSIONS = {
 export const NAV_ITEMS = {
   dashboard: { label: 'Dashboard', path: '/dashboard', permission: null },
   systemAdmin: { label: 'User Management', path: '/system-administration', permission: PERMISSIONS.SYSTEM_ADMIN },
-  buildings: { label: 'Buildings', path: '/building-management', permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
-  roomFinder: { label: 'Room Finder', path: '/room-finder', permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW },
-  academicCalendar: { label: 'Academic Calendar', path: '/academic-calendar', permission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
+  buildings: { label: 'Buildings', path: '/building-management', permission: null },
+  assignedRooms: { label: 'Assigned Rooms', path: '/assigned-rooms', permission: null },
+  roomFinder: { label: 'Room Finder', path: '/room-finder', permission: null },
+  academicCalendar: { label: 'School Calendar', path: '/academic-calendar', permission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
+  systemSettings: { label: 'System Settings', path: '/system-settings', permission: null },
   courseScheduling: { label: 'Course Scheduling', path: '/course-scheduling', permission: PERMISSIONS.SCHEDULING_SUBMIT },
   teachers: { label: 'Teachers', path: '/teachers', permission: null },
   collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: PERMISSIONS.SYSTEM_ADMIN },
@@ -100,7 +104,7 @@ const ROLE_NAV_KEYS = {
     'systemAdmin',
     'buildings',
     'roomFinder',
-    'academicCalendar',
+    'systemSettings',
     'courseScheduling',
     'teachers',
     'collegeInventory',
@@ -111,6 +115,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.DEAN]: [
     'dashboard',
     'buildings',
+    'assignedRooms',
     'roomFinder',
     'academicCalendar',
     'courseScheduling',
@@ -362,25 +367,24 @@ export function canManageAllRooms(role) {
   return role === ROLES.REGISTRAR;
 }
 
-/** Dean/GSD scoped room access via profile.assignedRoomIds / assignedBuildingIds or room.managedBy */
 export function canEditRoom(profile, room, roleDefinitions = {}) {
   if (!profile || !room) return false;
-  if (canManageBuildings(profile.role, roleDefinitions, profile)) return true;
-  if (canManageAllRooms(profile.role)) return true;
-  if (canManageRoomMaintenance(profile.role, roleDefinitions, profile)) return true;
-  if (canManageAssignedRooms(profile.role, roleDefinitions, profile)) {
-    const roomId = room.docId || room.id || room.roomCode;
-    const assignedRooms = profile.assignedRoomIds || [];
-    const assignedBuildings = profile.assignedBuildingIds || [];
+  if (canManageAllRooms(profile.role)) return true; // Registrar can edit all rooms
 
-    // Check direct assignment on room doc
-    if (room.managedBy && (room.managedBy === profile.uid || room.managedBy === profile.id)) return true;
-    if (profile.name && room.managedByName && room.managedByName.toLowerCase() === profile.name.toLowerCase()) return true;
+  const uid = profile.uid || profile.id;
+  const profileName = (profile.name || profile.displayName || '').toLowerCase();
+  const roomId = room.docId || room.id || room.roomCode;
+  const assignedRooms = profile.assignedRoomIds || [];
+  const assignedBuildings = (profile.assignedBuildingIds || []).map(String);
 
-    // Check profile's explicit assigned rooms or buildings
-    if (assignedRooms.includes(roomId) || assignedRooms.includes(room.docId) || assignedRooms.includes(room.roomCode)) return true;
-    if (assignedBuildings.includes(String(room.buildingId))) return true;
-  }
+  // Check direct assignment on room doc
+  if (room.managedBy && (room.managedBy === uid || String(room.managedBy) === String(uid))) return true;
+  if (profileName && room.managedByName && room.managedByName.toLowerCase() === profileName) return true;
+
+  // Check profile's explicit assigned rooms or buildings
+  if (assignedRooms.includes(roomId) || (room.docId && assignedRooms.includes(room.docId)) || (room.roomCode && assignedRooms.includes(room.roomCode))) return true;
+  if (room.buildingId && assignedBuildings.includes(String(room.buildingId))) return true;
+
   return false;
 }
 

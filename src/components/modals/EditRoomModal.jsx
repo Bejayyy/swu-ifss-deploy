@@ -40,13 +40,7 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [error, setError] = useState('');
 
-  const canAssignManager = Boolean(
-    profile?.role === 'registrar' ||
-      profile?.role === 'dean' ||
-      profile?.role === 'system_admin' ||
-      profile?.permissions?.includes('rooms.manage.assigned') ||
-      profile?.permissions?.includes('buildings.manage')
-  );
+  const canAssignManager = profile?.role === 'registrar';
 
   // Fetch staff users (deans)
   useEffect(() => {

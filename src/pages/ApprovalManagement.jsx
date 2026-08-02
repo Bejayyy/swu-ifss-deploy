@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight, CheckSquare } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -86,6 +86,11 @@ export default function ApprovalManagement() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [showSection, setShowSection] = useState(initialSection);
+  const [selectedRequestIds, setSelectedRequestIds] = useState([]);
+
+  useEffect(() => {
+    setSelectedRequestIds([]);
+  }, [showSection, tab, filter, dateFrom, dateTo, searchQuery]);
 
   useEffect(() => {
     if (!hasApprovalPermission && showSection !== 'my-requests') {
@@ -236,6 +241,65 @@ export default function ApprovalManagement() {
     }
   };
 
+  const deletableRequests = useMemo(() => {
+    return filteredRequests.filter((r) => isRegistrar || r.createdByUid === profile?.uid);
+  }, [filteredRequests, isRegistrar, profile]);
+
+  const isAllSelected =
+    deletableRequests.length > 0 &&
+    deletableRequests.every((r) => selectedRequestIds.includes(r.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedRequestIds([]);
+    } else {
+      setSelectedRequestIds(deletableRequests.map((r) => r.id));
+    }
+  };
+
+  const toggleSelectRequest = (id) => {
+    setSelectedRequestIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedRequestIds.length === 0) return;
+
+    const confirmed = await showConfirm({
+      title: 'Delete selected requests?',
+      message: `Are you sure you want to delete ${selectedRequestIds.length} selected request(s)? This action cannot be undone.`,
+      confirmText: 'Delete All',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    setLoadingMessage(`Deleting ${selectedRequestIds.length} request(s)...`);
+
+    try {
+      await Promise.all(selectedRequestIds.map((id) => deleteRoomReservation(id)));
+      showNotification({
+        type: 'success',
+        title: 'Requests deleted',
+        message: `Successfully deleted ${selectedRequestIds.length} request(s).`,
+        autoCloseMs: 2500,
+      });
+      setSelectedRequestIds([]);
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Delete failed',
+        message: error.message || 'Failed to delete some requests.',
+        autoCloseMs: 0,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const subtitle = (hasApprovalPermission && showSection === 'approvals')
     ? 'Requests requiring your role signature'
     : 'Track your submitted room reservation requests';
@@ -349,6 +413,23 @@ export default function ApprovalManagement() {
           )}
         </div>
 
+        {/* Multi-Selection Bulk Delete Action Bar */}
+        {selectedRequestIds.length > 0 && (
+          <div className="bg-[#7A0808] text-white px-4 py-3 rounded-2xl flex items-center justify-between shadow-lg animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <CheckSquare size={16} />
+              <span>{selectedRequestIds.length} request(s) selected</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              className="px-3.5 py-1.5 bg-white text-[#7A0808] rounded-xl text-xs font-black hover:bg-red-50 transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <Trash2 size={14} /> Delete Selected ({selectedRequestIds.length})
+            </button>
+          </div>
+        )}
+
         {requestsLoading ? (
           <TableSkeleton rows={5} cols={5} />
         ) : filteredRequests.length === 0 ? (
@@ -363,6 +444,16 @@ export default function ApprovalManagement() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-700 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        disabled={deletableRequests.length === 0}
+                        className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
+                        title="Select all deletable requests"
+                      />
+                    </th>
                     <th className="py-3 px-4">ACTIVITY & REQUESTOR</th>
                     <th className="py-3 px-4">VENUE & DETAILS</th>
                     <th className="py-3 px-4">SCHEDULE & DATE FILED</th>
@@ -373,11 +464,22 @@ export default function ApprovalManagement() {
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {paginatedRequests.map((req) => {
                     const canDelete = isRegistrar || req.createdByUid === profile?.uid;
+                    const isSelected = selectedRequestIds.includes(req.id);
                     const activePending = getActivePendingRecord(req.approvalRecords || req.approvalSteps || []);
                     const activeStepLabel = activePending ? (activePending.roleLabel || activePending.roleId) : req.status;
 
                     return (
-                      <tr key={req.id} className="hover:bg-gray-50/70 transition-colors">
+                      <tr key={req.id} className={`hover:bg-gray-50/70 transition-colors ${isSelected ? 'bg-red-50/40' : ''}`}>
+                        <td className="py-3.5 px-4 align-top text-center">
+                          {canDelete && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectRequest(req.id)}
+                              className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer mt-1"
+                            />
+                          )}
+                        </td>
                         <td className="py-3.5 px-4 align-top">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">

@@ -18,9 +18,9 @@ export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { buildingList, buildingsLoading, updateBuilding, currentUser } = useApp();
-  const { canManageBuildings, canEditRoom, canSubmitReservation, isRegistrar } = useRolePermissions();
+  const { canManageBuildings, canManageAssignedRooms, isDean, canEditRoom, canSubmitReservation, isRegistrar } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
-  const canManageBuilding = canManageBuildings();
+  const canManageBuilding = Boolean(canManageBuildings() || canManageAssignedRooms() || isDean || isRegistrar);
   const building = buildingList.find((b) => String(b.id) === String(id));
 
   const [activeFloor, setActiveFloor] = useState(null);

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit2, Building2, Calendar, ChevronRight, ChevronLeft, ChevronDown, Layers, DoorOpen, Camera, Eye, ArrowLeft, CheckSquare } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddBuildingModal from '../components/modals/AddBuildingModal';
@@ -28,7 +29,8 @@ const getRoomTypesSummary = (rooms = []) => {
 export default function BuildingManagement() {
   const navigate = useNavigate();
   const { buildingList, buildingsLoading, buildingsError, updateBuilding } = useApp();
-  const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, canSubmitReservation, roleLabel } = useRolePermissions();
+  const { profile } = useAuth();
+  const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, canSubmitReservation, roleLabel, isRegistrar, canEditRoom } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState('all');
@@ -39,6 +41,46 @@ export default function BuildingManagement() {
   const [editRoom, setEditRoom] = useState(null);
   const [expandedBuildings, setExpandedBuildings] = useState({});
   const [expandedFloors, setExpandedFloors] = useState({});
+
+  const myAssignedRooms = useMemo(() => {
+    if (!buildingList || !profile) return [];
+    const uid = profile.uid || profile.id;
+    const profileName = (profile.name || profile.displayName || '').toLowerCase();
+    const assignedRoomIds = profile.assignedRoomIds || [];
+    const assignedBuildingIds = (profile.assignedBuildingIds || []).map(String);
+
+    const rooms = [];
+    buildingList.forEach((b) => {
+      const isBuildingAssigned = assignedBuildingIds.includes(String(b.id));
+      (b.floorData || []).forEach((f) => {
+        const isFloorAssigned =
+          isBuildingAssigned ||
+          (f.managedBy && (f.managedBy === uid || String(f.managedBy) === String(uid))) ||
+          (f.managedByName && profileName && f.managedByName.toLowerCase() === profileName);
+
+        (f.rooms || []).forEach((r) => {
+          const roomId = r.docId || r.id || r.roomCode;
+          const isRoomAssigned =
+            isFloorAssigned ||
+            assignedRoomIds.includes(roomId) ||
+            (r.managedBy && (r.managedBy === uid || String(r.managedBy) === String(uid))) ||
+            (r.managedByName && profileName && r.managedByName.toLowerCase() === profileName);
+
+          if (isRoomAssigned) {
+            rooms.push({
+              ...r,
+              buildingId: b.id,
+              buildingName: b.name,
+              floor: f.floor,
+              floorId: f.floorId,
+              floorLabel: f.label || `Floor ${f.floor}`,
+            });
+          }
+        });
+      });
+    });
+    return rooms;
+  }, [buildingList, profile]);
 
   // Floor List Pagination State
   const [floorCurrentPage, setFloorCurrentPage] = useState(1);
@@ -240,6 +282,46 @@ export default function BuildingManagement() {
                 );
               })}
             </div>
+
+            {/* Assigned Rooms & Floors Section */}
+            {myAssignedRooms.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-gray-100 space-y-2">
+                <div className="px-1 flex items-center justify-between">
+                  <span className="text-[11px] font-bold tracking-widest uppercase text-[#7A0808]">ASSIGNED ROOMS</span>
+                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-[#7A0808]">
+                    {myAssignedRooms.length}
+                  </span>
+                </div>
+                <div className="space-y-1 max-h-56 overflow-y-auto">
+                  {myAssignedRooms.map((item) => (
+                    <div
+                      key={item.docId || item.id}
+                      onClick={() => {
+                        const b = buildingList.find((bld) => String(bld.id) === String(item.buildingId));
+                        if (b) {
+                          setSelectedBuilding(b);
+                          setSelectedFloor(item.floor || 'all');
+                          setExpandedBuildings((prev) => ({ ...prev, [b.id]: true }));
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer text-xs font-bold transition-all ${
+                        selectedBuilding?.id === item.buildingId && (selectedFloor === item.floor || selectedFloor === 'all')
+                          ? 'bg-red-50 text-[#7A0808] border border-red-200 shadow-2xs'
+                          : 'bg-gray-50/80 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <DoorOpen size={14} className="text-[#7A0808] flex-shrink-0" />
+                      <div className="truncate flex-1">
+                        <span className="block truncate font-extrabold text-gray-900">{item.name || item.id}</span>
+                        <span className="block text-[10px] font-semibold text-gray-400 truncate">
+                          {item.buildingName} · {item.floorLabel || `Floor ${item.floor}`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Main Building & Floor Details */}
@@ -279,7 +361,7 @@ export default function BuildingManagement() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {canManageBuildings() && (
+                  {isRegistrar && (
                     <>
                       <button
                         type="button"
@@ -338,7 +420,7 @@ export default function BuildingManagement() {
                 </div>
 
                 {/* Multi-Selection Bulk Edit Action Bar */}
-                {canManageBuildings() && selectedRoomDocIds.length > 0 && (
+                {isRegistrar && selectedRoomDocIds.length > 0 && (
                   <div className="bg-[#7A0808] text-white px-4 py-3 rounded-2xl flex items-center justify-between shadow-lg animate-in fade-in duration-200">
                     <div className="flex items-center gap-2 text-xs font-bold">
                       <CheckSquare size={16} />
@@ -450,7 +532,7 @@ export default function BuildingManagement() {
                                   >
                                     <Eye size={15} />
                                   </button>
-                                  {canManageBuildings() && (
+                                  {canEditRoom(rm) && (
                                     <button
                                       type="button"
                                       onClick={() => setEditRoom(rm)}

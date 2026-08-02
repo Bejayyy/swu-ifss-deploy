@@ -12,6 +12,7 @@ import PasswordSetup from './pages/PasswordSetup';
 import Dashboard from './pages/Dashboard';
 import ApprovalManagement from './pages/ApprovalManagement';
 import BuildingManagement from './pages/BuildingManagement';
+import AssignedRoomsManagement from './pages/AssignedRoomsManagement';
 import BuildingDetails from './pages/BuildingDetails';
 import RoomDetails from './pages/RoomDetails';
 import NonAcademicRequestDetails from './pages/NonAcademicRequestDetails';
@@ -21,6 +22,7 @@ import RoomAvailability from './pages/RoomAvailability';
 import RoomFinder from './pages/RoomFinder';
 import ScheduleHistory from './pages/ScheduleHistory';
 import AcademicCalendar from './pages/AcademicCalendar';
+import SystemSettings from './pages/SystemSettings';
 import Reports from './pages/Reports';
 import SystemAdministration from './pages/SystemAdministration';
 import ApprovalWorkflowManagement from './pages/ApprovalWorkflowManagement';
@@ -81,7 +83,9 @@ export default function App() {
             <Route path="/room-finder" element={<RegistrarPage><RoomFinder /></RegistrarPage>} />
             <Route path="/schedule-history" element={<RegistrarPage><ScheduleHistory /></RegistrarPage>} />
             <Route path="/building-management" element={<RegistrarPage><BuildingManagement /></RegistrarPage>} />
+            <Route path="/assigned-rooms" element={<RegistrarPage><AssignedRoomsManagement /></RegistrarPage>} />
             <Route path="/academic-calendar" element={<RegistrarPage><AcademicCalendar /></RegistrarPage>} />
+            <Route path="/system-settings" element={<RegistrarPage><SystemSettings /></RegistrarPage>} />
             <Route path="/reports" element={<RegistrarPage><Reports /></RegistrarPage>} />
             <Route path="/system-administration" element={<RegistrarPage><SystemAdministration /></RegistrarPage>} />
             <Route path="/college-inventory" element={<RegistrarPage><CollegeInventory /></RegistrarPage>} />

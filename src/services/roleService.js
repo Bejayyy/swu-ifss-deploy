@@ -75,6 +75,7 @@ export function subscribeAssignableRoles(onData, onError) {
 }
 
 export function getRoleLabelById(roleId, fallbackLabel) {
+  if (roleId === 'room-manager-dean') return 'Room Manager Dean';
   if (fallbackLabel) return fallbackLabel;
   return roleLabelFromValue(roleId) || getRoleLabel(roleId) || roleId;
 }
