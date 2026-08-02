@@ -54,22 +54,102 @@ function mapRoomDoc(roomDoc) {
 function mergeBuildingsSnapshot(buildingsMap, floorsByBuilding, roomsByFloorKey) {
   return Object.values(buildingsMap)
     .map((b) => {
-      const floors = (floorsByBuilding[b.id] || []).sort((a, z) => a.floorNumber - z.floorNumber);
-      const floorData = floors.map((f) => {
-        const key = `${b.id}_${f.id}`;
-        const rooms = (roomsByFloorKey[key] || [])
-          .map(mapRoomDoc)
-          .sort((a, z) => a.id.localeCompare(z.id));
-        return {
-          floor: f.floorNumber,
-          floorId: f.id,
-          label: f.label || `Floor ${f.floorNumber}`,
-          managedBy: f.managedBy || null,
-          managedByName: f.managedByName || null,
-          rooms,
-        };
+      let floorData = [];
+
+      // 1. Check if Firestore subcollections floors exist for this building
+      const subFloors = floorsByBuilding[b.id] || [];
+
+      if (subFloors.length > 0) {
+        floorData = subFloors
+          .sort((a, z) => (Number(a.floorNumber) || 0) - (Number(z.floorNumber) || 0))
+          .map((f) => {
+            const key = `${b.id}_${f.id}`;
+            const floorNumKey = `${b.id}_${f.floorNumber}`;
+            const roomDocs = roomsByFloorKey[key] || roomsByFloorKey[floorNumKey] || [];
+            
+            // Deduplicate rooms by docId or roomCode
+            const uniqueRoomDocs = [];
+            const seenIds = new Set();
+            roomDocs.forEach((rd) => {
+              const code = rd.data()?.roomCode || rd.id;
+              if (!seenIds.has(code)) {
+                seenIds.add(code);
+                uniqueRoomDocs.push(rd);
+              }
+            });
+
+            const rooms = uniqueRoomDocs
+              .map(mapRoomDoc)
+              .sort((a, z) => (a.roomCode || a.id).localeCompare(z.roomCode || z.id));
+
+            return {
+              floor: f.floorNumber,
+              floorId: f.id,
+              floorNumber: f.floorNumber,
+              label: f.label || `Floor ${f.floorNumber}`,
+              managedBy: f.managedBy || null,
+              managedByName: f.managedByName || null,
+              rooms,
+            };
+          });
+      } else if (Array.isArray(b.floorData) && b.floorData.length > 0) {
+        // 2. Preserve existing document-level b.floorData if subcollection floors not present
+        floorData = b.floorData.map((f) => ({
+          ...f,
+          floorNumber: f.floorNumber || f.floor || 1,
+          label: f.label || `Floor ${f.floorNumber || f.floor || 1}`,
+          rooms: Array.isArray(f.rooms)
+            ? f.rooms.map((r) => (r.data ? mapRoomDoc(r) : { ...r, roomCode: r.roomCode || r.name || r.id }))
+            : [],
+        }));
+      } else if (Array.isArray(b.rooms) && b.rooms.length > 0) {
+        // 3. Group flat b.rooms array by floorNumber if present on building document
+        const grouped = {};
+        b.rooms.forEach((r) => {
+          const fn = r.floorNumber || r.floor || 1;
+          if (!grouped[fn]) {
+            grouped[fn] = {
+              floor: fn,
+              floorNumber: fn,
+              label: `Floor ${fn}`,
+              rooms: [],
+            };
+          }
+          grouped[fn].rooms.push(r.data ? mapRoomDoc(r) : { ...r, roomCode: r.roomCode || r.name || r.id });
+        });
+        floorData = Object.values(grouped).sort((a, z) => a.floorNumber - z.floorNumber);
+      } else {
+        // 4. Construct empty floors based on b.floors or b.numFloors count
+        const floorCount = Math.max(1, Number(b.floors) || Number(b.numFloors) || 1);
+        floorData = Array.from({ length: floorCount }, (_, idx) => {
+          const fn = idx + 1;
+          return {
+            floor: fn,
+            floorNumber: fn,
+            label: `${fn}${fn === 1 ? 'st' : fn === 2 ? 'nd' : fn === 3 ? 'rd' : 'th'} Floor`,
+            rooms: [],
+          };
+        });
+      }
+
+      // Also attach any orphan rooms matching this building ID that were not caught by floor ID
+      Object.entries(roomsByFloorKey).forEach(([key, rDocs]) => {
+        if (key.startsWith(`${b.id}_`)) {
+          rDocs.forEach((rDoc) => {
+            const rData = rDoc.data() || {};
+            const rNum = rData.floorNumber || 1;
+            const targetFloor = floorData.find((f) => f.floorNumber === rNum);
+            if (targetFloor) {
+              const mapped = mapRoomDoc(rDoc);
+              if (!targetFloor.rooms.some((existing) => (existing.roomCode || existing.id) === (mapped.roomCode || mapped.id))) {
+                targetFloor.rooms.push(mapped);
+              }
+            }
+          });
+        }
       });
-      const totalRooms = floorData.reduce((sum, f) => sum + f.rooms.length, 0);
+
+      const totalRooms = floorData.reduce((sum, f) => sum + (f.rooms ? f.rooms.length : 0), 0);
       return {
         ...b,
         floorData,
@@ -125,10 +205,21 @@ export function subscribeToBuildings(onData, onError) {
       Object.keys(roomsByFloorKey).forEach((k) => delete roomsByFloorKey[k]);
       snap.docs.forEach((d) => {
         const data = d.data();
-        const key = `${data.buildingId}_${data.floorId}`;
-        if (!data.buildingId || !data.floorId) return;
-        if (!roomsByFloorKey[key]) roomsByFloorKey[key] = [];
-        roomsByFloorKey[key].push(d);
+        const bid = data.buildingId;
+        const fid = data.floorId;
+        const fnum = data.floorNumber;
+
+        if (!bid) return;
+        if (fid) {
+          const key1 = `${bid}_${fid}`;
+          if (!roomsByFloorKey[key1]) roomsByFloorKey[key1] = [];
+          roomsByFloorKey[key1].push(d);
+        }
+        if (fnum !== undefined) {
+          const key2 = `${bid}_${fnum}`;
+          if (!roomsByFloorKey[key2]) roomsByFloorKey[key2] = [];
+          roomsByFloorKey[key2].push(d);
+        }
       });
       emit();
     },

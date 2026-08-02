@@ -335,6 +335,8 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         type: e.type || 'Lecture',
         roomCode: e.roomCode || '',
         scheduleMode: e.scheduleMode || 'regular',
+        section: e.section || e.sectionName || '',
+        program: e.program || e.programCode || '',
       };
     })
     .filter((e) => e.day >= 0 && e.day <= 6); // Only include valid days (0-6)

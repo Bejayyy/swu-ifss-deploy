@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Upload, Trash2 } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+import { COLLECTIONS } from '../../firebase/constants';
 import { useApp, defaultNonAcademicSteps } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../hooks/useModal';
@@ -84,6 +87,12 @@ export default function NonAcademicRequestModal({ onClose }) {
         signatureUrl: prev.signatureUrl || savedSig,
       }));
     }
+    // Auto-sync existing localStorage signature to Firestore user profile (one-time migration)
+    if (savedSig && profile?.uid) {
+      const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+      setDoc(userRef, { signatureUrl: savedSig, updatedAt: serverTimestamp() }, { merge: true })
+        .catch((err) => console.warn('Auto-sync signature to Firestore failed:', err));
+    }
   }, [userAutoOrg, profile]);
 
   const handleSignatureFileUpload = (file) => {
@@ -108,7 +117,7 @@ export default function NonAcademicRequestModal({ onClose }) {
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result;
       setForm((prev) => ({
         ...prev,
@@ -117,6 +126,13 @@ export default function NonAcademicRequestModal({ onClose }) {
       }));
       if (profile?.uid) {
         localStorage.setItem(`user_signature_${profile.uid}`, dataUrl);
+        // Persist signature to Firestore user profile so approvers can see it
+        try {
+          const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+          await setDoc(userRef, { signatureUrl: dataUrl, updatedAt: serverTimestamp() }, { merge: true });
+        } catch (err) {
+          console.warn('Failed to persist signature to user profile:', err);
+        }
       }
       localStorage.setItem('user_saved_signature', dataUrl);
     };

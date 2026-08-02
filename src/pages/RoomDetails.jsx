@@ -239,6 +239,7 @@ export default function RoomDetails() {
         isCourseSchedule: true,
         college: schedule.college || '',
         section: schedule.sectionName || schedule.section || '',
+        program: schedule.program || schedule.programCode || '',
       };
 
       console.log('[RoomDetails] Adding course schedule block:', block);

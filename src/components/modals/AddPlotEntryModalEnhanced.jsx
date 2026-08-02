@@ -3,6 +3,7 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   BookOpen,
   User,
   Clock,
@@ -10,6 +11,8 @@ import {
   DoorOpen,
   Calendar,
   Search,
+  Layers,
+  CheckCircle2,
 } from 'lucide-react';
 import { parseTimeToHour, validateScheduleHours, hourToTimeInput } from '../../services/plotScheduleService';
 import { formatScheduleHour } from '../../constants/scheduleGrid';
@@ -20,6 +23,24 @@ import { subscribeStaffUsers } from '../../services/systemUserService';
 import RoomScheduleViewer from '../scheduling/RoomScheduleViewer';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
+
+// Helper function to match room type with selected class type
+function matchesRoomType(roomTypeRaw, selectedType) {
+  if (!selectedType || selectedType === 'All') return true;
+
+  const rType = String(roomTypeRaw || '').toLowerCase().trim();
+  const sType = String(selectedType).toLowerCase().trim();
+
+  if (sType === 'laboratory' || sType.includes('lab')) {
+    return rType.includes('lab') || rType.includes('laboratory');
+  }
+
+  if (sType === 'lecture' || sType.includes('lec') || sType.includes('class')) {
+    return !rType.includes('lab') || rType.includes('lecture') || rType.includes('classroom');
+  }
+
+  return true;
+}
 
 export default function AddPlotEntryModalEnhanced({
   onClose,
@@ -37,7 +58,7 @@ export default function AddPlotEntryModalEnhanced({
   dayIndex, // 0-6 for Mon-Sun
 }) {
   // Multi-step form state
-  const [step, setStep] = useState(1); // 1: Course, 2: Teacher, 3: Type, 4: Building, 5: Room & Time
+  const [step, setStep] = useState(1); // 1: Course, 2: Teacher, 3: Type, 4: Building & Room, 5: Summary
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -51,6 +72,7 @@ export default function AddPlotEntryModalEnhanced({
   // Search Filters
   const [courseSearch, setCourseSearch] = useState('');
   const [teacherSearch, setTeacherSearch] = useState('');
+  const [buildingSearch, setBuildingSearch] = useState('');
 
   // Form data
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -61,6 +83,9 @@ export default function AddPlotEntryModalEnhanced({
   const [startTime, setStartTime] = useState(initial?.startTime || '08:00');
   const [endTime, setEndTime] = useState(initial?.endTime || '09:30');
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex); // Track which day user selected
+
+  // Open floor accordion state
+  const [openFloors, setOpenFloors] = useState({});
 
   // Subscribe to staff teachers for fallback if course isn't pre-assigned
   useEffect(() => {
@@ -179,25 +204,115 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [availableTeachers, teacherSearch]);
 
-  // Get rooms for selected building
-  const availableRooms = useMemo(() => {
+  // Filtered buildings by search query AND selected class type
+  const displayedBuildings = useMemo(() => {
+    let filtered = buildings;
+
+    // Filter buildings to only those containing at least 1 room matching selectedType
+    if (selectedType) {
+      filtered = filtered.filter((b) => {
+        const floors = Array.isArray(b.floorData) ? b.floorData : [];
+        const roomsDirect = Array.isArray(b.rooms) ? b.rooms : [];
+
+        const hasMatchingRoomInFloors = floors.some((f) =>
+          (f.rooms || []).some((r) => matchesRoomType(r.type || r.roomType, selectedType))
+        );
+        if (hasMatchingRoomInFloors) return true;
+
+        const hasMatchingDirectRoom = roomsDirect.some((r) =>
+          matchesRoomType(r.type || r.roomType, selectedType)
+        );
+        if (hasMatchingDirectRoom) return true;
+
+        // Fallback for buildings with no rooms array populated yet
+        const totalRooms = b.totalRooms || 0;
+        return totalRooms === 0 || floors.length === 0;
+      });
+    }
+
+    if (buildingSearch.trim()) {
+      const q = buildingSearch.toLowerCase().trim();
+      filtered = filtered.filter(
+        (b) =>
+          (b.name && b.name.toLowerCase().includes(q)) ||
+          (b.code && b.code.toLowerCase().includes(q))
+      );
+    }
+
+    return filtered;
+  }, [buildings, selectedType, buildingSearch]);
+
+  // Get all floors & rooms for selected building, strictly filtered by selected class type
+  const availableFloors = useMemo(() => {
     if (!selectedBuilding) return [];
 
-    const roomsByFloor = {};
-    selectedBuilding.floorData.forEach((floor) => {
-      floor.rooms.forEach((room) => {
-        if (!roomsByFloor[floor.floorNumber]) {
-          roomsByFloor[floor.floorNumber] = {
-            label: floor.label,
+    let rawFloors = [];
+
+    // 1. If floorData array exists on building object
+    if (Array.isArray(selectedBuilding.floorData) && selectedBuilding.floorData.length > 0) {
+      rawFloors = selectedBuilding.floorData.map((floor, idx) => ({
+        floorNumber: floor.floorNumber || idx + 1,
+        label: floor.label || `Floor ${floor.floorNumber || idx + 1}`,
+        rooms: Array.isArray(floor.rooms) ? floor.rooms : [],
+      }));
+    } else if (Array.isArray(selectedBuilding.rooms) && selectedBuilding.rooms.length > 0) {
+      const grouped = {};
+      selectedBuilding.rooms.forEach((r) => {
+        const fn = r.floorNumber || r.floor || 1;
+        if (!grouped[fn]) {
+          grouped[fn] = {
+            floorNumber: fn,
+            label: `${fn}${fn === 1 ? 'st' : fn === 2 ? 'nd' : fn === 3 ? 'rd' : 'th'} Floor`,
             rooms: [],
           };
         }
-        roomsByFloor[floor.floorNumber].rooms.push(room);
+        grouped[fn].rooms.push(r);
       });
-    });
+      rawFloors = Object.values(grouped).sort((a, b) => a.floorNumber - b.floorNumber);
+    } else {
+      // Fallback: construct floors based on building.floors count
+      const floorCount = Number(selectedBuilding.floors) || 1;
+      rawFloors = Array.from({ length: floorCount }, (_, idx) => {
+        const fn = idx + 1;
+        return {
+          floorNumber: fn,
+          label: `${fn}${fn === 1 ? 'st' : fn === 2 ? 'nd' : fn === 3 ? 'rd' : 'th'} Floor`,
+          rooms: [],
+        };
+      });
+    }
 
-    return roomsByFloor;
-  }, [selectedBuilding]);
+    // Filter rooms by selected class type (Lecture vs Laboratory)
+    return rawFloors
+      .map((f) => {
+        const matchingRooms = f.rooms.filter((r) =>
+          matchesRoomType(r.type || r.roomType, selectedType)
+        );
+        return {
+          ...f,
+          rooms: matchingRooms,
+        };
+      })
+      .filter((f) => f.rooms.length > 0 || rawFloors.length === 1);
+  }, [selectedBuilding, selectedType]);
+
+  // Auto-expand all floors when selected building changes
+  useEffect(() => {
+    if (selectedBuilding && availableFloors.length > 0) {
+      const initialOpen = {};
+      availableFloors.forEach((f) => {
+        initialOpen[f.floorNumber] = true;
+      });
+      setOpenFloors(initialOpen);
+    }
+  }, [selectedBuilding, availableFloors]);
+
+  const toggleFloor = (fNum) => {
+    setOpenFloors((prev) => ({
+      ...prev,
+      [fNum]: prev[fNum] === undefined ? false : !prev[fNum],
+    }));
+  };
 
   const handleNext = () => {
     setError('');
@@ -218,8 +333,8 @@ export default function AddPlotEntryModalEnhanced({
       setError('Please select a building');
       return;
     }
-    if (step === 5 && !selectedRoom) {
-      setError('Please select a room');
+    if (step === 4 && !selectedRoom) {
+      setError('Please select a room from the left floor panel');
       return;
     }
 
@@ -239,7 +354,7 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
-    if (!selectedCourse || !selectedTeacher || !selectedType || !selectedRoom) {
+    if (!selectedCourse || !selectedTeacher || !selectedType || !selectedBuilding || !selectedRoom) {
       setError('Please complete all steps');
       return;
     }
@@ -292,8 +407,8 @@ export default function AddPlotEntryModalEnhanced({
     'Select Course',
     'Select Teacher',
     'Select Type',
-    'Select Building',
-    'Select Room & Set Time',
+    'Select Building & Room',
+    'Summary',
   ];
 
   const semesterDisplay =
@@ -592,7 +707,11 @@ export default function AddPlotEntryModalEnhanced({
                   <button
                     key={type}
                     type="button"
-                    onClick={() => setSelectedType(type)}
+                    onClick={() => {
+                      setSelectedType(type);
+                      setSelectedBuilding(null); // Reset building when class type changes
+                      setSelectedRoom(null); // Reset room when class type changes
+                    }}
                     className={`p-6 rounded-xl border-2 transition-all text-center ${
                       selectedType === type
                         ? 'border-[#800000] bg-red-50'
@@ -611,188 +730,371 @@ export default function AddPlotEntryModalEnhanced({
             </div>
           )}
 
-          {/* Step 4: Select Building */}
+          {/* Step 4: Select Building & Room with 30/70 Split View */}
           {step === 4 && (
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Building2 size={20} className="text-[#800000]" />
-                <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
-                  Select Building
-                </h3>
-              </div>
+              {!selectedBuilding ? (
+                /* Initial Building Selection (Small Compact Cards + Search + Type Filter Info) */
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Building2 size={20} className="text-[#800000]" />
+                        <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
+                          Select Building
+                        </h3>
+                      </div>
+                      <p className="text-xs font-semibold text-[#7A0808] mt-1 bg-red-50/80 px-2.5 py-1 rounded-lg border border-red-200/80 inline-block">
+                        Showing buildings with {selectedType} rooms
+                      </p>
+                    </div>
 
-              {loadingBuildings ? (
-                <div className="text-center py-8">
-                  <p className="text-sm text-gray-400">Loading buildings...</p>
-                </div>
-              ) : buildings.length === 0 ? (
-                <div className="text-center py-8">
-                  <Building2 size={48} className="mx-auto mb-4 text-gray-300" />
-                  <p className="text-sm font-semibold text-gray-400">No buildings available</p>
+                    <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-lg">
+                      {displayedBuildings.length} building(s) available
+                    </span>
+                  </div>
+
+                  {/* Building Search Bar */}
+                  <div className="mb-4 relative">
+                    <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search building code or name..."
+                      value={buildingSearch}
+                      onChange={(e) => setBuildingSearch(e.target.value)}
+                      className="w-full pl-10 pr-8 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 focus:bg-white focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-medium"
+                    />
+                    {buildingSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setBuildingSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {loadingBuildings ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-400">Loading buildings...</p>
+                    </div>
+                  ) : displayedBuildings.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Building2 size={44} className="mx-auto mb-3 text-gray-300" />
+                      <p className="text-sm font-semibold text-gray-400">
+                        {buildingSearch
+                          ? `No building matching "${buildingSearch}"`
+                          : `No buildings with ${selectedType} rooms found`}
+                      </p>
+                    </div>
+                  ) : (
+                    /* Compact Small Cards for Buildings */
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {displayedBuildings.map((building) => (
+                        <button
+                          key={building.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBuilding(building);
+                            setSelectedRoom(null); // Reset room when building changes
+                          }}
+                          className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#800000] hover:bg-red-50/50 transition-all shadow-2xs group"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="font-black text-sm text-[#800000] truncate group-hover:text-[#600000]">
+                              {building.name}
+                            </span>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 flex-shrink-0">
+                              {building.floors} Floors
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-gray-500">
+                            Code: <span className="font-bold text-gray-700">{building.code}</span>
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {buildings.map((building) => (
-                    <button
-                      key={building.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedBuilding(building);
-                        setSelectedRoom(null); // Reset room when building changes
-                      }}
-                      className={`text-left p-4 rounded-xl border-2 transition-all ${
-                        selectedBuilding?.id === building.id
-                          ? 'border-[#800000] bg-red-50'
-                          : 'border-gray-200 hover:border-[#800000] hover:bg-gray-50'
-                      }`}
-                    >
-                      <h4 className="font-bold text-sm text-[#800000] mb-1">{building.name}</h4>
-                      <p className="text-xs text-gray-600 mb-2">Code: {building.code}</p>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-bold">
-                        {building.floors} Floors
+                /* 2-Panel 30 / 70 Division View (Building Clicked) */
+                <div>
+                  {/* Selected Building Breadcrumb / Change Header */}
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedBuilding(null);
+                          setSelectedRoom(null);
+                        }}
+                        className="text-xs font-bold text-[#7A0808] hover:underline flex items-center gap-1 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200"
+                      >
+                        <ChevronLeft size={14} /> Change Building
+                      </button>
+                      <span className="text-gray-400">|</span>
+                      <h4 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                        <Building2 size={16} className="text-[#800000]" />
+                        <span>{selectedBuilding.name} ({selectedBuilding.code})</span>
+                      </h4>
+                    </div>
+
+                    {selectedRoom && (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 size={14} /> Selected Room: {selectedRoom.roomCode}
                       </span>
-                    </button>
-                  ))}
+                    )}
+                  </div>
+
+                  {/* 30 / 70 Panel Division */}
+                  <div className="flex flex-col lg:flex-row gap-6">
+                    {/* LEFT PANEL (30% Width): Floor & Room List View */}
+                    <div className="w-full lg:w-[30%] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Layers size={14} className="text-[#800000]" /> Floors & Rooms ({selectedType})
+                        </h4>
+                        <span className="text-[10px] text-gray-400 font-semibold">Click room to view grid</span>
+                      </div>
+
+                      {availableFloors.length === 0 ? (
+                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center">
+                          <p className="text-xs text-gray-400">No {selectedType} rooms found in this building</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
+                          {availableFloors.map((floorData) => {
+                            const floorNum = floorData.floorNumber;
+                            const isOpen = openFloors[floorNum] !== false; // Open by default
+
+                            // Format floor title cleanly (e.g. "1st Floor", "2nd Floor")
+                            const getFloorTitle = () => {
+                              const rawLabel = (floorData.label || '').trim();
+                              const fNum = Number(floorNum) || 1;
+                              if (rawLabel && !rawLabel.toLowerCase().startsWith('floor')) {
+                                return rawLabel;
+                              }
+                              const ordinal = fNum === 1 ? '1st' : fNum === 2 ? '2nd' : fNum === 3 ? '3rd' : `${fNum}th`;
+                              return `${ordinal} Floor`;
+                            };
+
+                            return (
+                              <div
+                                key={floorNum}
+                                className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-2xs"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFloor(floorNum)}
+                                  className="w-full px-3.5 py-2.5 bg-gray-50 hover:bg-gray-100/80 text-left flex items-center justify-between font-bold text-xs text-gray-800 transition-colors border-b border-gray-100"
+                                >
+                                  <span className="font-bold text-xs text-gray-900">{getFloorTitle()}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border border-gray-200 text-gray-600 font-bold">
+                                      {floorData.rooms.length} room(s)
+                                    </span>
+                                    {isOpen ? (
+                                      <ChevronDown size={15} className="text-[#800000] transition-transform" />
+                                    ) : (
+                                      <ChevronRight size={15} className="text-gray-400 transition-transform" />
+                                    )}
+                                  </div>
+                                </button>
+
+                                {isOpen && (
+                                  <div className="p-2.5 grid grid-cols-1 gap-2 bg-white">
+                                    {floorData.rooms.length === 0 ? (
+                                      <p className="text-[11px] text-gray-400 text-center py-2 font-medium">
+                                        No {selectedType} rooms on this floor
+                                      </p>
+                                    ) : (
+                                      floorData.rooms.map((room) => {
+                                        const isSelected = selectedRoom?.roomCode === room.roomCode;
+
+                                        return (
+                                          <button
+                                            key={room.roomCode}
+                                            type="button"
+                                            onClick={() => setSelectedRoom(room)}
+                                            className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between ${
+                                              isSelected
+                                                ? 'border-[#800000] bg-red-50 shadow-2xs'
+                                                : 'border-gray-100 hover:border-[#800000] hover:bg-gray-50'
+                                            }`}
+                                          >
+                                            <div>
+                                              <p className="font-black text-xs text-[#800000]">
+                                                {room.roomCode}
+                                              </p>
+                                              <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
+                                            </div>
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
+                                              Cap: {room.capacity}
+                                            </span>
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* RIGHT PANEL (70% Width): Interactive Room Schedule Grid */}
+                    <div className="w-full lg:w-[70%] border-l border-gray-200 pl-0 lg:pl-6 flex flex-col">
+                      <div className="mb-3">
+                        <h4 className="font-bold text-sm text-gray-900 mb-0.5">
+                          Weekly Schedule Grid Overview
+                        </h4>
+                        <p className="text-xs text-gray-500">
+                          {selectedRoom
+                            ? `Showing current weekly schedule occupancy for Room ${selectedRoom.roomCode}`
+                            : 'Select a room from the left floor list to view its live schedule grid'}
+                        </p>
+                      </div>
+
+                      {selectedRoom ? (
+                        <div className="flex-1 bg-white rounded-xl">
+                          <RoomScheduleViewer
+                            roomCode={selectedRoom.roomCode}
+                            scheduleMode={scheduleMode}
+                            semester={semester}
+                            deanUid={deanUid}
+                            currentTimeSlot={
+                              startTime && endTime && selectedDayIndex !== undefined
+                                ? {
+                                    day: selectedDayIndex,
+                                    startHour: parseTimeToHour(startTime),
+                                    endHour: parseTimeToHour(endTime),
+                                  }
+                                : null
+                            }
+                            onTimeSelect={(day, startHour, endHour) => {
+                              setSelectedDayIndex(day);
+                              setStartTime(hourToTimeInput(startHour));
+                              setEndTime(hourToTimeInput(endHour));
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-[380px] bg-gray-50/80 rounded-2xl border border-gray-200">
+                          <div className="text-center p-6">
+                            <DoorOpen size={48} className="mx-auto mb-3 text-gray-300" />
+                            <p className="text-sm font-semibold text-gray-500">No Room Selected</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Click any {selectedType} room on the left floor panel to view its weekly schedule grid
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Step 5: Select Room & Set Time with Schedule Matrix */}
+          {/* Step 5: Schedule Summary */}
           {step === 5 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <DoorOpen size={20} className="text-[#800000]" />
-                <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
-                  Select Room & Set Schedule Time
-                </h3>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={20} className="text-[#800000]" />
+                  <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
+                    Schedule Plot Summary
+                  </h3>
+                </div>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
+                  Ready to Plot
+                </span>
               </div>
 
-              {/* Day Selection (Only for regular schedule mode) */}
-              {scheduleMode === 'regular' && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  <label className="block text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: '#2B3235' }}>
-                    <Calendar size={14} className="text-[#800000]" />
-                    Select Class Day <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-7 gap-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, idx) => (
-                      <button
-                        key={dayName}
-                        type="button"
-                        onClick={() => setSelectedDayIndex(idx)}
-                        className={`py-2 px-1 rounded-lg text-xs font-bold transition-all text-center ${
-                          selectedDayIndex === idx
-                            ? 'bg-[#800000] text-white shadow-md'
-                            : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
-                        }`}
-                      >
-                        {dayName}
-                      </button>
-                    ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Course Details Card */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      COURSE DETAILS
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-[#7A0808]">
+                      {selectedCourse?.code}
+                    </span>
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-2">
-                    Selected Day:{' '}
-                    <strong className="text-[#800000]">
-                      {
-                        ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][
-                          selectedDayIndex
-                        ]
-                      }
-                    </strong>
+                  <p className="font-bold text-sm text-gray-900">{selectedCourse?.title}</p>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span className="font-semibold">Type: {selectedType}</span>
+                    <span>•</span>
+                    <span>{semesterDisplay}</span>
+                    <span>•</span>
+                    <span>{sectionYearLevel || '1st Year'}</span>
+                  </div>
+                </div>
+
+                {/* Instructor Card */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      INSTRUCTOR / TEACHER
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
+                      Assigned
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-xs"
+                      style={{ background: '#800000' }}
+                    >
+                      {selectedTeacher?.name?.charAt(0)?.toUpperCase() || 'T'}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">{selectedTeacher?.name || 'Unassigned'}</p>
+                      <p className="text-xs text-gray-500">{selectedTeacher?.email || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Building & Room Location Card */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      LOCATION & ROOM
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700">
+                      Room {selectedRoom?.roomCode}
+                    </span>
+                  </div>
+                  <p className="font-bold text-sm text-gray-900">{selectedBuilding?.name} ({selectedBuilding?.code})</p>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span>Room Type: {selectedRoom?.type || selectedRoom?.roomType || 'Classroom'}</span>
+                    <span>•</span>
+                    <span>Capacity: {selectedRoom?.capacity} students</span>
+                  </div>
+                </div>
+
+                {/* Schedule Day & Time Card */}
+                <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      SCHEDULE TIME & DAY
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700">
+                      {scheduleMode === 'exam' ? 'Exam Mode' : 'Regular Class'}
+                    </span>
+                  </div>
+                  <p className="font-bold text-sm text-gray-900">
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][selectedDayIndex] || date}
+                  </p>
+                  <p className="text-xs font-bold text-[#7A0808]">
+                    Time: {formatScheduleHour(parseTimeToHour(startTime) || 0)} – {formatScheduleHour(parseTimeToHour(endTime) || 0)}
                   </p>
                 </div>
-              )}
-
-              {/* Time Inputs */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-xs font-bold mb-1" style={{ color: '#2B3235' }}>
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    disabled={lockTimes}
-                    className="input-field w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1" style={{ color: '#2B3235' }}>
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    disabled={lockTimes}
-                    className="input-field w-full"
-                  />
-                </div>
               </div>
-
-              {/* Room Selection by Floor */}
-              {Object.keys(availableRooms).length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-sm text-gray-400">No rooms found in selected building</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {Object.entries(availableRooms).map(([floorNum, floorData]) => (
-                    <div key={floorNum}>
-                      <h4 className="font-bold text-xs text-gray-700 mb-3 uppercase tracking-wider">
-                        {floorData.label} (Floor {floorNum})
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {floorData.rooms.map((room) => {
-                          const isSelected = selectedRoom?.roomCode === room.roomCode;
-
-                          return (
-                            <div
-                              key={room.roomCode}
-                              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                                isSelected
-                                  ? 'border-[#800000] bg-red-50'
-                                  : 'border-gray-200 hover:border-[#800000] hover:bg-gray-50'
-                              }`}
-                              onClick={() => setSelectedRoom(room)}
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div>
-                                  <h5 className="font-black text-sm text-[#800000]">{room.roomCode}</h5>
-                                  <p className="text-xs text-gray-600">{room.roomType}</p>
-                                </div>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                                  Cap: {room.capacity}
-                                </span>
-                              </div>
-
-                              {/* Room Schedule Occupancy Matrix */}
-                              <div className="mt-3 pt-3 border-t border-gray-200">
-                                <RoomScheduleViewer
-                                  roomCode={room.roomCode}
-                                  startTime={startTime}
-                                  endTime={endTime}
-                                  date={
-                                    scheduleMode === 'regular'
-                                      ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][
-                                          selectedDayIndex
-                                        ]
-                                      : date
-                                  }
-                                  scheduleMode={scheduleMode}
-                                  semester={semester}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -825,7 +1127,7 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={handleNext}
-                className="btn-[#7A0808] btn-maroon flex items-center gap-2 text-xs"
+                className="btn-maroon flex items-center gap-2 text-xs"
               >
                 Next <ChevronRight size={16} />
               </button>

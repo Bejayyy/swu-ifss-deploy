@@ -74,6 +74,8 @@ export default function RoomScheduleViewer({
       course: entry.courseCode,
       instructor: entry.instructor,
       type: entry.type,
+      section: entry.sectionName || entry.section || '',
+      program: entry.program || entry.programCode || '',
     }));
   }, [entries]);
 
@@ -321,11 +323,16 @@ export default function RoomScheduleViewer({
                           }}
                         >
                           <p className="text-[9px] font-black truncate" style={{ color: colors.text }}>
-                            {block.course}
+                            {block.title || block.course}
                           </p>
                           <p className="text-[8px] font-semibold truncate" style={{ color: colors.text }}>
-                            {block.instructor}
+                            {block.course}{block.instructor ? ` · ${block.instructor}` : ''}
                           </p>
+                          {(block.section || block.program) && (
+                            <p className="text-[8px] font-bold truncate opacity-90" style={{ color: colors.text }}>
+                              Sec: {block.section || block.program}
+                            </p>
+                          )}
                           <p className="text-[8px]" style={{ color: colors.text }}>
                             {formatScheduleHour(block.start)} - {formatScheduleHour(block.end)}
                           </p>

@@ -380,6 +380,11 @@ export default function WeeklyScheduleGrid({
                         <p className="text-[9px] font-semibold truncate" style={{ color: colors.text }}>
                           {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                         </p>
+                        {(sched.section || sched.sectionName || sched.program) && (
+                          <p className="text-[9px] font-bold truncate opacity-90" style={{ color: colors.text }}>
+                            Sec: {sched.section || sched.sectionName || sched.program}
+                          </p>
+                        )}
                         {sched.roomCode && <p className="text-[9px] truncate" style={{ color: colors.text }}>{sched.roomCode}</p>}
                         <p className="text-[9px]" style={{ color: colors.text }}>
                           {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}

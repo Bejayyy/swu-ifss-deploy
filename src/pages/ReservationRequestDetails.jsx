@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Printer, Edit3, MapPin, Upload, Trash2, CheckCircle, FileText, Check, Clock, X } from 'lucide-react';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/firebase';
+import { COLLECTIONS } from '../firebase/constants';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -110,6 +113,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
   const [isLoadingModal, setIsLoadingModal] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [isDragging, setIsDragging] = useState(false);
+  const [fetchedSignatures, setFetchedSignatures] = useState({});
 
   useEffect(() => {
     if (fromState || fromList) {
@@ -131,6 +135,50 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
     return () => { cancelled = true; };
   }, [id, fromState, fromList]);
 
+  // Fetch missing signatures for requestor and approvers from Firestore users collection
+  useEffect(() => {
+    if (!request) return;
+    let isMounted = true;
+
+    async function loadSignatures() {
+      const sigs = {};
+      const uids = new Set();
+
+      if (request.createdByUid) uids.add(request.createdByUid);
+
+      const records = request.approvalRecords || request.approvalSteps || [];
+      records.forEach((r) => {
+        if (r.approvedByUid) uids.add(r.approvedByUid);
+      });
+
+      for (const uid of uids) {
+        try {
+          const userRef = doc(db, COLLECTIONS.USERS || 'users', uid);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const uData = userSnap.data();
+            const userSig = uData.signatureUrl || uData.signature || uData.eSignature || uData.digitalSignature;
+            if (userSig) {
+              sigs[uid] = userSig;
+            }
+          }
+        } catch (err) {
+          console.warn('Error fetching signature for uid:', uid, err);
+        }
+      }
+
+      if (isMounted && Object.keys(sigs).length > 0) {
+        setFetchedSignatures(sigs);
+      }
+    }
+
+    loadSignatures();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [request]);
+
   useEffect(() => {
     if (profile) {
       if (!adminPrintedName) {
@@ -139,6 +187,12 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
       const saved = getSavedSignature(profile);
       if (saved && !signatureUrl) {
         setSignatureUrl(saved);
+      }
+      // Auto-sync existing localStorage signature to Firestore user profile
+      if (saved && profile.uid) {
+        const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+        setDoc(userRef, { signatureUrl: saved, updatedAt: serverTimestamp() }, { merge: true })
+          .catch((err) => console.warn('Auto-sync signature to Firestore failed:', err));
       }
     }
   }, [profile]);
@@ -182,6 +236,9 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
   const getStepSignature = (stepRec, isRoleMatch) => {
     if (!stepRec) return isRoleMatch ? activeUserSig : null;
     if (stepRec.signatureUrl) return stepRec.signatureUrl;
+    if (stepRec.approvedByUid && fetchedSignatures[stepRec.approvedByUid]) {
+      return fetchedSignatures[stepRec.approvedByUid];
+    }
     if (stepRec.approvedByUid && profile?.uid === stepRec.approvedByUid) {
       return activeUserSig || null;
     }
@@ -201,7 +258,11 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
   };
 
   const isRequestor = profile?.uid === request.createdByUid || profile?.email === request.createdByEmail;
-  const reqSig = request.requestorSignatureUrl || request.signatureUrl || (isRequestor ? activeUserSig : null);
+  const reqSig =
+    request.requestorSignatureUrl ||
+    request.signatureUrl ||
+    (request.createdByUid ? fetchedSignatures[request.createdByUid] : null) ||
+    (isRequestor ? activeUserSig : null);
   const reqName = request.requestedBy || request.requestor || (isRequestor ? (adminPrintedName || profile?.displayName || profile?.name) : 'Requestor');
 
   const step1Sig = getStepSignature(step1Rec, isStep1Role);
@@ -224,12 +285,19 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
       return;
     }
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const dataUrl = ev.target?.result || '';
       setSignatureUrl(dataUrl);
       setError('');
       if (profile?.uid) {
         localStorage.setItem(`user_signature_${profile.uid}`, dataUrl);
+        // Persist signature to Firestore user profile so all viewers can see it
+        try {
+          const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+          await setDoc(userRef, { signatureUrl: dataUrl, updatedAt: serverTimestamp() }, { merge: true });
+        } catch (err) {
+          console.warn('Failed to persist signature to user profile:', err);
+        }
       }
       localStorage.setItem('user_saved_signature', dataUrl);
     };

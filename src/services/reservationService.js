@@ -421,6 +421,8 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     requestor: payload.requestedBy?.trim() || payload.requestor?.trim() || '',
     requestorEmail: payload.requestorEmail || null,
     createdByUid: payload.createdByUid || null,
+    signatureUrl: payload.signatureUrl || payload.requestorSignatureUrl || null,
+    requestorSignatureUrl: payload.requestorSignatureUrl || payload.signatureUrl || null,
     nameOfOrg: payload.nameOfOrg?.trim() || '',
     activity: payload.activity?.trim() || '',
     objectives: payload.objectives?.trim() || '',

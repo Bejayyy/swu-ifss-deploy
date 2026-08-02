@@ -11,7 +11,7 @@ import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 import ApprovalTimeline from '../reservations/ApprovalTimeline';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
 
@@ -107,6 +107,12 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
         signatureUrl: prev.signatureUrl || savedSig,
       }));
     }
+    // Auto-sync existing localStorage signature to Firestore user profile (one-time migration)
+    if (savedSig && profile?.uid) {
+      const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+      setDoc(userRef, { signatureUrl: savedSig, updatedAt: serverTimestamp() }, { merge: true })
+        .catch((err) => console.warn('Auto-sync signature to Firestore failed:', err));
+    }
   }, [userAutoOrg, profile]);
 
   const handleSignatureFileUpload = (file) => {
@@ -133,7 +139,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result;
       setForm((prev) => ({
         ...prev,
@@ -142,6 +148,13 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
       }));
       if (profile?.uid) {
         localStorage.setItem(`user_signature_${profile.uid}`, dataUrl);
+        // Persist signature to Firestore user profile so approvers can see it
+        try {
+          const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
+          await setDoc(userRef, { signatureUrl: dataUrl, updatedAt: serverTimestamp() }, { merge: true });
+        } catch (err) {
+          console.warn('Failed to persist signature to user profile:', err);
+        }
       }
       localStorage.setItem('user_saved_signature', dataUrl);
     };

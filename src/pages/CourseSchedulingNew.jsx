@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2 } from 'lucide-react';
+import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2, Layers, Search } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
@@ -91,6 +91,21 @@ export default function CourseSchedulingNew() {
   const [showAddSectionModal, setShowAddSectionModal] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionYear, setNewSectionYear] = useState('1st Year');
+  const [expandedYearLevels, setExpandedYearLevels] = useState({});
+  const [sectionSearchQuery, setSectionSearchQuery] = useState('');
+
+  const toggleYearLevel = (yearLevel) => {
+    setExpandedYearLevels((prev) => ({
+      ...prev,
+      [yearLevel]: !prev[yearLevel],
+    }));
+  };
+
+  const handleOpenAddSectionModalForYear = (yearLevel) => {
+    setNewSectionYear(yearLevel || '1st Year');
+    setNewSectionName('');
+    setShowAddSectionModal(true);
+  };
   
   const [plotEntries, setPlotEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -538,14 +553,17 @@ export default function CourseSchedulingNew() {
       return;
     }
 
+    const createdSectionName = newSectionName.trim();
+    const targetYear = newSectionYear;
     setIsLoading(true);
     setLoadingMessage('Creating section...');
     setShowAddSectionModal(false);
 
     try {
-      await createDeanSection(selectedDeanUid, newSectionName.trim(), newSectionYear);
+      await createDeanSection(selectedDeanUid, createdSectionName, targetYear);
+      setSelectedSection(createdSectionName);
+      setExpandedYearLevels((prev) => ({ ...prev, [targetYear]: true }));
       setNewSectionName('');
-      setNewSectionYear('1st Year');
       setError('');
       setIsLoading(false);
       
@@ -553,7 +571,7 @@ export default function CourseSchedulingNew() {
       setNotification({
         type: 'success',
         title: 'Section Created!',
-        message: `Section "${newSectionName.trim()}" has been successfully created.`,
+        message: `Section "${createdSectionName}" added to ${targetYear}.`,
       });
     } catch (err) {
       console.error('Error creating section:', err);
@@ -710,7 +728,11 @@ export default function CourseSchedulingNew() {
                   type="button"
                   onClick={() => {
                     if (!activeSchoolYearId || !semester) {
-                      alert('Please select a school year and semester first.');
+                      showNotification({
+                        type: 'warning',
+                        title: 'Selection Required',
+                        message: 'Please select a school year and semester first.',
+                      });
                       return;
                     }
                     setShowGrantAccessModal(true);
@@ -725,9 +747,15 @@ export default function CourseSchedulingNew() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!window.confirm('Reset access control? This will remove all granted permissions and you can start fresh. Existing schedules will NOT be deleted.')) {
-                      return;
-                    }
+                    const confirmed = await showConfirm({
+                      title: 'Reset Access Control?',
+                      message: 'This will remove all granted permissions so you can start fresh. Existing schedules will NOT be deleted.',
+                      confirmText: 'Reset Access Control',
+                      cancelText: 'Cancel',
+                      variant: 'danger',
+                    });
+                    if (!confirmed) return;
+
                     try {
                       await resetScheduleAccess(activeSchoolYearId, semester);
                       showNotification({
@@ -794,11 +822,28 @@ export default function CourseSchedulingNew() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!window.confirm('Allow all remaining colleges to create their schedules? This action cannot be undone.')) return;
+                    const confirmed = await showConfirm({
+                      title: 'Allow All Remaining Colleges?',
+                      message: 'Allow all remaining colleges to create their schedules? This action cannot be undone.',
+                      confirmText: 'Allow All Remaining',
+                      cancelText: 'Cancel',
+                      variant: 'primary',
+                    });
+                    if (!confirmed) return;
+
                     try {
                       await grantAllRemainingAccess(activeSchoolYearId, semester, profile?.uid);
+                      showNotification({
+                        type: 'success',
+                        title: 'Access Granted',
+                        message: 'All remaining colleges can now create schedules.',
+                      });
                     } catch (err) {
-                      alert(err.message || 'Failed to grant access.');
+                      showNotification({
+                        type: 'error',
+                        title: 'Action Failed',
+                        message: err.message || 'Failed to grant access.',
+                      });
                     }
                   }}
                   className="w-full px-4 py-3 rounded-lg text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition-all flex items-center justify-center gap-2"
@@ -855,92 +900,50 @@ export default function CourseSchedulingNew() {
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-5">
-        {/* Left Sidebar - Colleges and Deans */}
-        <div className="space-y-2">
-          {/* My Schedule - Only shown for deans */}
-          {isDean && profile?.uid && (
-            <div className="bg-gradient-to-br from-[#800000] to-[#600000] border-2 border-[#800000] rounded-2xl p-4 shadow-lg">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                  <Calendar size={16} className="text-white" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-black text-sm text-white">My Course Schedule</h3>
-                  <p className="text-[10px] text-white/80 font-medium">Quick access to your scheduling</p>
-                </div>
-              </div>
+        {/* Left Sidebar */}
+        <div className="space-y-4">
+          {/* Registrar View: Colleges & Deans Selection Card */}
+          {!isDean && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
+              <h3 className="font-bold text-sm mb-3 flex items-center gap-2" style={{ color: '#2B3235' }}>
+                <Users size={14} /> Colleges & Deans
+              </h3>
               
-              <button
-                type="button"
-                onClick={() => handleSelectDean(profile.uid)}
-                className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all ${
-                  selectedDeanUid === profile.uid
-                    ? 'bg-white text-[#800000] shadow-md'
-                    : 'bg-white/10 text-white hover:bg-white/20 border border-white/30'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      {profile.name || 'Your Schedule'}
-                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-yellow-400 text-yellow-900">
-                        EDIT
+              <div className="space-y-1 max-h-[220px] overflow-y-auto pr-1">
+                {deansByCollege.map((college) => (
+                  <div key={college.key}>
+                    {/* College Header */}
+                    <button
+                      type="button"
+                      onClick={() => toggleCollege(college.key)}
+                      className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors"
+                    >
+                      <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
+                        {college.collegeName}
+                        {college.tier === 'cas' && (
+                          <span className="ml-1 text-[9px] font-black px-1.5 py-0.5 rounded" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                            CAS
+                          </span>
+                        )}
                       </span>
-                    </div>
-                    <div className="text-[10px] font-normal mt-0.5 opacity-75">
-                      {profile.department || profile.college || 'Your College'}
-                    </div>
-                  </div>
-                  <ChevronRight size={16} />
-                </div>
-              </button>
-            </div>
-          )}
-
-          <div className="bg-white border border-gray-100 rounded-2xl p-4">
-            <h3 className="font-bold text-sm mb-3 flex items-center gap-2" style={{ color: '#2B3235' }}>
-              <Users size={14} /> {isDean ? 'Other Colleges & Deans' : 'Colleges & Deans'}
-            </h3>
-            
-            <div className="space-y-1">
-              {deansByCollege.map((college) => (
-                <div key={college.key}>
-                  {/* College Header */}
-                  <button
-                    type="button"
-                    onClick={() => toggleCollege(college.key)}
-                    className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors"
-                  >
-                    <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
-                      {college.collegeName}
-                      {college.tier === 'cas' && (
-                        <span className="ml-1 text-[9px] font-black px-1.5 py-0.5 rounded" style={{ background: '#FEF3C7', color: '#92400E' }}>
-                          CAS
-                        </span>
+                      {expandedColleges[college.key] ? (
+                        <ChevronDown size={14} className="text-gray-400" />
+                      ) : (
+                        <ChevronRight size={14} className="text-gray-400" />
                       )}
-                    </span>
-                    {expandedColleges[college.key] ? (
-                      <ChevronDown size={14} className="text-gray-400" />
-                    ) : (
-                      <ChevronRight size={14} className="text-gray-400" />
-                    )}
-                  </button>
+                    </button>
 
-                  {/* Deans List */}
-                  {expandedColleges[college.key] && (
-                    <div className="ml-3 mt-1 space-y-1">
-                      {college.deans.map((dean) => {
-                        const isCurrentUser = isDean && profile?.uid === dean.uid;
-                        return (
+                    {/* Deans List */}
+                    {expandedColleges[college.key] && (
+                      <div className="ml-3 mt-1 space-y-1">
+                        {college.deans.map((dean) => (
                           <button
                             key={dean.uid}
                             type="button"
                             onClick={() => handleSelectDean(dean.uid)}
                             className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-all relative ${
                               selectedDeanUid === dean.uid
-                                ? 'bg-[#800000] text-white'
-                                : isCurrentUser
-                                ? 'bg-gradient-to-r from-[#800000]/10 to-[#800000]/5 border-2 border-[#800000] hover:bg-[#800000]/15'
+                                ? 'bg-[#800000] text-white shadow-2xs'
                                 : 'hover:bg-gray-100'
                             }`}
                             style={selectedDeanUid === dean.uid ? {} : { color: '#2B3235' }}
@@ -948,23 +951,160 @@ export default function CourseSchedulingNew() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
                                 {dean.name}
-                                {isCurrentUser && (
-                                  <span className="ml-2 text-[9px] font-black px-2 py-0.5 rounded-full bg-[#800000] text-white">
-                                    YOU
-                                  </span>
-                                )}
                                 <div className="text-[10px] font-normal mt-0.5 opacity-75">
                                   {dean.email}
                                 </div>
                               </div>
                             </div>
                           </button>
-                        );
-                      })}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sections per Year Level Sidebar (Rendered for both Dean and Registrar) */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
+            <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
+              <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
+                <Layers size={16} className="text-[#800000]" /> Sections per Year Level
+              </h3>
+              {!isDean && selectedDean && (
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#800000] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
+                  {selectedDean.college || selectedDean.department || selectedDean.name}
+                </span>
+              )}
+            </div>
+
+            {/* Search Bar Below Divider Line */}
+            <div className="mb-3">
+              <div className="relative">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={sectionSearchQuery}
+                  onChange={(e) => setSectionSearchQuery(e.target.value)}
+                  placeholder="Search sections..."
+                  className="w-full pl-9 pr-7 py-2 bg-gray-50/80 border border-gray-200 rounded-full text-xs font-semibold focus:bg-white focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all outline-none"
+                />
+                {sectionSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSectionSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+              {(() => {
+                const isSearching = Boolean(sectionSearchQuery.trim());
+                const searchTerm = sectionSearchQuery.toLowerCase().trim();
+
+                return YEAR_LEVELS.map((yearLevel) => {
+                  const sectionsForYear = deanSections.filter((s) => {
+                    const matchesYear = s.yearLevel === yearLevel;
+                    if (!isSearching) return matchesYear;
+                    return matchesYear && s.name?.toLowerCase().includes(searchTerm);
+                  });
+
+                  // Auto-expand year level if searching and has matching sections
+                  const isOpen = isSearching ? sectionsForYear.length > 0 : Boolean(expandedYearLevels[yearLevel]);
+
+                  if (isSearching && sectionsForYear.length === 0) return null;
+
+                  return (
+                    <div key={yearLevel} className="space-y-1">
+                      {/* Year Level Header & Add Button Layout */}
+                      <div className="flex items-center gap-2">
+                        {/* Main Dropdown Card Field */}
+                        <button
+                          type="button"
+                          onClick={() => toggleYearLevel(yearLevel)}
+                          className="flex-1 px-3 py-2 bg-white hover:bg-gray-50/80 rounded-xl border border-gray-200 transition-all flex items-center justify-between shadow-2xs group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
+                              {yearLevel}
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-[#7A0808]">
+                              {sectionsForYear.length}
+                            </span>
+                          </div>
+                          {isOpen ? (
+                            <ChevronDown size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
+                          ) : (
+                            <ChevronRight size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
+                          )}
+                        </button>
+
+                        {/* Separate Square Plus (+) Button */}
+                        {canPlot && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddSectionModalForYear(yearLevel)}
+                            className="w-8 h-8 rounded-xl bg-white hover:bg-red-50 border border-gray-200 hover:border-[#800000] transition-all flex items-center justify-center flex-shrink-0 shadow-2xs group"
+                            title={`Add section to ${yearLevel}`}
+                          >
+                            <Plus size={15} className="text-[#800000] group-hover:scale-110 transition-transform" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Sections Sub-List */}
+                      {isOpen && (
+                        <div className="ml-2 mt-1 space-y-1 pl-2 border-l-2 border-red-100">
+                          {sectionsForYear.length === 0 ? (
+                            <p className="text-[10px] text-gray-400 italic px-2 py-1">
+                              No {yearLevel} sections
+                            </p>
+                          ) : (
+                            sectionsForYear.map((section) => {
+                              const isSelected = selectedSection === section.name;
+
+                              return (
+                                <button
+                                  key={section.name}
+                                  type="button"
+                                  onClick={() => setSelectedSection(section.name)}
+                                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group ${
+                                    isSelected
+                                      ? 'bg-[#800000] text-white shadow-2xs'
+                                      : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-100'
+                                  }`}
+                                >
+                                  <span className="truncate">{section.name}</span>
+                                  {canPlot && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteSection(section.name);
+                                      }}
+                                      className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                                        isSelected ? 'text-white hover:bg-red-700' : 'text-red-500 hover:bg-red-100'
+                                      }`}
+                                      title="Delete section"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -973,103 +1113,24 @@ export default function CourseSchedulingNew() {
         <div>
           {selectedDean ? (
             <div className="space-y-4">
-              {/* Section Selector - Only show for regular schedule */}
+              {/* Active Section Info Header - Regular Schedule */}
               {scheduleTab === 'regular' && (
-                <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
+                <div className="bg-white border border-gray-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div>
+                    <div className="flex items-center gap-2">
                       <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
                         {selectedDean.department || selectedDean.college}
                       </h3>
-                      <p className="text-xs font-medium mt-0.5" style={{ color: '#2B3235', opacity: 0.65 }}>
-                        {selectedDean.name} · {selectedDean.email}
-                      </p>
-                    </div>
-                    {canPlot && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAddSectionModal(true)}
-                        className="px-3 py-2 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-1"
-                      >
-                        <Plus size={14} /> Add Section
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Section List - Only for Regular Schedule */}
-                  {deanSections.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-sm font-semibold text-gray-400 mb-2">No sections added yet</p>
-                      {canPlot && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAddSectionModal(true)}
-                          className="btn-outline-maroon text-xs gap-1 mx-auto"
-                        >
-                          <Plus size={14} /> Add Your First Section
-                        </button>
+                      {selectedSection && (
+                        <span className="text-xs font-bold bg-[#800000] text-white px-3 py-0.5 rounded-full">
+                          Section: {selectedSection}
+                        </span>
                       )}
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Sections Grouped by Year Level */}
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#7A0808' }}>
-                          Sections by Year Level
-                        </p>
-                        {YEAR_LEVELS.map((yearLevel) => {
-                          const sectionsForYear = deanSections.filter(s => s.yearLevel === yearLevel);
-                          if (sectionsForYear.length === 0) return null;
-                          
-                          return (
-                            <div key={yearLevel} className="mb-3">
-                              <p className="text-[9px] font-bold text-gray-500 mb-1.5">{yearLevel}</p>
-                              <div className="flex flex-wrap gap-2">
-                                {sectionsForYear.map((section) => (
-                                  <div key={section.name} className="relative group">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedSection(section.name)}
-                                      className={`px-4 py-2 pr-8 rounded-xl text-xs font-bold transition-all border-2 ${
-                                        selectedSection === section.name
-                                          ? 'bg-[#800000] text-white border-[#800000]'
-                                          : 'bg-white text-[#2B3235] border-gray-200 hover:border-[#800000] hover:bg-red-50'
-                                      }`}
-                                    >
-                                      {section.name}
-                                    </button>
-                                    {canPlot && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteSection(section.name);
-                                        }}
-                                        className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                                          selectedSection === section.name ? 'text-white hover:bg-red-700' : 'text-red-500 hover:bg-red-100'
-                                        }`}
-                                        title="Delete section"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {canPlot && deanSections.length > 0 && (
-                    <div className="mt-4 p-3 rounded-lg" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-                      <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
-                        🎯 Regular Schedule: Create a weekly schedule that repeats for the entire semester. Select a section to start plotting.
-                      </p>
-                    </div>
-                  )}
+                    <p className="text-xs font-medium text-gray-500 mt-0.5">
+                      {selectedDean.name} · {selectedDean.email}
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -1240,10 +1301,15 @@ export default function CourseSchedulingNew() {
       {showAddSectionModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-modal-pop">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-lg" style={{ color: '#2B3235' }}>
-                Add New Section
-              </h3>
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-black text-lg text-gray-900">
+                  Add New Section
+                </h3>
+                <p className="text-xs font-semibold text-[#800000] mt-0.5">
+                  Target Year: <span className="font-black">{newSectionYear}</span>
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -1271,7 +1337,7 @@ export default function CourseSchedulingNew() {
                   autoFocus
                 />
                 <p className="text-[10px] text-gray-500 mt-1">
-                  Enter any section name (e.g., 1A for first year section A, BSIT-2 for second year IT)
+                  Enter section name (e.g., 1A for first year section A, BSIT-2 for second year IT)
                 </p>
               </div>
 
@@ -1282,14 +1348,14 @@ export default function CourseSchedulingNew() {
                 <select
                   value={newSectionYear}
                   onChange={(e) => setNewSectionYear(e.target.value)}
-                  className="input-field w-full"
+                  className="input-field w-full bg-gray-50 border-gray-300 font-bold text-gray-900"
                 >
                   {YEAR_LEVELS.map(year => (
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-1">
-                  ⚠️ Year level is required for exam scheduling. 1st year has separate exam period from 2nd-5th year.
+                <p className="text-[10px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
+                  ✓ Pre-selected to {newSectionYear} based on the (+) button clicked.
                 </p>
               </div>
 

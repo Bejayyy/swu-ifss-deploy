@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trash2, AlertTriangle, Users } from 'lucide-react';
 import { subscribeDeanSections } from '../../services/plotScheduleService';
+import { useModal } from '../../hooks/useModal';
 
 /**
  * ResetDeanSchedulesModal - Modern redesigned UI
@@ -15,6 +16,7 @@ export default function ResetDeanSchedulesModal({
   semester = '1', // Now receives just the number (e.g., "1" or "2")
   schoolYear = '2024-2025',
 }) {
+  const { showNotification } = useModal();
   // Format semester for display
   const semesterDisplay = `Semester ${semester}`;
   const [selectedDeans, setSelectedDeans] = useState(new Set());
@@ -90,7 +92,11 @@ export default function ResetDeanSchedulesModal({
       onClose();
     } catch (err) {
       console.error('Reset failed:', err);
-      alert('Failed to reset schedules: ' + err.message);
+      showNotification({
+        type: 'error',
+        title: 'Reset Failed',
+        message: err.message || 'Failed to reset schedules.',
+      });
     } finally {
       setLoading(false);
     }
