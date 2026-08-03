@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getInitialWeekStart, getSemesterForDate, getMondayOfWeek } from '../utils/academicCalendarUtils';
+import { getInitialWeekStart, getSemesterForDate, getMondayOfWeek, getSemesterWeekNumber, isScheduleActiveOnWeek } from '../utils/academicCalendarUtils';
 import { addDays } from '../constants/scheduleGrid';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import EditRoomModal from '../components/modals/EditRoomModal';
@@ -23,6 +24,7 @@ export default function RoomDetails() {
   const { state } = useLocation();
   const { id } = useParams();
   const { buildingList } = useApp();
+  const { calendarData } = useAcademicCalendar();
 
   const { canEditRoom, canSubmitCourseSchedule, canSubmitReservation, isRegistrar, canManageRoomMaintenance, isGsd } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
@@ -173,6 +175,12 @@ export default function RoomDetails() {
 
   // Convert reservations, course schedules, and maintenance schedules to schedule blocks for the current week
   const scheduleBlocks = useMemo(() => {
+    // Determine semester start date
+    const semesterStartStr = semesterTab === '1'
+      ? calendarData?.config?.semester1Start
+      : calendarData?.config?.semester2Start;
+    const currentWeekNum = getSemesterWeekNumber(weekStartDate, semesterStartStr);
+
     // Use timezone-safe date formatting to avoid off-by-one errors
     const formatDateLocal = (date) => {
       const y = date.getFullYear();
@@ -186,16 +194,23 @@ export default function RoomDetails() {
       return formatDateLocal(date); // Use local date formatting instead of toISOString()
     });
 
-    console.log('[RoomDetails] Week start date:', weekStartDate, 'Day of week:', weekStartDate.getDay());
+    console.log('[RoomDetails] Week start date:', weekStartDate, 'Day of week:', weekStartDate.getDay(), 'Week num:', currentWeekNum);
     console.log('[RoomDetails] Building schedule blocks for week:', weekDates);
     console.log('[RoomDetails] Course schedules:', courseSchedules);
     console.log('[RoomDetails] Approved reservations:', approvedReservations);
 
     const blocks = [];
 
-    // Add COURSE SCHEDULE blocks (Regular schedules - repeat every week)
-    // These are semester-long and match by DAY OF WEEK, not specific date
+    // Add COURSE SCHEDULE blocks (Regular schedules - repeat every week unless OJT)
     courseSchedules.forEach((schedule) => {
+      // Check modality (regular, odd-weeks, even-weeks, custom-ojt)
+      const modality = schedule.modality || schedule.sectionModality || 'regular';
+      const customOjtWeeks = schedule.customOjtWeeks || [];
+      if (!isScheduleActiveOnWeek(modality, currentWeekNum, customOjtWeeks)) {
+        console.log(`[RoomDetails] Schedule ${schedule.title} hidden on week ${currentWeekNum} due to OJT modality (${modality})`);
+        return; // Temporarily hide schedule on OJT week!
+      }
+
       // schedule.day is 0-6 for Monday-Sunday (from WEEKDAYS array in CourseSchedulingNew)
       const dayIndex = schedule.day;
       

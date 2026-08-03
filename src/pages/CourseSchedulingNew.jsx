@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2, Layers, Search } from 'lucide-react';
+import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2, Layers, Search, Edit } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
@@ -22,6 +22,8 @@ import {
   getPlotDayStatus,
   parseDateOnly,
   getExamDatesForPeriod,
+  getSemesterWeekNumber,
+  isScheduleActiveOnWeek,
 } from '../utils/academicCalendarUtils';
 import {
   subscribePlotEntriesForDeanSection,
@@ -30,6 +32,7 @@ import {
   deletePlotEntryForSection,
   subscribeDeanSections,
   createDeanSection,
+  updateDeanSectionModality,
   deleteDeanSection,
   resetMultipleDeansSchedules,
   entriesToGridBlocks,
@@ -48,6 +51,14 @@ import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
 
 // Year level options for section metadata
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+
+// Modality options for section / class scheduling
+const MODALITY_OPTIONS = [
+  { value: 'regular', label: 'Every Week (Classroom)', badge: 'Weekly' },
+  { value: 'odd-weeks', label: 'Classroom (Odd Wks) / OJT (Even Wks)', badge: 'Odd Wks Class / Even Wks OJT' },
+  { value: 'even-weeks', label: 'Classroom (Even Wks) / OJT (Odd Wks)', badge: 'Even Wks Class / Odd Wks OJT' },
+];
+
 
 // Student categories for exam scheduling
 const STUDENT_CATEGORIES = [
@@ -91,10 +102,36 @@ export default function CourseSchedulingNew() {
   const [showAddSectionModal, setShowAddSectionModal] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionYear, setNewSectionYear] = useState('1st Year');
+  const [newSectionModality, setNewSectionModality] = useState('regular');
   const [expandedYearLevels, setExpandedYearLevels] = useState({});
   const [sectionSearchQuery, setSectionSearchQuery] = useState('');
 
+  const currentSectionObj = useMemo(() => {
+    return deanSections.find(s => s.name === selectedSection);
+  }, [deanSections, selectedSection]);
+
+  const [scheduleTab, setScheduleTab] = useState('regular');
+  const [semester, setSemester] = useState('1');
+  const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
+  const [selectedStudentCategory, setSelectedStudentCategory] = useState('freshmen'); // 'freshmen' or 'upperclassmen'
+  const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
+
+  const semesterStartStr = semester === '1'
+    ? calendarData?.config?.semester1Start
+    : calendarData?.config?.semester2Start;
+
+  const currentWeekNum = useMemo(() => {
+    return getSemesterWeekNumber(weekStartDate, semesterStartStr);
+  }, [weekStartDate, semesterStartStr]);
+
+  const isSectionOnOjtThisWeek = useMemo(() => {
+    if (!currentSectionObj || !currentSectionObj.modality || currentSectionObj.modality === 'regular') return false;
+    return !isScheduleActiveOnWeek(currentSectionObj.modality, currentWeekNum);
+  }, [currentSectionObj, currentWeekNum]);
+
+
   const toggleYearLevel = (yearLevel) => {
+
     setExpandedYearLevels((prev) => ({
       ...prev,
       [yearLevel]: !prev[yearLevel],
@@ -104,8 +141,32 @@ export default function CourseSchedulingNew() {
   const handleOpenAddSectionModalForYear = (yearLevel) => {
     setNewSectionYear(yearLevel || '1st Year');
     setNewSectionName('');
+    setNewSectionModality('regular');
     setShowAddSectionModal(true);
   };
+
+  const handleUpdateSectionModality = async (newModality) => {
+    if (!selectedDeanUid || !selectedSection) return;
+    setIsLoading(true);
+    setLoadingMessage('Updating section modality...');
+    try {
+      await updateDeanSectionModality(selectedDeanUid, selectedSection, newModality);
+      setIsLoading(false);
+      setNotification({
+        type: 'success',
+        title: 'Modality Updated',
+        message: `Section "${selectedSection}" updated to ${MODALITY_OPTIONS.find(m => m.value === newModality)?.label}`,
+      });
+    } catch (err) {
+      setIsLoading(false);
+      setNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Failed to update section modality.',
+      });
+    }
+  };
+
   
   const [plotEntries, setPlotEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,13 +185,8 @@ export default function CourseSchedulingNew() {
   const [showResetSchedulesModal, setShowResetSchedulesModal] = useState(false);
   const [selectedDeansForReset, setSelectedDeansForReset] = useState([]);
 
-  const [scheduleTab, setScheduleTab] = useState('regular');
-  const [semester, setSemester] = useState('1');
-  const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
-  const [selectedStudentCategory, setSelectedStudentCategory] = useState('freshmen'); // 'freshmen' or 'upperclassmen'
-  const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
-
   const [entryModal, setEntryModal] = useState(null);
+
 
   // Auto-adjust week start date when switching to exam mode or changing exam period
   useEffect(() => {
@@ -244,12 +300,24 @@ export default function CourseSchedulingNew() {
         setDeanSections(sections);
         // Auto-select first section if none selected or current selection doesn't exist
         const sectionNames = sections.map(s => s.name);
+        let activeSec = sections.find(s => s.name === selectedSection) || sections[0];
+
         if (!selectedSection || !sectionNames.includes(selectedSection)) {
-          setSelectedSection(sections[0]?.name || null);
+          setSelectedSection(activeSec?.name || null);
         }
+
+        // Auto-expand year level dropdowns that contain sections so they are open by default
+        const yearExpandState = {};
+        sections.forEach(s => {
+          if (s.yearLevel) {
+            yearExpandState[s.yearLevel] = true;
+          }
+        });
+        setExpandedYearLevels(prev => ({ ...yearExpandState, ...prev }));
       },
       (err) => console.error('Error loading sections:', err)
     );
+
   }, [selectedDeanUid, selectedSection]);
 
   // Subscribe to plot entries for selected dean and section
@@ -560,7 +628,7 @@ export default function CourseSchedulingNew() {
     setShowAddSectionModal(false);
 
     try {
-      await createDeanSection(selectedDeanUid, createdSectionName, targetYear);
+      await createDeanSection(selectedDeanUid, createdSectionName, targetYear, newSectionModality);
       setSelectedSection(createdSectionName);
       setExpandedYearLevels((prev) => ({ ...prev, [targetYear]: true }));
       setNewSectionName('');
@@ -746,37 +814,13 @@ export default function CourseSchedulingNew() {
               ) : (
                 <button
                   type="button"
-                  onClick={async () => {
-                    const confirmed = await showConfirm({
-                      title: 'Reset Access Control?',
-                      message: 'This will remove all granted permissions so you can start fresh. Existing schedules will NOT be deleted.',
-                      confirmText: 'Reset Access Control',
-                      cancelText: 'Cancel',
-                      variant: 'danger',
-                    });
-                    if (!confirmed) return;
-
-                    try {
-                      await resetScheduleAccess(activeSchoolYearId, semester);
-                      showNotification({
-                        type: 'success',
-                        title: 'Access Control Reset',
-                        message: 'Schedule access control has been reset. You can now grant access again.',
-                      });
-                    } catch (err) {
-                      showNotification({
-                        type: 'error',
-                        title: 'Reset Failed',
-                        message: err.message || 'Failed to reset access control.',
-                      });
-                    }
-                  }}
+                  onClick={() => setShowGrantAccessModal(true)}
                   disabled={!activeSchoolYearId || !semester}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-orange-600 text-white hover:bg-orange-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Reset access control to start fresh"
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+                  title="Edit granted colleges or reset access"
                 >
-                  <X size={16} />
-                  Reset Access Control
+                  <Edit size={16} />
+                  Edit Access
                 </button>
               )}
             </div>
@@ -797,21 +841,21 @@ export default function CourseSchedulingNew() {
                   }`}>
                     {scheduleAccess.status === 'all_allowed' 
                       ? '✅ All Colleges Can Schedule' 
-                      : '⏳ First College Only'}
+                      : '⏳ Granted Colleges Only'}
                   </span>
                 </div>
               </div>
 
-              {/* First College Info */}
+              {/* Granted Colleges Info */}
               {scheduleAccess.firstCollege && (
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    First College (Currently Scheduling):
+                <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-1">
+                  <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
+                    Granted College(s) (Currently Scheduling):
                   </p>
-                  <p className="text-sm font-bold text-[#800000]">
+                  <p className="text-sm font-black text-[#800000]">
                     {scheduleAccess.firstCollege.name}
                   </p>
-                  <p className="text-[10px] text-gray-500 mt-1">
+                  <p className="text-[10px] text-gray-500">
                     Granted: {new Date(scheduleAccess.firstCollege.grantedAt).toLocaleString()}
                   </p>
                 </div>
@@ -1115,24 +1159,70 @@ export default function CourseSchedulingNew() {
             <div className="space-y-4">
               {/* Active Section Info Header - Regular Schedule */}
               {scheduleTab === 'regular' && (
-                <div className="bg-white border border-gray-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
-                        {selectedDean.department || selectedDean.college}
-                      </h3>
-                      {selectedSection && (
-                        <span className="text-xs font-bold bg-[#800000] text-white px-3 py-0.5 rounded-full">
-                          Section: {selectedSection}
+                <div className="bg-white border border-gray-100 rounded-2xl p-4 space-y-3 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
+                          {selectedDean.department || selectedDean.college}
+                        </h3>
+                        {selectedSection && (
+                          <span className="text-xs font-bold bg-[#800000] text-white px-3 py-0.5 rounded-full">
+                            Section: {selectedSection}
+                          </span>
+                        )}
+                        <span className="text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                          Week {currentWeekNum}
                         </span>
-                      )}
+                      </div>
+                      <p className="text-xs font-medium text-gray-500 mt-0.5">
+                        {selectedDean.name} · {selectedDean.email}
+                      </p>
                     </div>
-                    <p className="text-xs font-medium text-gray-500 mt-0.5">
-                      {selectedDean.name} · {selectedDean.email}
-                    </p>
+
+                    {/* Section Modality Selector */}
+                    {selectedSection && (
+                      <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200">
+                        <span className="text-xs font-bold text-gray-700 whitespace-nowrap">Class Modality:</span>
+                        {canPlot ? (
+                          <select
+                            value={currentSectionObj?.modality || 'regular'}
+                            onChange={(e) => handleUpdateSectionModality(e.target.value)}
+                            className="bg-white text-xs font-bold text-[#800000] border border-gray-300 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-[#800000] transition-colors"
+                          >
+                            {MODALITY_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs font-bold text-gray-800 bg-white px-2 py-1 rounded border border-gray-200">
+                            {MODALITY_OPTIONS.find(m => m.value === (currentSectionObj?.modality || 'regular'))?.label}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
+
+                  {/* OJT Week Banner */}
+                  {isSectionOnOjtThisWeek && (
+                    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex items-center justify-between gap-3 text-amber-900 animate-pulse">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-lg">🎓</span>
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wider">Students Currently on OJT / Fieldwork (Week {currentWeekNum})</p>
+                          <p className="text-[11px] font-medium text-amber-800">
+                            Classroom schedules for Section <span className="font-bold">{selectedSection}</span> are temporarily hidden this week. Next week they will automatically return.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-200 text-amber-900 whitespace-nowrap">
+                        OJT Week Active
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
+
 
               {/* Exam Schedule Controls - Only show for exam schedule */}
               {scheduleTab === 'exam' && (
@@ -1266,10 +1356,11 @@ export default function CourseSchedulingNew() {
 
       {entryModal && canPlot && isDean ? (
         <AddPlotEntryModalEnhanced
-          key={`${entryModal.mode}-${entryModal.date}-${entryModal.initial?.startTime}-${entryModal.initial?.endTime}`}
+          key={`${entryModal.mode}-${entryModal.date}-${entryModal.initial?.startTime}-${entryModal.initial?.endTime}-${entryModal.fromDrag}`}
           onClose={() => setEntryModal(null)}
           onSave={handleSaveEntry}
           initial={entryModal.initial}
+          fromDrag={entryModal.fromDrag}
           date={entryModal.date}
           dayLabel={entryModal.dayLabel}
           scheduleMode={scheduleTab}
@@ -1359,6 +1450,25 @@ export default function CourseSchedulingNew() {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
+                  Class Modality / OJT Pattern
+                </label>
+                <select
+                  value={newSectionModality}
+                  onChange={(e) => setNewSectionModality(e.target.value)}
+                  className="input-field w-full bg-gray-50 border-gray-300 font-bold text-gray-900 text-xs"
+                >
+                  {MODALITY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Select if this section has alternating OJT weeks (e.g. for 3rd/4th Year students).
+                </p>
+              </div>
+
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -1409,12 +1519,41 @@ export default function CourseSchedulingNew() {
           onClose={() => setShowGrantAccessModal(false)}
           schoolYearId={activeSchoolYearId}
           semester={semester}
+          initialCollegeCodes={scheduleAccess?.approvedColleges || []}
+          onReset={async () => {
+            const confirmed = await showConfirm({
+              title: 'Reset Access Control?',
+              message: 'This will remove all granted permissions so you can start fresh. Existing schedules will NOT be deleted.',
+              confirmText: 'Reset Access Control',
+              cancelText: 'Cancel',
+              variant: 'danger',
+            });
+            if (!confirmed) return;
+
+            try {
+              await resetScheduleAccess(activeSchoolYearId, semester);
+              setShowGrantAccessModal(false);
+              showNotification({
+                type: 'success',
+                title: 'Access Control Reset',
+                message: 'Schedule access control has been reset. You can now grant access again.',
+              });
+            } catch (err) {
+              showNotification({
+                type: 'error',
+                title: 'Reset Failed',
+                message: err.message || 'Failed to reset access control.',
+              });
+            }
+          }}
           onSuccess={() => {
             setShowGrantAccessModal(false);
             showNotification({
               type: 'success',
-              title: 'Access Granted',
-              message: 'The first college has been granted scheduling access.',
+              title: scheduleAccess ? 'Access Updated' : 'Access Granted',
+              message: scheduleAccess
+                ? 'Granted college access updated successfully.'
+                : 'The selected college(s) have been granted scheduling access.',
             });
           }}
         />

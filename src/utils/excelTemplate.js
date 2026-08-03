@@ -438,3 +438,150 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
     reader.readAsArrayBuffer(file);
   });
 }
+
+/**
+ * Generates an Excel template file (.xlsx) for bulk importing activities (Academic and Non-Academic).
+ */
+export function downloadBulkActivityTemplate(colleges = []) {
+  const headers = [
+    'Category * (Academic / Non-Academic)',
+    'Activity Name *',
+    'Activity Objective',
+    'Belonging Colleges * (Comma-separated codes, e.g. CIT, COE, COA or ALL)',
+  ];
+
+  const collegeCodesStr = colleges.map(c => c.code).filter(Boolean).join(', ') || 'CIT, COE, COA';
+
+  const sampleRows = [
+    [
+      'Academic',
+      'Research Colloquium 2026',
+      'Presentation of capstone projects and research findings.',
+      collegeCodesStr || 'CIT, COE',
+    ],
+    [
+      'Non-Academic',
+      'University Sports Fest',
+      'Annual intra-school athletics competition and camaraderie.',
+      'ALL',
+    ],
+  ];
+
+  const sheetData = [headers, ...sampleRows];
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+  worksheet['!cols'] = [
+    { wch: 30 },
+    { wch: 35 },
+    { wch: 45 },
+    { wch: 50 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Activities Template');
+  XLSX.writeFile(workbook, 'SWU_Activities_Bulk_Import_Template.xlsx');
+}
+
+/**
+ * Parses an uploaded Excel / CSV spreadsheet for bulk activity import.
+ */
+export function parseBulkActivitySpreadsheet(file, availableColleges = []) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        if (!jsonRows || jsonRows.length < 2) {
+          reject(new Error('Spreadsheet appears to be empty or has no data rows.'));
+          return;
+        }
+
+        const parsedRows = [];
+        const seenNames = new Set();
+
+        jsonRows.slice(1).forEach((row, idx) => {
+          if (!row || row.length === 0 || row.every((val) => val == null || String(val).trim() === '')) {
+            return;
+          }
+
+          const rawCategory = String(row[0] || '').toLowerCase().trim();
+          const rawName = String(row[1] || '').trim();
+          const rawObjective = String(row[2] || '').trim();
+          const rawCollegesStr = String(row[3] || '').trim();
+
+          // Auto-exclude sample rows
+          if (rawName === 'Research Colloquium 2026' || rawName === 'University Sports Fest') {
+            return;
+          }
+
+          const rowErrors = [];
+
+          // Category
+          const category = rawCategory.includes('non') ? 'non-academic' : 'academic';
+
+          // Name validation
+          if (!rawName) {
+            rowErrors.push('Activity name is required');
+          } else if (seenNames.has(rawName.toLowerCase())) {
+            rowErrors.push(`Duplicate activity name "${rawName}" in file`);
+          } else {
+            seenNames.add(rawName.toLowerCase());
+          }
+
+          // Colleges parsing
+          let selectedColleges = [];
+          if (!rawCollegesStr) {
+            rowErrors.push('At least one belonging college is required');
+          } else if (rawCollegesStr.toUpperCase() === 'ALL') {
+            selectedColleges = availableColleges.map(c => c.code || c.id);
+          } else {
+            const splitCodes = rawCollegesStr.split(/[,;\/|]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+            const matchedCodes = [];
+            const invalidCodes = [];
+
+            splitCodes.forEach(code => {
+              const matchedCol = availableColleges.find(c => (c.code || c.id || '').toUpperCase() === code);
+              if (matchedCol) {
+                matchedCodes.push(matchedCol.code || matchedCol.id);
+              } else {
+                invalidCodes.push(code);
+              }
+            });
+
+            if (invalidCodes.length > 0) {
+              rowErrors.push(`Unknown college code(s): ${invalidCodes.join(', ')}`);
+            }
+            if (matchedCodes.length === 0 && invalidCodes.length === 0) {
+              rowErrors.push('No valid belonging colleges found');
+            }
+            selectedColleges = matchedCodes;
+          }
+
+          parsedRows.push({
+            id: `bulk_act_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+            category,
+            name: rawName,
+            objective: rawObjective,
+            colleges: selectedColleges,
+            isValid: rowErrors.length === 0,
+            errors: rowErrors,
+          });
+        });
+
+        resolve({ rows: parsedRows });
+      } catch (err) {
+        reject(new Error('Failed to parse activity spreadsheet: ' + err.message));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+

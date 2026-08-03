@@ -57,7 +57,7 @@ export async function getScheduleAccess(schoolYearId, semester) {
 }
 
 /**
- * Registrar grants access to first college
+ * Registrar grants access to first college (or updates existing granted colleges list)
  */
 export async function grantFirstCollegeAccess({
   schoolYearId,
@@ -72,10 +72,6 @@ export async function grantFirstCollegeAccess({
   const ref = accessControlRef(schoolYearId, semester);
   const snap = await getDoc(ref);
 
-  if (snap.exists()) {
-    throw new Error('Access control already exists for this semester. Use "Grant All Remaining" instead.');
-  }
-
   const finalCollegeCodes = collegeCodes.length > 0
     ? collegeCodes
     : selectedColleges.length > 0
@@ -87,6 +83,18 @@ export async function grantFirstCollegeAccess({
   const firstName = selectedColleges.length > 0
     ? selectedColleges.map((c) => `${c.name} (${c.code})`).join(', ')
     : collegeName || collegeCode;
+
+  if (snap.exists()) {
+    await updateDoc(ref, {
+      'firstCollege.code': finalCollegeCodes.join(', '),
+      'firstCollege.name': firstName,
+      'firstCollege.updatedAt': new Date().toISOString(),
+      approvedColleges: finalCollegeCodes,
+      updatedBy: grantedBy,
+      updatedAt: serverTimestamp(),
+    });
+    return { ...snap.data(), approvedColleges: finalCollegeCodes };
+  }
 
   const accessControl = {
     schoolYearId,

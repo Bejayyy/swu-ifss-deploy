@@ -63,9 +63,7 @@ export default function WeeklyScheduleGrid({
     const minSlot = Math.min(startSlot, endSlot);
     const maxSlot = Math.max(startSlot, endSlot);
     const startHour = slotIndexToHour(minSlot);
-    const endHour = minSlot === maxSlot
-      ? startHour + 1
-      : slotIndexToHour(maxSlot) + 0.5;
+    const endHour = slotIndexToHour(maxSlot) + 0.5;
     onSlotSelect({
       dayIndex,
       date,

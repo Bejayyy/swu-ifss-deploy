@@ -13,9 +13,11 @@ import {
   Search,
   Layers,
   CheckCircle2,
+  Eye,
+  Check,
 } from 'lucide-react';
 import { parseTimeToHour, validateScheduleHours, hourToTimeInput } from '../../services/plotScheduleService';
-import { formatScheduleHour } from '../../constants/scheduleGrid';
+import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
 import { subscribeCollegeCourses } from '../../services/courseService';
 import { subscribeToBuildings } from '../../services/buildingService';
@@ -56,6 +58,7 @@ export default function AddPlotEntryModalEnhanced({
   semester = '1', // Current semester
   sectionYearLevel = '1st Year', // Selected section's year level
   dayIndex, // 0-6 for Mon-Sun
+  fromDrag = false,
 }) {
   // Multi-step form state
   const [step, setStep] = useState(1); // 1: Course, 2: Teacher, 3: Type, 4: Building & Room, 5: Summary
@@ -80,9 +83,11 @@ export default function AddPlotEntryModalEnhanced({
   const [selectedType, setSelectedType] = useState('Lecture');
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [selectedRoom, setSelectedRoom] = useState(null);
-  const [startTime, setStartTime] = useState(initial?.startTime || '08:00');
-  const [endTime, setEndTime] = useState(initial?.endTime || '09:30');
-  const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex); // Track which day user selected
+  const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
+  // Only pre-populate time if user dragged on grid or editing existing schedule
+  const [startTime, setStartTime] = useState(fromDrag || initial?.title ? initial?.startTime : null);
+  const [endTime, setEndTime] = useState(fromDrag || initial?.title ? initial?.endTime : null);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex !== undefined ? dayIndex : 0); // Track which day user selected
 
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
@@ -335,6 +340,10 @@ export default function AddPlotEntryModalEnhanced({
     }
     if (step === 4 && !selectedRoom) {
       setError('Please select a room from the left floor panel');
+      return;
+    }
+    if (step === 4 && (!startTime || !endTime)) {
+      setError('Please click or drag on the room schedule grid to set your schedule time & day.');
       return;
     }
 
@@ -929,9 +938,26 @@ export default function AddPlotEntryModalEnhanced({
                                               </p>
                                               <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
                                             </div>
-                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-                                              Cap: {room.capacity}
-                                            </span>
+                                             <div className="flex items-center gap-1.5">
+                                               <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
+                                                 Cap: {room.capacity}
+                                               </span>
+                                               <button
+                                                 type="button"
+                                                 title="View Room Details"
+                                                 onClick={(e) => {
+                                                   e.stopPropagation();
+                                                   setViewDetailsRoom({
+                                                     ...room,
+                                                     buildingName: selectedBuilding?.name || selectedBuilding?.code || 'Building',
+                                                     floorName: floorData.name,
+                                                   });
+                                                 }}
+                                                 className="p-1 rounded-md text-gray-400 hover:text-[#800000] hover:bg-red-100/60 transition-colors"
+                                               >
+                                                 <Eye size={13} />
+                                               </button>
+                                             </div>
                                           </button>
                                         );
                                       })
@@ -959,7 +985,96 @@ export default function AddPlotEntryModalEnhanced({
                       </div>
 
                       {selectedRoom ? (
-                        <div className="flex-1 bg-white rounded-xl">
+                        <div className="flex-1 bg-white rounded-xl space-y-3">
+                          {/* Live Interactive Time & Day Control Bar */}
+                          <div className="p-3 bg-red-50/60 border border-red-200/80 rounded-xl space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-xs font-black text-[#800000] flex items-center gap-1.5">
+                                <Clock size={14} /> Selected Schedule Time & Day:
+                              </span>
+                              {startTime && endTime && selectedDayIndex !== undefined ? (
+                                <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#800000] text-white shadow-2xs">
+                                  {SCHEDULE_DAYS[selectedDayIndex]} {formatScheduleHour(parseTimeToHour(startTime))} – {formatScheduleHour(parseTimeToHour(endTime))} ({Math.round(Math.max(0, parseTimeToHour(endTime) - parseTimeToHour(startTime)) * 10) / 10} hrs)
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                                  👇 Click or drag on the grid below to set time
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                              {/* Day Selector */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  Day
+                                </label>
+                                <select
+                                  value={selectedDayIndex !== undefined ? selectedDayIndex : 0}
+                                  onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                >
+                                  {SCHEDULE_DAYS.map((d, idx) => (
+                                    <option key={d} value={idx}>{d}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Start Time */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  Start Time
+                                </label>
+                                <select
+                                  value={startTime || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setStartTime(val);
+                                    if (!endTime && val) {
+                                      const startH = parseTimeToHour(val);
+                                      setEndTime(hourToTimeInput(startH + 1.5));
+                                    }
+                                  }}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                >
+                                  <option value="" disabled>Select start time...</option>
+                                  {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
+                                    const h = SCHEDULE_START_HOUR + i * 0.5;
+                                    const timeStr = hourToTimeInput(h);
+                                    return (
+                                      <option key={timeStr} value={timeStr}>
+                                        {formatScheduleHour(h)}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+
+                              {/* End Time */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  End Time
+                                </label>
+                                <select
+                                  value={endTime || ''}
+                                  onChange={(e) => setEndTime(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                >
+                                  <option value="" disabled>Select end time...</option>
+                                  {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
+                                    const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
+                                    const timeStr = hourToTimeInput(h);
+                                    return (
+                                      <option key={timeStr} value={timeStr}>
+                                        {formatScheduleHour(h)}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+
                           <RoomScheduleViewer
                             roomCode={selectedRoom.roomCode}
                             scheduleMode={scheduleMode}
@@ -1144,6 +1259,133 @@ export default function AddPlotEntryModalEnhanced({
           </div>
         </div>
       </div>
+
+      {/* Room Details Preview Modal */}
+      {viewDetailsRoom && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-[#800000] flex items-center justify-center flex-shrink-0 border border-red-100">
+                  <DoorOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-gray-900 leading-tight">
+                    {viewDetailsRoom.roomCode || viewDetailsRoom.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 font-medium">
+                    {viewDetailsRoom.buildingName || 'Building'} • {viewDetailsRoom.floorName || 'Floor'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewDetailsRoom(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Quick Info Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl border border-gray-200/80 bg-gray-50/50 space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    ROOM TYPE
+                  </span>
+                  <p className="font-extrabold text-sm text-gray-900 flex items-center gap-1.5">
+                    <Layers size={14} className="text-[#800000]" />
+                    {viewDetailsRoom.type || viewDetailsRoom.roomType || 'Classroom'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-gray-200/80 bg-gray-50/50 space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    SEATING CAPACITY
+                  </span>
+                  <p className="font-extrabold text-sm text-blue-700 flex items-center gap-1.5">
+                    <User size={14} className="text-blue-600" />
+                    {viewDetailsRoom.capacity || 40} Students
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-gray-200/80 bg-gray-50/50 space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    AVAILABILITY STATUS
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    {viewDetailsRoom.status || 'Available'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-gray-200/80 bg-gray-50/50 space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    MANAGED BY
+                  </span>
+                  <p className="font-bold text-xs text-gray-800 truncate">
+                    {viewDetailsRoom.managedBy || 'College Dean / Registrar'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Equipment & Facilities */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  Equipment & Facilities
+                </h4>
+                {Array.isArray(viewDetailsRoom.equipment) && viewDetailsRoom.equipment.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {viewDetailsRoom.equipment.map((item, idx) => (
+                      <span
+                        key={idx}
+                        className="text-xs font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 flex items-center gap-1.5"
+                      >
+                        <Check size={13} className="text-emerald-600" />
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 flex items-center gap-1.5">
+                      <Check size={13} className="text-emerald-600" /> Standard Whiteboard & Markers
+                    </span>
+                    <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 flex items-center gap-1.5">
+                      <Check size={13} className="text-emerald-600" /> Air Conditioning Unit
+                    </span>
+                    <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 flex items-center gap-1.5">
+                      <Check size={13} className="text-emerald-600" /> Overhead Digital Projector / Screen
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Additional Room Info */}
+              {viewDetailsRoom.description && (
+                <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl space-y-1">
+                  <p className="text-[11px] font-bold text-amber-900 uppercase">Room Notes / Description</p>
+                  <p className="text-xs text-amber-800">{viewDetailsRoom.description}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setViewDetailsRoom(null)}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

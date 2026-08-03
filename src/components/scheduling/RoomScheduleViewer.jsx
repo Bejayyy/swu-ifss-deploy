@@ -30,6 +30,7 @@ export default function RoomScheduleViewer({
   const [loading, setLoading] = useState(true);
   const [drag, setDrag] = useState(null);
   const dragRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
   const gridHeight = gridTotalHeightPx();
 
@@ -37,6 +38,14 @@ export default function RoomScheduleViewer({
   useEffect(() => {
     dragRef.current = drag;
   }, [drag]);
+
+  // Auto-scroll to proposed time slot when room schedule viewer opens or proposed time changes
+  useEffect(() => {
+    if (currentTimeSlot?.startHour !== undefined && scrollContainerRef.current) {
+      const topPx = blockTopPx(currentTimeSlot.startHour);
+      scrollContainerRef.current.scrollTop = Math.max(0, topPx - 10);
+    }
+  }, [currentTimeSlot?.startHour, roomCode]);
 
   // Subscribe to all schedule entries for this room
   useEffect(() => {
@@ -91,9 +100,7 @@ export default function RoomScheduleViewer({
     const minSlot = Math.min(startSlot, endSlot);
     const maxSlot = Math.max(startSlot, endSlot);
     const startHour = slotIndexToHour(minSlot);
-    const endHour = minSlot === maxSlot
-      ? startHour + 1
-      : slotIndexToHour(maxSlot) + 0.5;
+    const endHour = slotIndexToHour(maxSlot) + 0.5;
     
     onTimeSelect(dayIndex, startHour, endHour);
   }, [onTimeSelect]);
@@ -225,7 +232,7 @@ export default function RoomScheduleViewer({
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-          <div style={{ minWidth: 600, maxHeight: 500, overflowY: 'auto' }}>
+          <div ref={scrollContainerRef} style={{ minWidth: 600, maxHeight: 500, overflowY: 'auto' }}>
             {/* Day Headers */}
             <div className="grid sticky top-0 bg-white z-10 border-b border-gray-200" style={{ gridTemplateColumns: '60px repeat(7, 1fr)' }}>
               <div className="p-2 text-[10px] font-bold text-gray-400 uppercase">Time</div>
@@ -293,9 +300,45 @@ export default function RoomScheduleViewer({
                 );
               })}
 
+              {/* Proposed Time Overlay Block */}
+              {currentTimeSlot && currentTimeSlot.day !== undefined && (
+                <div
+                  className="absolute top-0 grid pointer-events-none z-[5]"
+                  style={{
+                    left: 60,
+                    right: 0,
+                    height: gridHeight,
+                    gridTemplateColumns: 'repeat(7, 1fr)',
+                  }}
+                >
+                  <div
+                    style={{ gridColumnStart: currentTimeSlot.day + 1 }}
+                    className="relative h-full"
+                  >
+                    <div
+                      className="absolute left-1 right-1 rounded-xl p-2 bg-amber-200/90 border-2 border-amber-600 text-amber-950 shadow-md pointer-events-auto overflow-hidden animate-in fade-in duration-150"
+                      style={{
+                        top: blockTopPx(currentTimeSlot.startHour),
+                        height: blockHeightPx(currentTimeSlot.startHour, currentTimeSlot.endHour),
+                      }}
+                    >
+                      <p className="text-[10px] font-black tracking-wide text-amber-900 flex items-center gap-1">
+                        <span>★ YOUR PROPOSED TIME</span>
+                      </p>
+                      <p className="text-[11px] font-extrabold text-amber-950 mt-0.5">
+                        {formatScheduleHour(currentTimeSlot.startHour)} – {formatScheduleHour(currentTimeSlot.endHour)}
+                      </p>
+                      <p className="text-[9px] font-bold text-amber-800">
+                        ({Math.round((currentTimeSlot.endHour - currentTimeSlot.startHour) * 10) / 10} hrs)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Schedule blocks overlay */}
               <div
-                className="absolute top-0 grid pointer-events-none"
+                className="absolute top-0 grid pointer-events-none z-[10]"
                 style={{ 
                   left: 60, 
                   right: 0, 

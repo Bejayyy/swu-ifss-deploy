@@ -53,23 +53,34 @@ function Chip({ label, active, onClick, count }) {
   );
 }
 
+const STANDARD_EQUIPMENT = [
+  'Air Conditioning',
+  'Audio System',
+  'CCTV',
+  'Computers',
+  'INTERNET',
+  'Projector',
+  'Whiteboard',
+];
+
 function EquipChip({ label, active, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-[#7A0808]"
       style={
         active
-          ? { background: '#FFF0F0', color: MAROON, borderColor: MAROON }
-          : { background: '#FAFAFA', color: '#6B7280', borderColor: '#E5E7EB' }
+          ? { background: '#FFF0F0', color: MAROON, borderColor: MAROON, boxShadow: '0 1px 2px rgba(122,8,8,0.1)' }
+          : { background: '#FFFFFF', color: '#475569', borderColor: '#E2E8F0' }
       }
     >
-      {active && <span className="text-[10px]">✓</span>}
+      {active && <span className="text-xs font-black">✓</span>}
       {label}
     </button>
   );
 }
+
 
 export default function RoomFinder() {
   const navigate = useNavigate();
@@ -115,9 +126,9 @@ export default function RoomFinder() {
   // Derive unique values from room data for filter options
   const allTypes = useMemo(() => [...new Set(allRooms.map((r) => r.type))].sort(), [allRooms]);
   const allEquipment = useMemo(() => {
-    const set = new Set();
+    const set = new Set(STANDARD_EQUIPMENT);
     allRooms.forEach((r) => (r.equipment || []).forEach((e) => set.add(e)));
-    return [...set].sort();
+    return [...set].sort((a, b) => a.localeCompare(b));
   }, [allRooms]);
   // Derive unique saved floors from buildingList and room data for filter options
   const availableFloors = useMemo(() => {
@@ -391,21 +402,22 @@ export default function RoomFinder() {
               </div>
 
               {/* Equipment / Inclusions */}
-              {allEquipment.length > 0 && (
-                <div className="mb-2">
-                  <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Equipment / Inclusions</label>
-                  <div className="flex flex-wrap gap-1.5 max-h-[160px] overflow-y-auto">
-                    {allEquipment.map((e) => (
-                      <EquipChip
-                        key={e}
-                        label={e}
-                        active={selectedEquipment.includes(e)}
-                        onClick={() => toggleArray(selectedEquipment, setSelectedEquipment, e)}
+              <div className="mb-2">
+                <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>EQUIPMENT / INCLUSIONS</label>
+                <div className="space-y-1 max-h-[180px] overflow-y-auto pr-1">
+                  {allEquipment.map((e) => (
+                    <label key={e} className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-gray-50 text-xs font-semibold" style={{ color: TEXT }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedEquipment.includes(e)}
+                        onChange={() => toggleArray(selectedEquipment, setSelectedEquipment, e)}
+                        className="accent-[#7A0808] rounded"
                       />
-                    ))}
-                  </div>
+                      <span className="truncate">{e}</span>
+                    </label>
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>

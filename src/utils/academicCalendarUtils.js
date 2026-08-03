@@ -263,3 +263,52 @@ export function countConfiguredExamPeriods(examPeriods, semester) {
     return period?.fr?.start || period?.up?.start;
   }).length;
 }
+
+/**
+ * Calculate the 1-based semester week number for a given target date or week start date.
+ * If no semester start date is provided, defaults to 1.
+ */
+export function getSemesterWeekNumber(targetDate, semesterStartStr) {
+  if (!targetDate || !semesterStartStr) return 1;
+  const targetDt = typeof targetDate === 'string' ? parseDateOnly(targetDate) : new Date(targetDate);
+  const semStartDt = parseDateOnly(semesterStartStr);
+  if (!targetDt || !semStartDt) return 1;
+
+  const targetMon = getMondayOfWeek(targetDt);
+  const semStartMon = getMondayOfWeek(semStartDt);
+
+  const diffMs = targetMon.getTime() - semStartMon.getTime();
+  const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+  return Math.max(1, diffWeeks + 1);
+}
+
+/**
+ * Check if a schedule entry or section is active on a specific semester week number based on its modality.
+ * Modality options:
+ * - 'regular': Classroom every week (default)
+ * - 'odd-weeks': Classroom on Odd Weeks (1, 3, 5...), OJT on Even Weeks
+ * - 'even-weeks': Classroom on Even Weeks (2, 4, 6...), OJT on Odd Weeks
+ * - 'custom-ojt': OJT on specific week numbers listed in customOjtWeeks array
+ */
+export function isScheduleActiveOnWeek(modality = 'regular', weekNumber = 1, customOjtWeeks = []) {
+  if (!modality || modality === 'regular') return true;
+  
+  if (modality === 'odd-weeks') {
+    // Active if week number is odd (1, 3, 5...)
+    return weekNumber % 2 !== 0;
+  }
+  
+  if (modality === 'even-weeks') {
+    // Active if week number is even (2, 4, 6...)
+    return weekNumber % 2 === 0;
+  }
+  
+  if (modality === 'custom-ojt') {
+    // Inactive if current week number is in customOjtWeeks
+    const ojtList = Array.isArray(customOjtWeeks) ? customOjtWeeks.map(Number) : [];
+    return !ojtList.includes(Number(weekNumber));
+  }
+  
+  return true;
+}
+

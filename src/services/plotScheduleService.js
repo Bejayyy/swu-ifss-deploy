@@ -573,7 +573,7 @@ export function subscribeDeanSections(deanUid, onData, onError) {
 /**
  * Create a new section for a dean
  */
-export async function createDeanSection(deanUid, sectionName, yearLevel) {
+export async function createDeanSection(deanUid, sectionName, yearLevel, modality = 'regular') {
   if (!deanUid || !sectionName) {
     throw new Error('Dean UID and section name are required.');
   }
@@ -584,12 +584,29 @@ export async function createDeanSection(deanUid, sectionName, yearLevel) {
   await setDoc(sectionRef, {
     sectionName,
     yearLevel: yearLevel || '',
+    modality: modality || 'regular',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   return sectionName;
 }
+
+/**
+ * Update a section's modality for a dean
+ */
+export async function updateDeanSectionModality(deanUid, sectionName, modality) {
+  if (!deanUid || !sectionName) {
+    throw new Error('Dean UID and section name are required.');
+  }
+
+  const sectionRef = doc(db, COLLECTIONS.USERS, deanUid, 'course_schedules', sectionName);
+  await updateDoc(sectionRef, {
+    modality: modality || 'regular',
+    updatedAt: serverTimestamp(),
+  });
+}
+
 
 /**
  * Delete a section for a dean (and all its entries)

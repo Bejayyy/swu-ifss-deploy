@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, ChevronDown, Search } from 'lucide-react';
+import { X, Send, ChevronDown, Search, Trash2 } from 'lucide-react';
 import { subscribeColleges } from '../../services/collegeService';
 import { grantFirstCollegeAccess } from '../../services/scheduleAccessService';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +9,8 @@ export default function GrantScheduleAccessModal({
   onClose,
   schoolYearId,
   semester,
+  initialCollegeCodes = [],
+  onReset,
   onSuccess,
 }) {
   const { profile } = useAuth();
@@ -20,6 +22,12 @@ export default function GrantScheduleAccessModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedCollegeCodes(initialCollegeCodes || []);
+    }
+  }, [isOpen, initialCollegeCodes]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -129,10 +137,12 @@ export default function GrantScheduleAccessModal({
           <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0 bg-white">
             <div>
               <h3 className="font-black text-lg" style={{ color: '#2B3235' }}>
-                Grant College Access
+                {initialCollegeCodes.length > 0 ? 'Edit Granted College Access' : 'Grant College Access'}
               </h3>
               <p className="text-xs mt-0.5 text-gray-500 font-medium">
-                Select college(s) that can create schedules first
+                {initialCollegeCodes.length > 0
+                  ? 'Add or remove colleges with scheduling access'
+                  : 'Select college(s) that can create schedules first'}
               </p>
             </div>
             <button
@@ -302,23 +312,43 @@ export default function GrantScheduleAccessModal({
           </div>
 
           {/* Fixed Footer */}
-          <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 flex-shrink-0 bg-white">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || loading || selectedCollegeCodes.length === 0}
-              className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2 shadow-2xs"
-            >
-              <Send size={15} />
-              {submitting ? 'Granting Access...' : `Grant Access (${selectedCollegeCodes.length})`}
-            </button>
+          <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0 bg-white">
+            {initialCollegeCodes.length > 0 && onReset ? (
+              <button
+                type="button"
+                onClick={onReset}
+                disabled={submitting}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors flex items-center gap-1.5"
+                title="Reset access control to start fresh"
+              >
+                <Trash2 size={14} /> Reset Access
+              </button>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || loading || selectedCollegeCodes.length === 0}
+                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2 shadow-2xs"
+              >
+                <Send size={15} />
+                {submitting
+                  ? 'Saving Access...'
+                  : initialCollegeCodes.length > 0
+                    ? `Update Access (${selectedCollegeCodes.length})`
+                    : `Grant Access (${selectedCollegeCodes.length})`}
+              </button>
+            </div>
           </div>
         </form>
       </div>
