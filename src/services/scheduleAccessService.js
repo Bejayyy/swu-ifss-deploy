@@ -65,6 +65,8 @@ export async function grantFirstCollegeAccess({
   semester,
   collegeCode,
   collegeName,
+  collegeCodes = [],
+  selectedColleges = [],
   grantedBy,
 }) {
   const ref = accessControlRef(schoolYearId, semester);
@@ -74,22 +76,30 @@ export async function grantFirstCollegeAccess({
     throw new Error('Access control already exists for this semester. Use "Grant All Remaining" instead.');
   }
 
+  const finalCollegeCodes = collegeCodes.length > 0
+    ? collegeCodes
+    : selectedColleges.length > 0
+      ? selectedColleges.map((c) => c.code)
+      : collegeCode
+        ? [collegeCode]
+        : [];
+
+  const firstName = selectedColleges.length > 0
+    ? selectedColleges.map((c) => `${c.name} (${c.code})`).join(', ')
+    : collegeName || collegeCode;
+
   const accessControl = {
     schoolYearId,
     schoolYearLabel: schoolYearLabel || '',
     semester: Number(semester),
     
-    // First college that can schedule
     firstCollege: {
-      code: collegeCode,
-      name: collegeName,
+      code: finalCollegeCodes.join(', '),
+      name: firstName,
       grantedAt: new Date().toISOString(),
     },
     
-    // List of all colleges with access
-    approvedColleges: [collegeCode],
-    
-    // Status: 'first_only' or 'all_allowed'
+    approvedColleges: finalCollegeCodes,
     status: 'first_only',
     
     allAccessGrantedAt: null,

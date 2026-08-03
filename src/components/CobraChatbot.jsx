@@ -35,7 +35,7 @@ export default function CobraChatbot() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-[70] w-16 h-16 rounded-full shadow-xl flex items-center justify-center border-2 border-white"
+        className="fixed bottom-6 right-6 z-[70] w-16 h-16 rounded-full shadow-xl flex items-center justify-center border-2 border-white print:hidden"
         style={{ background: 'linear-gradient(135deg, #800000 0%, #9E1C1C 100%)' }}
         title={`Open ${BOT_NAME}`}
       >
@@ -47,7 +47,7 @@ export default function CobraChatbot() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-end p-4 md:p-6">
+        <div className="fixed inset-0 z-[80] flex items-end justify-end p-4 md:p-6 print:hidden">
           <div className="absolute inset-0 bg-black/20" onClick={() => setOpen(false)} />
           <div className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white">
             <div

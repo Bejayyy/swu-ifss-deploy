@@ -741,7 +741,7 @@ export default function CourseSchedulingNew() {
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send size={16} />
-                  Grant First College Access
+                  Grant College Access
                 </button>
               ) : (
                 <button

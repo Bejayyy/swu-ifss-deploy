@@ -388,35 +388,6 @@ export default function BuildingManagement() {
                   <h3 className="font-bold text-sm text-[#2B3235] flex items-center gap-2">
                     <Layers size={16} className="text-[#7A0808]" /> Floors Overview
                   </h3>
-
-                  {/* Floor Filter pills */}
-                  <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFloor('all')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        selectedFloor === 'all'
-                          ? 'bg-[#7A0808] text-white shadow-2xs'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      All Floors ({allRooms.length})
-                    </button>
-                    {floorData.map((f) => (
-                      <button
-                        key={f.floor}
-                        type="button"
-                        onClick={() => setSelectedFloor(f.floor)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                          selectedFloor === f.floor
-                            ? 'bg-[#7A0808] text-white shadow-2xs'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {f.label || `Floor ${f.floor}`} ({f.rooms?.length || 0})
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Multi-Selection Bulk Edit Action Bar */}

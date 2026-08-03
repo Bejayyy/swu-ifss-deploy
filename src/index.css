@@ -89,6 +89,10 @@ body {
   font-weight: 600;
   border: none;
   cursor: pointer;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   transition: background 0.15s;
 }
 .btn-maroon:hover {
@@ -98,12 +102,16 @@ body {
 .btn-outline-maroon {
   background: transparent;
   color: #7A0808;
+  border: 1.5px solid #7A0808;
   padding: 8px 16px;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
-  border: 1.5px solid #7A0808;
   cursor: pointer;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   transition: all 0.15s;
 }
 .btn-outline-maroon:hover {
@@ -194,4 +202,54 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #aaa;
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 4mm;
+  }
+  html, body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100vw !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  aside, header, nav, .print\:hidden, [class*="LeftNav"], [class*="TopNav"], [class*="CobraChatbot"], button {
+    display: none !important;
+  }
+  .print\:block {
+    display: block !important;
+  }
+  .print\:border-none {
+    border: none !important;
+  }
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+  .print\:m-0 {
+    margin: 0 !important;
+  }
+  main {
+    margin-left: 0 !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    min-height: auto !important;
+    width: 100% !important;
+  }
+  .print-schedule-container {
+    zoom: 0.62;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
 }

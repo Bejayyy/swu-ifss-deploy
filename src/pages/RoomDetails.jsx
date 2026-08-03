@@ -384,26 +384,181 @@ export default function RoomDetails() {
       : displayRoom.status === 'Occupied'
         ? 'badge-occupied'
         : 'badge-maintenance';
+
+  const handlePrintSchedule = () => {
+    const CELL_H = 19;
+    const START_HOUR = 6;
+    const END_HOUR = 20;
+    const SLOT_COUNT = (END_HOUR - START_HOUR) * 2;
+    const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    const TYPE_COLORS = {
+      Lecture: { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
+      Laboratory: { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
+      Reservation: { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
+      'Reservation (Academic)': { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
+      'Reservation (Non-Academic)': { bg: '#E0E7FF', text: '#3730A3', border: '#A5B4FC' },
+      Maintenance: { bg: '#FFEDD5', text: '#C2410C', border: '#FDBA74' },
+    };
+
+    const toTitleCase = (str) => {
+      if (!str) return '';
+      return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+    };
+
+    const formatTime = (h) => {
+      const hrs = Math.floor(h);
+      const mins = h % 1 !== 0 ? '30' : '00';
+      const displayH = hrs % 12 || 12;
+      return `${displayH}:${mins}`;
+    };
+
+    const formatTimeAMPM = (h) => {
+      const hrs = Math.floor(h);
+      const mins = h % 1 !== 0 ? '30' : '00';
+      const ampm = hrs >= 12 ? 'PM' : 'AM';
+      const displayH = hrs % 12 || 12;
+      return `${displayH}:${mins} ${ampm}`;
+    };
+
+    // Build slot rows — just show time like "6:00", "6:30", "7:00"
+    let slotsHtml = '';
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const slotHour = START_HOUR + i * 0.5;
+      slotsHtml += `<div class="slot-row" style="top:${i * CELL_H}px;height:${CELL_H}px;">`;
+      slotsHtml += `<div class="time-cell">${formatTime(slotHour)}</div>`;
+      for (let d = 0; d < 7; d++) {
+        slotsHtml += `<div class="day-cell"></div>`;
+      }
+      slotsHtml += `</div>`;
+    }
+
+    // Build blocks overlay
+    let blocksHtml = '';
+    const blocksByDay = Array.from({ length: 7 }, (_, d) =>
+      scheduleBlocks.filter((b) => b.day === d)
+    );
+    blocksByDay.forEach((dayBlocks, dayIdx) => {
+      dayBlocks.forEach((sched) => {
+        const colors = TYPE_COLORS[sched.type] ||
+          (sched.type?.startsWith?.('Reservation') ? TYPE_COLORS.Reservation : null) ||
+          TYPE_COLORS.Lecture;
+        const slotsFromStart = (sched.start - START_HOUR) * 2;
+        const durationSlots = (sched.end - sched.start) * 2;
+        const top = slotsFromStart * CELL_H;
+        const height = durationSlots * CELL_H;
+        const left = `calc(60px + ${dayIdx} * ((100% - 60px) / 7) + 2px)`;
+        const width = `calc((100% - 60px) / 7 - 4px)`;
+
+        const courseCode = sched.course || '';
+        const title = sched.title || '';
+        const instructor = toTitleCase(sched.instructor || '');
+        const section = sched.section || sched.sectionName || sched.program || '';
+        const timeRange = `${formatTimeAMPM(sched.start)} - ${formatTimeAMPM(sched.end)}`;
+
+        blocksHtml += `<div style="position:absolute;top:${top}px;height:${height}px;left:${left};width:${width};background:${colors.bg};border:1.5px solid ${colors.border};border-radius:4px;padding:2px 3px;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;">`;
+        if (courseCode) blocksHtml += `<div style="font-size:7px;font-weight:800;color:${colors.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${courseCode}</div>`;
+        blocksHtml += `<div style="font-size:8px;font-weight:900;color:${colors.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${toTitleCase(title)}</div>`;
+        if (instructor) blocksHtml += `<div style="font-size:7px;font-weight:600;color:${colors.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${instructor}</div>`;
+        if (section) blocksHtml += `<div style="font-size:7px;font-weight:700;color:${colors.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Sec: ${section}</div>`;
+        blocksHtml += `<div style="font-size:6.5px;font-weight:600;color:${colors.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${timeRange}</div>`;
+        blocksHtml += `</div>`;
+      });
+    });
+
+    const gridH = SLOT_COUNT * CELL_H;
+    const roomName = displayRoom.name || displayRoom.id;
+    const roomType = displayRoom.type || 'Lecture Room';
+
+    const html = `<!DOCTYPE html>
+<html><head><title>Schedule - ${roomName}</title>
+<style>
+  @page { size: landscape; margin: 5mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; background: white; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+  .header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 6px; border-bottom: 2px solid #333; margin-bottom: 8px; }
+  .header h1 { font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: -0.5px; }
+  .header .meta { font-size: 9px; font-weight: 700; color: #444; margin-top: 2px; }
+  .header .meta .room-type { color: #7A0808; font-weight: 900; text-transform: uppercase; }
+  .header .right { text-align: right; }
+  .header .right p:first-child { font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+  .header .right p:last-child { font-size: 9px; font-weight: 700; color: #555; }
+  .grid-wrap { position: relative; width: 100%; }
+  .day-header { display: grid; grid-template-columns: 60px repeat(7, 1fr); }
+  .day-header > div { background: #7A0808 !important; color: white !important; font-size: 10px; font-weight: 800; text-align: center; padding: 4px 0; border-right: 1px solid #333; border-top: 1px solid #333; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .day-header > div:first-child { border-left: 1px solid #333; }
+  .slots-container { position: relative; height: ${gridH}px; border-left: 1px solid #333; }
+  .slot-row { display: grid; grid-template-columns: 60px repeat(7, 1fr); position: absolute; left: 0; right: 0; }
+  .time-cell { border-bottom: 1px solid #999; border-right: 1px solid #999; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; background: white; }
+  .day-cell { border-bottom: 1px solid #ccc; border-right: 1px solid #ccc; }
+</style></head><body>
+<div class="header">
+  <div>
+    <h1>${buildingName} — ${roomName}</h1>
+    <p class="meta">ROOM TYPE: <span class="room-type">${roomType}</span> · FLOOR ${floor} · CAPACITY: ${displayRoom.capacity || 0} PAX</p>
+  </div>
+  <div class="right">
+    <p>SWU-IFSS Room Schedule</p>
+    <p>SY 2025-2026 · Semester ${semesterTab}</p>
+  </div>
+</div>
+<div class="grid-wrap">
+  <div class="day-header">
+    <div>TIME</div>
+    ${DAYS.map((d) => `<div>${d}</div>`).join('')}
+  </div>
+  <div class="slots-container">
+    ${slotsHtml}
+    ${blocksHtml}
+  </div>
+</div>
+</body></html>`;
+
+    // Use hidden iframe instead of new tab
+    let printFrame = document.getElementById('schedule-print-frame');
+    if (printFrame) printFrame.remove();
+    printFrame = document.createElement('iframe');
+    printFrame.id = 'schedule-print-frame';
+    printFrame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+    document.body.appendChild(printFrame);
+
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow.document;
+    frameDoc.open();
+    frameDoc.write(html);
+    frameDoc.close();
+
+    printFrame.onload = () => {
+      setTimeout(() => {
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+        setTimeout(() => printFrame.remove(), 1000);
+      }, 300);
+    };
+  };
+
   return (
     <Layout title={displayRoom.name || displayRoom.id} subtitle={`${buildingName} · Floor ${floor}`}>
       {/* Header row */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-5 print:hidden">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm font-bold" style={{ color: '#2B3235' }}>
           <div className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 hover:bg-gray-100 transition-colors">
             <ArrowLeft size={16} />
           </div>
           Back
         </button>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {buildingId && floorId && displayRoom?.docId && canEditRoom({ ...displayRoom, buildingId }) && (
-            <button type="button" className="btn-outline-maroon flex items-center gap-2" onClick={() => setShowEditRoom(true)}>
+            <button
+              type="button"
+              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
+              onClick={() => setShowEditRoom(true)}
+            >
               <Edit2 size={14} /> Edit Room Details
             </button>
           )}
           {canManageRoomMaintenance() && (
             <button
               type="button"
-              className="btn-outline-maroon flex items-center gap-2"
+              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
               onClick={() => setShowScheduleMaintenance(true)}
             >
               <Wrench size={14} /> Schedule Maintenance
@@ -412,7 +567,7 @@ export default function RoomDetails() {
           {!isGsd && (
             <button
               type="button"
-              className="px-3 py-2 rounded-xl font-bold text-sm border-2 border-orange-500 text-orange-600 hover:bg-orange-50 transition-all flex items-center gap-2"
+              className="px-3.5 py-2 rounded-xl font-bold text-xs border-2 border-orange-500 text-orange-600 hover:bg-orange-50 transition-all flex items-center gap-2 whitespace-nowrap"
               onClick={() => setShowReportMaintenance(true)}
             >
               <AlertTriangle size={14} /> Report Issue
@@ -421,7 +576,7 @@ export default function RoomDetails() {
           {canSubmitReservation() && (
             <button
               type="button"
-              className="btn-maroon"
+              className="btn-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
               onClick={() => openReservation({
                 building: buildingName,
                 buildingId,
@@ -432,19 +587,31 @@ export default function RoomDetails() {
                 designatedVenue: `${displayRoom.name || displayRoom.id}, ${buildingName} Floor ${floor}`,
               })}
             >
-              <CalendarIcon size={16} /> Reserve Room
+              <CalendarIcon size={14} /> Reserve Room
             </button>
           )}
           {(isRegistrar || canSubmitCourseSchedule()) && (
-            <button type="button" className="btn-outline-maroon"><Plus size={16} /> Add Schedule</button>
+            <button
+              type="button"
+              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
+              onClick={() => navigate('/course-scheduling')}
+            >
+              <Plus size={14} /> Add Schedule
+            </button>
           )}
-          <button type="button" className="btn-outline-maroon flex items-center gap-2"><Printer size={14} /> Print Schedule</button>
+          <button
+            type="button"
+            className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
+            onClick={() => handlePrintSchedule()}
+          >
+            <Printer size={14} /> Print Schedule
+          </button>
         </div>
       </div>
 
       {/* Maintenance Banner */}
       {displayRoom.maintenanceStatus === 'under-maintenance' && (
-        <div className="mb-5 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-2xl p-4">
+        <div className="mb-5 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-2xl p-4 print:hidden">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-orange-100 rounded-lg">
               <Wrench size={20} className="text-orange-600" />
@@ -467,7 +634,7 @@ export default function RoomDetails() {
       )}
 
       {/* Room info cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6 print:hidden">
         <div className="stat-card">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Room Type</p>
@@ -504,7 +671,7 @@ export default function RoomDetails() {
 
       {/* Equipment */}
       {displayRoom.equipment?.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5 print:hidden">
           <h3 className="font-bold text-sm mb-3" style={{ color: '#2B3235' }}>Available Equipment</h3>
           <div className="flex flex-wrap gap-2">
             {displayRoom.equipment.map((e) => (
@@ -515,7 +682,7 @@ export default function RoomDetails() {
       )}
 
       {/* Week Selector with Calendar */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div>
             <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>Room Schedule</h3>
@@ -656,6 +823,24 @@ export default function RoomDetails() {
         <p className="text-xs font-semibold mb-3" style={{ color: '#2B3235', opacity: 0.75 }}>
           Semester {semesterTab} · {scheduleTab === 'exam' ? 'Exam calendar mode' : 'Regular schedule mode'}
         </p>
+      </div>
+
+      {/* Print-Only Header */}
+      <div className="hidden print:block mb-6 pb-4 border-b-2 border-gray-800">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+              {buildingName} — {displayRoom.name || displayRoom.id}
+            </h1>
+            <p className="text-xs font-bold text-gray-700 mt-1">
+              ROOM TYPE: <span className="uppercase text-[#7A0808] font-black">{displayRoom.type || 'Lecture Room'}</span> · FLOOR {floor} · CAPACITY: {displayRoom.capacity || 0} PAX
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-black text-gray-900 uppercase tracking-wider">SWU-IFSS Room Schedule</p>
+            <p className="text-xs font-bold text-gray-600 mt-0.5">SY 2025-2026 · Semester {semesterTab}</p>
+          </div>
+        </div>
       </div>
 
       <WeeklyScheduleGrid

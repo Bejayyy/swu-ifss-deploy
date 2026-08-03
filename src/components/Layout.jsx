@@ -45,7 +45,7 @@ export default function Layout({ children, title, subtitle }) {
         className="overflow-x-hidden"
         style={{ marginLeft: isDesktop ? NAV_WIDTH_PX : 0, paddingTop: TOP_NAV_HEIGHT_PX, minHeight: '100vh' }}
       >
-        <div className="p-4 sm:p-6">{children}</div>
+        <div className="p-4 sm:p-6 print:p-0 print:m-0">{children}</div>
       </main>
       <CobraChatbot />
       {showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}

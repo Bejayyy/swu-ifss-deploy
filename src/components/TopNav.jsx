@@ -209,7 +209,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
 
   return (
     <div
-      className="fixed top-0 right-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-6"
+      className="fixed top-0 right-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-6 print:hidden"
       style={{
         left: isDesktop ? NAV_WIDTH_PX : 0,
         height: TOP_NAV_HEIGHT_PX,

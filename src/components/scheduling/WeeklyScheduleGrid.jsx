@@ -126,12 +126,24 @@ export default function WeeklyScheduleGrid({
 
   const blocksByDay = Array.from({ length: 7 }, (_, day) => filteredBlocks.filter((b) => b.day === day));
 
+  const formatPrintInterval = (slotIdx) => {
+    const startH = slotIndexToHour(slotIdx);
+    const endH = startH + 0.5;
+    const formatTimeStr = (h) => {
+      const hours = Math.floor(h);
+      const mins = h % 1 !== 0 ? '30' : '00';
+      const displayHours = hours % 12 || 12;
+      return `${displayHours}:${mins}`;
+    };
+    return `${formatTimeStr(startH)}-${formatTimeStr(endH)}`;
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 print:p-0 print:border-none print:shadow-none print:bg-transparent print-schedule-container">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3 print:hidden">
         <div>
           <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>{title}</h3>
-          <p className="text-xs font-bold text-[#7A0808] mt-0.5 flex items-center gap-1.5">
+          <p className="text-xs font-bold text-[#7A0808] mt-0.5 flex items-center gap-1.5 print:hidden">
             <Calendar size={13} className="text-[#7A0808]" />
             <span>
               {(() => {
@@ -153,7 +165,7 @@ export default function WeeklyScheduleGrid({
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
           {canPlot && onAddBlock && (
             <button type="button" className="btn-maroon text-xs gap-1.5 py-1.5 px-3" onClick={onAddBlock}>
               <Plus size={14} /> Add schedule
@@ -183,7 +195,7 @@ export default function WeeklyScheduleGrid({
       </div>
 
       {showControls && (
-        <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <div className="flex items-center gap-3 mb-3 flex-wrap print:hidden">
           {schoolYearOptions.length > 0 && onSchoolYearChange ? (
             <select className="form-input w-40 text-sm" value={schoolYearLabel} onChange={(e) => onSchoolYearChange(e.target.value)} disabled>
               {schoolYearOptions.map((opt) => (
@@ -223,20 +235,20 @@ export default function WeeklyScheduleGrid({
       )}
 
       {semesterRangeLabel && (
-        <p className="text-xs font-semibold mb-2" style={{ color: '#2B3235', opacity: 0.75 }}>
+        <p className="text-xs font-semibold mb-2 print:hidden" style={{ color: '#2B3235', opacity: 0.75 }}>
           {semesterRangeLabel}
           {scheduleTab === 'exam' ? ' · Exam schedule mode' : ' · Regular schedule mode'}
         </p>
       )}
 
       {canPlot && (
-        <p className="text-[11px] font-semibold mb-3" style={{ color: '#7A0808', opacity: 0.85 }}>
+        <p className="text-[11px] font-semibold mb-3 print:hidden" style={{ color: '#7A0808', opacity: 0.85 }}>
           Click a time slot or drag across slots on a day to set start and end time, then fill in the schedule details.
         </p>
       )}
 
       {showLegend && (
-        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap bg-gray-50/60 p-3 rounded-xl border border-gray-100">
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap bg-gray-50/60 p-3 rounded-xl border border-gray-100 print:hidden">
           {/* Interactive Legend Items */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1">Legend:</span>
@@ -286,26 +298,36 @@ export default function WeeklyScheduleGrid({
 
       <div className="overflow-x-auto select-none">
         <div style={{ minWidth: 700 }}>
-          <div className="grid sticky top-0 bg-white z-10" style={{ gridTemplateColumns: '70px repeat(7, 1fr)' }}>
-            <div className="py-2 text-[10px] font-bold text-gray-400 uppercase">Time</div>
+          {/* Header Row */}
+          <div
+            className="grid sticky top-0 bg-white z-10 print:bg-[#7A0808] print:text-white print:border print:border-black"
+            style={{ gridTemplateColumns: '85px repeat(7, 1fr)' }}
+          >
+            <div className="py-2 text-[10px] font-bold text-gray-400 uppercase text-center print:bg-[#7A0808] print:text-white print:font-extrabold print:text-xs print:border-r print:border-black flex items-center justify-center">
+              TIME
+            </div>
             {SCHEDULE_DAYS.map((day, i) => {
               const status = dayStatuses[i];
               const disabled = status?.disabled;
+              const shortDay = day.substring(0, 3).toUpperCase();
               return (
-                <div key={day} className="py-2 text-center">
-                  <p className="text-[10px] font-bold uppercase text-gray-400">{day}</p>
+                <div key={day} className="py-2 text-center print:bg-[#7A0808] print:text-white print:border-r print:border-black flex flex-col justify-center">
+                  <p className="text-[10px] font-bold uppercase text-gray-400 print:text-white print:font-extrabold print:text-xs">
+                    <span className="print:hidden">{day}</span>
+                    <span className="hidden print:inline">{shortDay}</span>
+                  </p>
                   {showDayDates && (
-                    <p className="text-sm font-black" style={{ color: disabled ? '#9CA3AF' : '#2B3235' }}>{dayDates[i]}</p>
+                    <p className="text-sm font-black print:hidden" style={{ color: disabled ? '#9CA3AF' : '#2B3235' }}>{dayDates[i]}</p>
                   )}
                   {disabled && status?.reason && (
-                    <p className="text-[8px] font-bold leading-tight mt-0.5 px-1 text-red-700">{status.reason}</p>
+                    <p className="text-[8px] font-bold leading-tight mt-0.5 px-1 text-red-700 print:hidden">{status.reason}</p>
                   )}
                 </div>
               );
             })}
           </div>
 
-          <div className="relative" style={{ height: gridHeight }}>
+          <div className="relative" style={{ height: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))` }}>
             {Array.from({ length: SCHEDULE_SLOT_COUNT }, (_, slotIndex) => {
               const hour = slotIndexToHour(slotIndex);
               const hInt = Math.floor(hour);
@@ -314,14 +336,21 @@ export default function WeeklyScheduleGrid({
               const ampm = hInt >= 12 ? 'PM' : 'AM';
               const displayH = hInt % 12 || 12;
               const label = `${displayH.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+              const intervalLabel = formatPrintInterval(slotIndex);
+
               return (
                 <div
                   key={slotIndex}
-                  className="grid absolute left-0 right-0"
-                  style={{ gridTemplateColumns: '70px repeat(7, 1fr)', height: SCHEDULE_CELL_HEIGHT, top: slotIndex * SCHEDULE_CELL_HEIGHT }}
+                  className="grid absolute left-0 right-0 print:border-b print:border-black"
+                  style={{
+                    gridTemplateColumns: '85px repeat(7, 1fr)',
+                    height: 'var(--cell-height, 48px)',
+                    top: `calc(${slotIndex} * var(--cell-height, 48px))`
+                  }}
                 >
-                  <div className="border-t border-gray-100 pr-2 flex items-start pt-1 bg-white z-[1]">
-                    <span className="text-[10px] text-gray-400 font-medium">{label}</span>
+                  <div className="border-t border-gray-100 pr-2 flex items-start pt-1 bg-white z-[1] print:border-r print:border-l print:border-black print:items-center print:justify-center print:pt-0">
+                    <span className="text-[10px] text-gray-400 font-medium print:hidden">{label}</span>
+                    <span className="hidden print:inline text-[9px] font-bold text-gray-900">{intervalLabel}</span>
                   </div>
                   {SCHEDULE_DAYS.map((_, dayIndex) => {
                     const disabled = dayStatuses[dayIndex]?.disabled;
@@ -329,9 +358,9 @@ export default function WeeklyScheduleGrid({
                     return (
                       <div
                         key={dayIndex}
-                        className="border-t border-l border-gray-100"
+                        className="border-t border-l border-gray-100 print:border-r print:border-black"
                         style={{
-                          height: SCHEDULE_CELL_HEIGHT,
+                          height: 'var(--cell-height, 48px)',
                           background: disabled ? '#F3F4F6' : selected ? '#FEE2E2' : 'transparent',
                           cursor: canPlot && !disabled ? 'crosshair' : 'default',
                         }}
@@ -350,25 +379,27 @@ export default function WeeklyScheduleGrid({
 
             <div
               className="absolute top-0 grid pointer-events-none"
-              style={{ left: 70, right: 0, height: gridHeight, gridTemplateColumns: 'repeat(7, 1fr)' }}
+              style={{ left: 85, right: 0, height: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`, gridTemplateColumns: 'repeat(7, 1fr)' }}
             >
               {blocksByDay.map((dayBlocks, dayIndex) => (
-                <div key={dayIndex} className="relative h-full" style={{ minHeight: gridHeight }}>
+                <div key={dayIndex} className="relative h-full" style={{ minHeight: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))` }}>
                   {dayBlocks.map((sched) => {
                     const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
                       (sched.type?.startsWith('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
                       SCHEDULE_TYPE_COLORS.Lecture;
-                    const topPx = blockTopPx(sched.start);
-                    const heightPx = blockHeightPx(sched.start, sched.end);
+                    const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
+                    const durationSlots = (sched.end - sched.start) * 2;
+                    const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
+                    const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
+
                     return (
                       <div
                         key={sched.id}
-                        className="absolute left-1 right-1 pointer-events-auto overflow-hidden"
+                        className="absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center"
                         onMouseDown={(e) => e.stopPropagation()}
                         style={{
-                          top: topPx,
-                          height: heightPx,
-                          maxHeight: gridHeight - topPx,
+                          top: topCalc,
+                          height: heightCalc,
                           background: colors.bg,
                           border: `1.5px solid ${colors.border}`,
                           boxSizing: 'border-box',
@@ -376,17 +407,17 @@ export default function WeeklyScheduleGrid({
                           borderRadius: '8px',
                         }}
                       >
-                        <p className="text-[10px] font-black truncate" style={{ color: colors.text }}>{sched.title}</p>
-                        <p className="text-[9px] font-semibold truncate" style={{ color: colors.text }}>
+                        <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                        <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                           {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                         </p>
                         {(sched.section || sched.sectionName || sched.program) && (
-                          <p className="text-[9px] font-bold truncate opacity-90" style={{ color: colors.text }}>
+                          <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                             Sec: {sched.section || sched.sectionName || sched.program}
                           </p>
                         )}
-                        {sched.roomCode && <p className="text-[9px] truncate" style={{ color: colors.text }}>{sched.roomCode}</p>}
-                        <p className="text-[9px]" style={{ color: colors.text }}>
+                        {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}
+                        <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                           {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
                         </p>
                         {!readOnly && (onEditBlock || onDeleteBlock) && (
