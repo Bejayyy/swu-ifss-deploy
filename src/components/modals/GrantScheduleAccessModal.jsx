@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, ChevronDown, Search, Trash2 } from 'lucide-react';
+import { X, Send, ChevronDown, Search, Trash2, Calendar, Mail } from 'lucide-react';
 import { subscribeColleges } from '../../services/collegeService';
 import { grantFirstCollegeAccess } from '../../services/scheduleAccessService';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +10,8 @@ export default function GrantScheduleAccessModal({
   schoolYearId,
   semester,
   initialCollegeCodes = [],
+  initialStartDate = '',
+  initialEndDate = '',
   onReset,
   onSuccess,
 }) {
@@ -21,13 +23,22 @@ export default function GrantScheduleAccessModal({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Date Accomplishment Window State
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sendEmailNotification, setSendEmailNotification] = useState(true);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedCollegeCodes(initialCollegeCodes || []);
+      const today = new Date().toISOString().split('T')[0];
+      const sevenDays = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      setStartDate(initialStartDate || today);
+      setEndDate(initialEndDate || sevenDays);
     }
-  }, [isOpen, initialCollegeCodes]);
+  }, [isOpen, initialCollegeCodes, initialStartDate, initialEndDate]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -44,6 +55,16 @@ export default function GrantScheduleAccessModal({
       }
     );
   }, [isOpen]);
+
+  const getDurationDays = () => {
+    if (!startDate || !endDate) return null;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = end.getTime() - start.getTime();
+    if (isNaN(diffTime) || diffTime < 0) return null;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
+  };
 
   const filteredColleges = colleges.filter((c) => {
     if (!collegeSearch.trim()) return true;
@@ -96,6 +117,11 @@ export default function GrantScheduleAccessModal({
       return;
     }
 
+    if (startDate && endDate && endDate < startDate) {
+      setError('End Date cannot be earlier than Start Date.');
+      return;
+    }
+
     const selectedColleges = colleges.filter((c) =>
       selectedCollegeCodes.includes(c.code)
     );
@@ -115,6 +141,9 @@ export default function GrantScheduleAccessModal({
         semester,
         collegeCodes: selectedCollegeCodes,
         selectedColleges,
+        startDate,
+        endDate,
+        sendEmail: sendEmailNotification,
         grantedBy: profile?.uid,
       });
       
@@ -141,8 +170,8 @@ export default function GrantScheduleAccessModal({
               </h3>
               <p className="text-xs mt-0.5 text-gray-500 font-medium">
                 {initialCollegeCodes.length > 0
-                  ? 'Add or remove colleges with scheduling access'
-                  : 'Select college(s) that can create schedules first'}
+                  ? 'Add or remove colleges & set scheduling accomplishment dates'
+                  : 'Select college(s) & set accomplishment start & end dates'}
               </p>
             </div>
             <button
@@ -168,8 +197,62 @@ export default function GrantScheduleAccessModal({
                 📋 School Year {schoolYearId} · Semester {semester}
               </p>
               <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
-                The selected college(s) will be granted immediate access to create course schedules. You can select multiple colleges at once.
+                Selected deans will receive email & in-app notifications with their scheduling accomplishment start date, end date deadline, and day limit.
               </p>
+            </div>
+
+            {/* Accomplishment Window (Start Date & End Date) */}
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                  <Calendar size={14} className="text-[#800000]" />
+                  Accomplishment Window (Day Limit) <span className="text-red-500">*</span>
+                </label>
+                {getDurationDays() !== null && (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#800000] text-white shadow-2xs">
+                    {getDurationDays()} Day Limit
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
+                    End Date (Deadline)
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
+                  />
+                </div>
+              </div>
+
+              {/* Email Notification Option */}
+              <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sendEmailNotification}
+                  onChange={(e) => setSendEmailNotification(e.target.checked)}
+                  className="rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                />
+                <span className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                  <Mail size={13} className="text-[#800000]" />
+                  Notify Granted Deans via Email & Portal Alert
+                </span>
+              </label>
             </div>
 
             {/* Selected Colleges Preview Pills */}

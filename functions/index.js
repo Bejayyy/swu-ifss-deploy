@@ -448,3 +448,84 @@ exports.verifyOTPAndResetPassword = functions.https.onCall(async (data) => {
   return { success: true, message: 'Password has been reset successfully.' };
 });
 
+// Send email notification when course scheduling access is granted to a Dean
+exports.sendScheduleAccessGrantedEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const caller = await admin.firestore().doc(`users/${context.auth.uid}`).get();
+  if (!caller.exists || caller.data().status !== 'active') {
+    throw new functions.https.HttpsError('permission-denied', 'Active user required.');
+  }
+
+  const { email, displayName, collegeName, schoolYearLabel, semester, startDate, endDate } = data;
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'email is required.');
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: email,
+    subject: `SWU IFSS — Course Scheduling Access Granted (${schoolYearLabel} Sem ${semester})`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #800000; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background-color: #800000; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .info-box { background-color: #fff; padding: 18px; border-left: 4px solid #800000; margin: 20px 0; border-radius: 6px; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+          .deadline { color: #800000; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Course Scheduling Access Granted</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${displayName || 'Dean'},</h2>
+            <p>The Registrar's Office has granted course scheduling access for your college: <strong>${collegeName || 'Your Department'}</strong>.</p>
+            
+            <div class="info-box">
+              <h3 style="margin-top:0;color:#800000;">Scheduling Details & Accomplishment Window:</h3>
+              <p><strong>School Year:</strong> ${schoolYearLabel}</p>
+              <p><strong>Semester:</strong> Semester ${semester}</p>
+              <p><strong>Start Date:</strong> ${startDate || 'Immediate'}</p>
+              <p><strong>End Date (Deadline):</strong> <span class="deadline">${endDate || 'No deadline set'}</span></p>
+            </div>
+
+            <p>Please log into the SWU IFSS portal and plot your college's course schedule within the accomplishment window.</p>
+
+            <center>
+              <a href="${APP_URL}" class="button">Go to Course Scheduling</a>
+            </center>
+
+            <p>If you have questions regarding your scheduling period, please contact the Registrar's Office.</p>
+
+            <p>Best regards,<br>SWU Registrar's Office</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'Access granted email sent successfully' };
+  } catch (error) {
+    console.error('Error sending access granted email:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+

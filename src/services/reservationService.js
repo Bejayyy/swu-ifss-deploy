@@ -452,7 +452,130 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
   };
 
   await setDoc(ref, reservation);
+
+  // Trigger real-time notification to the approver(s) whose turn it is to approve
+  if (!draft) {
+    const pendingRecord = approvalRecords.find((r) => r.status === APPROVAL_RECORD_STATUS.PENDING);
+    if (pendingRecord) {
+      await notifyNextApprovers(ref.id, pendingRecord, reservation);
+    }
+  }
+
   return { id: ref.id, ...reservation };
+}
+
+/**
+ * Real-time notification helper for approvers whose turn it is to sign/approve
+ */
+async function notifyNextApprovers(reservationId, pendingRecord, reservationData) {
+  if (!pendingRecord || !reservationId) return;
+
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    if (snap.empty) return;
+
+    const allUsers = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+
+    const targetRoleId = (pendingRecord.roleId || '').toLowerCase();
+    const customManagerUid = pendingRecord.customManagerUid || reservationData.customManagerUid;
+
+    let targetUsers = [];
+
+    if (targetRoleId === 'room-manager-dean' && customManagerUid) {
+      targetUsers = allUsers.filter((u) => u.uid === customManagerUid);
+    } else {
+      targetUsers = allUsers.filter((u) => {
+        const r = (u.role || u.roleValue || '').toLowerCase();
+        const s = (u.status || 'active').toLowerCase();
+        if (s === 'inactive') return false;
+
+        // Role matching per workflow level
+        if (targetRoleId === 'dean') {
+          if (r !== 'dean') return false;
+          const reqCollege = (reservationData.college || reservationData.department || '').trim().toLowerCase();
+          const userCollege = (u.college || u.department || u.collegeCode || u.departmentCode || '').trim().toLowerCase();
+          if (!reqCollege || !userCollege) return true;
+          return reqCollege.includes(userCollege) || userCollege.includes(reqCollege);
+        }
+
+        if (targetRoleId === 'registrar') {
+          return r === 'registrar' || r === 'developer';
+        }
+
+        if (targetRoleId === 'gsd' || targetRoleId === 'gsd-head' || targetRoleId === 'general-services-head') {
+          return r === 'gsd' || r === 'developer';
+        }
+
+        if (targetRoleId === 'student-life' || targetRoleId === 'sfo') {
+          return r === 'student-life' || r === 'sfo' || r === 'developer';
+        }
+
+        return r === targetRoleId;
+      });
+    }
+
+    if (targetUsers.length === 0) {
+      targetUsers = allUsers.filter((u) => (u.role || u.roleValue || '').toLowerCase() === targetRoleId);
+    }
+
+    const resType = reservationData.type === 'academic' ? 'Academic' : 'Non-Academic';
+    const linkPath = reservationData.type === 'academic'
+      ? `/academic-request/${reservationId}`
+      : `/request/${reservationId}`;
+
+    const titleText = `📋 Approval Needed: ${resType} Reservation`;
+    const messageText = `Reservation "${reservationData.title || reservationData.activity || 'Room Reservation'}" (${reservationData.designatedVenue || reservationData.room || 'Venue'}) requires your approval (Level ${pendingRecord.levelNumber || 1}: ${pendingRecord.roleLabel || 'Approver'}).`;
+
+    for (const targetUser of targetUsers) {
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: targetUser.uid,
+          userEmail: targetUser.email || '',
+          title: titleText,
+          message: messageText,
+          type: 'approval',
+          reservationId: reservationId,
+          reservationType: reservationData.type,
+          link: linkPath,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        console.warn('Failed to save approval notification for user:', targetUser.uid, err);
+      }
+    }
+  } catch (err) {
+    console.error('Error notifying next approvers:', err);
+  }
+}
+
+/**
+ * Real-time notification helper for requestor when reservation is approved or rejected
+ */
+async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resType, reservationId, remarks, type }) {
+  if (!requestorUid && !requestorEmail) return;
+
+  const isApproved = type === 'requestor_approved';
+  const linkPath = resType === 'academic' ? `/academic-request/${reservationId}` : `/request/${reservationId}`;
+
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      userId: requestorUid || '',
+      userEmail: requestorEmail || '',
+      title: isApproved ? '✅ Reservation Approved' : '❌ Reservation Rejected',
+      message: isApproved
+        ? `Your room reservation "${title}" has been fully approved!`
+        : `Your room reservation "${title}" was rejected: ${remarks || 'No reason provided.'}`,
+      type: 'approval',
+      reservationId,
+      reservationType: resType,
+      link: linkPath,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Failed to send requestor notification:', err);
+  }
 }
 
 export async function submitDraftReservation(reservationId) {
@@ -481,6 +604,11 @@ export async function submitDraftReservation(reservationId) {
     },
     { merge: true },
   );
+
+  const pendingRecord = approvalRecords.find((r) => r.status === APPROVAL_RECORD_STATUS.PENDING);
+  if (pendingRecord) {
+    await notifyNextApprovers(reservationId, pendingRecord, data);
+  }
 }
 
 export async function processApprovalAction({
@@ -495,6 +623,8 @@ export async function processApprovalAction({
   if (!['approve', 'reject'].includes(action)) {
     throw new Error('Invalid approval action.');
   }
+
+  let notificationToTrigger = null;
 
   await runTransaction(db, async (transaction) => {
     const ref = reservationRef(reservationId);
@@ -544,6 +674,16 @@ export async function processApprovalAction({
         rejectReason: remarks.trim() || 'Rejected by approver.',
         updatedAt: serverTimestamp(),
       });
+
+      notificationToTrigger = {
+        type: 'requestor_rejected',
+        reservationId,
+        requestorUid: data.createdByUid,
+        requestorEmail: data.requestorEmail,
+        title: data.title || data.activity || 'Room Reservation',
+        resType: data.type,
+        remarks: remarks.trim() || 'Rejected by approver.',
+      };
       return;
     }
 
@@ -570,6 +710,15 @@ export async function processApprovalAction({
         status: RESERVATION_STATUS.APPROVED,
         updatedAt: serverTimestamp(),
       });
+
+      notificationToTrigger = {
+        type: 'requestor_approved',
+        reservationId,
+        requestorUid: data.createdByUid,
+        requestorEmail: data.requestorEmail,
+        title: data.title || data.activity || 'Room Reservation',
+        resType: data.type,
+      };
       return;
     }
 
@@ -579,7 +728,27 @@ export async function processApprovalAction({
       status: RESERVATION_STATUS.IN_PROGRESS,
       updatedAt: serverTimestamp(),
     });
+
+    notificationToTrigger = {
+      type: 'next_approver',
+      reservationId,
+      pendingRecord: records[nextIndex],
+      reservationData: data,
+    };
   });
+
+  // Execute notification outside transaction
+  if (notificationToTrigger) {
+    if (notificationToTrigger.type === 'next_approver') {
+      await notifyNextApprovers(
+        notificationToTrigger.reservationId,
+        notificationToTrigger.pendingRecord,
+        notificationToTrigger.reservationData
+      );
+    } else if (notificationToTrigger.type === 'requestor_rejected' || notificationToTrigger.type === 'requestor_approved') {
+      await notifyRequestorStatus(notificationToTrigger);
+    }
+  }
 }
 
 /** Backward-compatible update for legacy in-memory fields */

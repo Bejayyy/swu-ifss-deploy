@@ -1,18 +1,20 @@
-/**
- * Simple Schedule Access Control Service
- * Registrar grants colleges sequential access to course scheduling
- */
-
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   onSnapshot,
   serverTimestamp,
   arrayUnion,
+  query,
+  where,
+  addDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase/firebase';
+import { ROLES } from '../firebase/constants';
 
 const ACCESS_CONTROL_COLLECTION = 'schedule_access_control';
 
@@ -23,6 +25,92 @@ function getAccessControlDocId(schoolYearId, semester) {
 
 function accessControlRef(schoolYearId, semester) {
   return doc(db, ACCESS_CONTROL_COLLECTION, getAccessControlDocId(schoolYearId, semester));
+}
+
+/**
+ * Notify deans via email and in-app notifications when course scheduling access is granted
+ */
+export async function notifyDeansAccessGranted({
+  schoolYearLabel,
+  semester,
+  grantedColleges = [],
+  startDate,
+  endDate,
+  sendEmail = true,
+}) {
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    if (snap.empty) return;
+
+    const allDeans = snap.docs
+      .map((d) => ({ uid: d.id, ...d.data() }))
+      .filter((u) => {
+        const r = (u.role || u.roleValue || '').toLowerCase();
+        const s = (u.status || 'active').toLowerCase();
+        return r === 'dean' && s !== 'inactive';
+      });
+
+    if (allDeans.length === 0) return;
+
+    const grantedCodes = grantedColleges.map((c) =>
+      (typeof c === 'string' ? c : c.code || '').trim().toLowerCase()
+    );
+
+    const isAllGranted = grantedCodes.includes('all') || grantedCodes.length === 0;
+
+    const matchingDeans = allDeans.filter((dean) => {
+      if (isAllGranted) return true;
+      const dept = (dean.department || dean.departmentCode || '').trim().toLowerCase();
+      const col = (dean.college || dean.collegeCode || '').trim().toLowerCase();
+      return grantedCodes.some((code) =>
+        dept.includes(code) || col.includes(code) || code.includes(dept) || code.includes(col)
+      );
+    });
+
+    if (matchingDeans.length === 0) return;
+
+    const startLabel = startDate ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Immediate';
+    const endLabel = endDate ? new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No deadline set';
+
+    for (const dean of matchingDeans) {
+      const collegeLabel = dean.department || dean.college || 'College';
+
+      // 1. Create in-app notification in Firestore
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: dean.uid,
+          userEmail: dean.email || '',
+          title: '📋 Course Scheduling Access Granted',
+          message: `Your department (${collegeLabel}) has been granted course scheduling access for ${schoolYearLabel} Semester ${semester}. Accomplishment Window: ${startLabel} to ${endLabel}.`,
+          type: 'access_granted',
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        console.warn('Failed to save in-app notification:', err);
+      }
+
+      // 2. Trigger Cloud Function email
+      if (sendEmail && dean.email) {
+        try {
+          const sendAccessEmail = httpsCallable(functions, 'sendScheduleAccessGrantedEmail');
+          await sendAccessEmail({
+            email: dean.email,
+            displayName: dean.displayName || dean.name || 'Dean',
+            collegeName: collegeLabel,
+            schoolYearLabel: schoolYearLabel || '',
+            semester: String(semester),
+            startDate: startLabel,
+            endDate: endLabel,
+          });
+        } catch (emailErr) {
+          console.warn('Email notification warning (Cloud Function error):', emailErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error notifying deans:', err);
+  }
 }
 
 /**
@@ -67,6 +155,9 @@ export async function grantFirstCollegeAccess({
   collegeName,
   collegeCodes = [],
   selectedColleges = [],
+  startDate = '',
+  endDate = '',
+  sendEmail = true,
   grantedBy,
 }) {
   const ref = accessControlRef(schoolYearId, semester);
@@ -84,30 +175,55 @@ export async function grantFirstCollegeAccess({
     ? selectedColleges.map((c) => `${c.name} (${c.code})`).join(', ')
     : collegeName || collegeCode;
 
+  const syLabel = schoolYearLabel || `SY ${schoolYearId}`;
+
   if (snap.exists()) {
     await updateDoc(ref, {
       'firstCollege.code': finalCollegeCodes.join(', '),
       'firstCollege.name': firstName,
+      'firstCollege.startDate': startDate || null,
+      'firstCollege.endDate': endDate || null,
       'firstCollege.updatedAt': new Date().toISOString(),
       approvedColleges: finalCollegeCodes,
+      startDate: startDate || null,
+      endDate: endDate || null,
       updatedBy: grantedBy,
       updatedAt: serverTimestamp(),
     });
-    return { ...snap.data(), approvedColleges: finalCollegeCodes };
+
+    await notifyDeansAccessGranted({
+      schoolYearLabel: syLabel,
+      semester,
+      grantedColleges: finalCollegeCodes,
+      startDate,
+      endDate,
+      sendEmail,
+    });
+
+    return {
+      ...snap.data(),
+      approvedColleges: finalCollegeCodes,
+      startDate,
+      endDate,
+    };
   }
 
   const accessControl = {
     schoolYearId,
-    schoolYearLabel: schoolYearLabel || '',
+    schoolYearLabel: syLabel,
     semester: Number(semester),
     
     firstCollege: {
       code: finalCollegeCodes.join(', '),
       name: firstName,
+      startDate: startDate || null,
+      endDate: endDate || null,
       grantedAt: new Date().toISOString(),
     },
     
     approvedColleges: finalCollegeCodes,
+    startDate: startDate || null,
+    endDate: endDate || null,
     status: 'first_only',
     
     allAccessGrantedAt: null,
@@ -119,30 +235,51 @@ export async function grantFirstCollegeAccess({
   };
 
   await setDoc(ref, accessControl);
+
+  await notifyDeansAccessGranted({
+    schoolYearLabel: syLabel,
+    semester,
+    grantedColleges: finalCollegeCodes,
+    startDate,
+    endDate,
+    sendEmail,
+  });
+
   return accessControl;
 }
 
 /**
  * Registrar allows all remaining colleges to schedule
  */
-export async function grantAllRemainingAccess(schoolYearId, semester, grantedBy) {
+export async function grantAllRemainingAccess(schoolYearId, semester, grantedBy, options = {}) {
   const ref = accessControlRef(schoolYearId, semester);
   const snap = await getDoc(ref);
+
+  const { startDate = '', endDate = '', sendEmail = true } = options;
 
   if (!snap.exists()) {
     throw new Error('No access control found. Grant first college access first.');
   }
 
   const data = snap.data();
-  if (data.status === 'all_allowed') {
-    throw new Error('All colleges already have access.');
-  }
+  const syLabel = data.schoolYearLabel || `SY ${schoolYearId}`;
 
   await updateDoc(ref, {
     status: 'all_allowed',
     allAccessGrantedAt: new Date().toISOString(),
     allAccessGrantedBy: grantedBy,
+    startDate: startDate || data.startDate || null,
+    endDate: endDate || data.endDate || null,
     updatedAt: serverTimestamp(),
+  });
+
+  await notifyDeansAccessGranted({
+    schoolYearLabel: syLabel,
+    semester,
+    grantedColleges: ['ALL'],
+    startDate: startDate || data.startDate,
+    endDate: endDate || data.endDate,
+    sendEmail,
   });
 }
 
@@ -169,6 +306,13 @@ export async function grantCollegeAccess(schoolYearId, semester, collegeCode) {
 export function hasSchedulingAccess(accessControl, collegeCode) {
   if (!accessControl || !collegeCode) return false;
   
+  const todayStr = new Date().toISOString().split('T')[0];
+  const startDate = accessControl.startDate || accessControl.firstCollege?.startDate;
+  const endDate = accessControl.endDate || accessControl.firstCollege?.endDate;
+
+  if (startDate && todayStr < startDate) return false;
+  if (endDate && todayStr > endDate) return false;
+
   // If all colleges allowed, everyone can schedule
   if (accessControl.status === 'all_allowed') {
     return true;
@@ -198,20 +342,48 @@ export function getAccessStatusMessage(accessControl, collegeCode) {
     };
   }
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const startDate = accessControl.startDate || accessControl.firstCollege?.startDate;
+  const endDate = accessControl.endDate || accessControl.firstCollege?.endDate;
+
+  const startFormatted = startDate ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const endFormatted = endDate ? new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  if (startDate && todayStr < startDate) {
+    return {
+      hasAccess: false,
+      message: `Course scheduling access will open on ${startFormatted}.`,
+      isFirst: false,
+    };
+  }
+
+  if (endDate && todayStr > endDate) {
+    return {
+      hasAccess: false,
+      message: `Course scheduling access expired on ${endFormatted}. Please contact Registrar for an extension.`,
+      isFirst: false,
+      isExpired: true,
+    };
+  }
+
   const hasAccess = hasSchedulingAccess(accessControl, collegeCode);
   const isFirst = isFirstCollege(accessControl, collegeCode);
 
   if (hasAccess) {
+    const windowNotice = (startDate || endDate)
+      ? ` (Accomplishment Window: ${startFormatted || 'Immediate'} – ${endFormatted || 'No deadline'})`
+      : '';
+
     if (isFirst && accessControl.status === 'first_only') {
       return {
         hasAccess: true,
-        message: 'You are the first college to schedule. Other colleges will schedule after you complete.',
+        message: `You are the first college to schedule. Other colleges will schedule after you complete${windowNotice}.`,
         isFirst: true,
       };
     }
     return {
       hasAccess: true,
-      message: 'You can now create your course schedule.',
+      message: `You can now create your course schedule${windowNotice}.`,
       isFirst: false,
     };
   }
@@ -231,3 +403,4 @@ export async function resetScheduleAccess(schoolYearId, semester) {
   const { deleteDoc } = await import('firebase/firestore');
   await deleteDoc(ref);
 }
+

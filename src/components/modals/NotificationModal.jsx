@@ -59,9 +59,9 @@ export default function NotificationModal({
   const { icon: Icon, bgColor, iconColor, titleColor, borderColor } = config[type] || config.info;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay !z-[9999]" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl w-full max-w-md shadow-xl relative animate-fadeIn"
+        className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative z-[10000] animate-fadeIn"
         onClick={(e) => e.stopPropagation()}
       >
         <button

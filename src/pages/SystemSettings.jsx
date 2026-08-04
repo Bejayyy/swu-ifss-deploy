@@ -67,6 +67,7 @@ export default function SystemSettings() {
   // School Calendar PDF state
   const [calendarPdfData, setCalendarPdfData] = useState(null);
   const [pdfUploading, setPdfUploading] = useState(false);
+  const [isDraggingPdf, setIsDraggingPdf] = useState(false);
 
   const { config } = calendarData;
   const examPeriods = useMemo(() => normalizeExamPeriods(config?.examPeriods), [config?.examPeriods]);
@@ -510,6 +511,32 @@ export default function SystemSettings() {
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handlePdfDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingPdf) setIsDraggingPdf(true);
+  };
+
+  const handlePdfDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingPdf(false);
+  };
+
+  const handlePdfDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingPdf(false);
+
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      handlePdfFileUpload(droppedFile);
+      if (e.dataTransfer.clearData) {
+        e.dataTransfer.clearData();
+      }
+    }
   };
 
   // Remove PDF
@@ -1003,8 +1030,17 @@ export default function SystemSettings() {
                 </div>
               </div>
 
-              {/* Upload Zone */}
-              <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50 hover:bg-gray-50 transition-colors text-center">
+              {/* Upload Zone with Drag & Drop support */}
+              <div
+                onDragOver={handlePdfDragOver}
+                onDragLeave={handlePdfDragLeave}
+                onDrop={handlePdfDrop}
+                className={`p-8 border-2 border-dashed rounded-2xl transition-all text-center ${
+                  isDraggingPdf
+                    ? 'border-[#800000] bg-red-50/80 ring-4 ring-[#800000]/15 scale-[1.01]'
+                    : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
+                }`}
+              >
                 <input
                   type="file"
                   id="pdf-upload-input"
@@ -1017,16 +1053,22 @@ export default function SystemSettings() {
                   className="hidden"
                 />
 
-                <label htmlFor="pdf-upload-input" className="cursor-pointer flex flex-col items-center justify-center space-y-2">
-                  <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-[#800000]">
-                    <FileUp size={24} />
+                <label htmlFor="pdf-upload-input" className="cursor-pointer flex flex-col items-center justify-center space-y-3">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
+                    isDraggingPdf ? 'bg-[#800000] text-white scale-110' : 'bg-red-50 text-[#800000]'
+                  }`}>
+                    <FileUp size={28} />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-gray-900">
-                      {pdfUploading ? 'Uploading PDF...' : 'Click or Drag PDF file here to upload'}
+                    <p className="text-sm font-black text-gray-900">
+                      {pdfUploading
+                        ? 'Uploading PDF Calendar...'
+                        : isDraggingPdf
+                          ? 'Drop PDF file here to upload'
+                          : 'Click or Drag PDF file here to upload'}
                     </p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">
-                      Supports PDF files up to 8MB
+                    <p className="text-xs text-gray-500 mt-1 font-medium">
+                      Supports official PDF documents up to 8MB
                     </p>
                   </div>
                 </label>

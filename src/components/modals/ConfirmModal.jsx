@@ -29,9 +29,9 @@ export default function ConfirmModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-overlay !z-[9999]" onClick={onCancel}>
       <div
-        className="bg-white rounded-2xl w-full max-w-md shadow-xl relative"
+        className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative z-[10000]"
         onClick={(e) => e.stopPropagation()}
       >
         <button

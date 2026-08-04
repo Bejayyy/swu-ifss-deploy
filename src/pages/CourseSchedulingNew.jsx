@@ -846,15 +846,30 @@ export default function CourseSchedulingNew() {
                 </div>
               </div>
 
-              {/* Granted Colleges Info */}
+              {/* Granted Colleges Info & Accomplishment Window */}
               {scheduleAccess.firstCollege && (
-                <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-1">
-                  <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
-                    Granted College(s) (Currently Scheduling):
-                  </p>
-                  <p className="text-sm font-black text-[#800000]">
-                    {scheduleAccess.firstCollege.name}
-                  </p>
+                <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-2">
+                  <div>
+                    <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
+                      Granted College(s) (Currently Scheduling):
+                    </p>
+                    <p className="text-sm font-black text-[#800000]">
+                      {scheduleAccess.firstCollege.name}
+                    </p>
+                  </div>
+
+                  {(scheduleAccess.startDate || scheduleAccess.endDate || scheduleAccess.firstCollege?.startDate || scheduleAccess.firstCollege?.endDate) && (
+                    <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-xs space-y-0.5">
+                      <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                        <Calendar size={13} className="text-[#800000]" />
+                        Accomplishment Window (Day Limit):
+                      </p>
+                      <p className="font-bold text-gray-800">
+                        {scheduleAccess.startDate || scheduleAccess.firstCollege?.startDate ? new Date(scheduleAccess.startDate || scheduleAccess.firstCollege?.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Immediate'} — {scheduleAccess.endDate || scheduleAccess.firstCollege?.endDate ? new Date(scheduleAccess.endDate || scheduleAccess.firstCollege?.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No deadline set'}
+                      </p>
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-gray-500">
                     Granted: {new Date(scheduleAccess.firstCollege.grantedAt).toLocaleString()}
                   </p>
@@ -865,34 +880,10 @@ export default function CourseSchedulingNew() {
               {scheduleAccess.status === 'first_only' && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    const confirmed = await showConfirm({
-                      title: 'Allow All Remaining Colleges?',
-                      message: 'Allow all remaining colleges to create their schedules? This action cannot be undone.',
-                      confirmText: 'Allow All Remaining',
-                      cancelText: 'Cancel',
-                      variant: 'primary',
-                    });
-                    if (!confirmed) return;
-
-                    try {
-                      await grantAllRemainingAccess(activeSchoolYearId, semester, profile?.uid);
-                      showNotification({
-                        type: 'success',
-                        title: 'Access Granted',
-                        message: 'All remaining colleges can now create schedules.',
-                      });
-                    } catch (err) {
-                      showNotification({
-                        type: 'error',
-                        title: 'Action Failed',
-                        message: err.message || 'Failed to grant access.',
-                      });
-                    }
-                  }}
+                  onClick={() => setShowGrantAccessModal(true)}
                   className="w-full px-4 py-3 rounded-lg text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition-all flex items-center justify-center gap-2"
                 >
-                  ✅ Allow All Remaining Colleges to Schedule
+                  ✅ Allow / Grant Additional Colleges Access
                 </button>
               )}
 
@@ -1113,11 +1104,17 @@ export default function CourseSchedulingNew() {
                               const isSelected = selectedSection === section.name;
 
                               return (
-                                <button
+                                <div
                                   key={section.name}
-                                  type="button"
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() => setSelectedSection(section.name)}
-                                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group ${
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      setSelectedSection(section.name);
+                                    }
+                                  }}
+                                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group cursor-pointer ${
                                     isSelected
                                       ? 'bg-[#800000] text-white shadow-2xs'
                                       : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-100'
@@ -1139,7 +1136,7 @@ export default function CourseSchedulingNew() {
                                       <Trash2 size={12} />
                                     </button>
                                   )}
-                                </button>
+                                </div>
                               );
                             })
                           )}
@@ -1509,9 +1506,6 @@ export default function CourseSchedulingNew() {
         />
       )}
 
-      {/* Global Modals */}
-      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
-
       {/* Grant Schedule Access Modal */}
       {showGrantAccessModal && (
         <GrantScheduleAccessModal
@@ -1520,6 +1514,8 @@ export default function CourseSchedulingNew() {
           schoolYearId={activeSchoolYearId}
           semester={semester}
           initialCollegeCodes={scheduleAccess?.approvedColleges || []}
+          initialStartDate={scheduleAccess?.startDate || scheduleAccess?.firstCollege?.startDate || ''}
+          initialEndDate={scheduleAccess?.endDate || scheduleAccess?.firstCollege?.endDate || ''}
           onReset={async () => {
             const confirmed = await showConfirm({
               title: 'Reset Access Control?',
@@ -1590,6 +1586,9 @@ export default function CourseSchedulingNew() {
           schoolYear={schoolYearLabel}
         />
       )}
+
+      {/* Global Confirmation & Notification Modals (Rendered last so they sit on top of all active page modals) */}
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </Layout>
   );
 }

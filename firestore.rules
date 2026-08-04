@@ -92,6 +92,12 @@ service cloud.firestore {
       return hasPermission('approval.endorse_activity');
     }
 
+    function canManageCalendar() {
+      return isRegistrar()
+        || isDeveloper()
+        || hasPermission('calendar.manage');
+    }
+
     function isMainRole() {
       return isSignedIn() && userDocExists() && (
         userDoc().data.role == 'registrar'
@@ -105,7 +111,7 @@ service cloud.firestore {
     }
 
     function isPhinmaedEmail() {
-      return request.auth.token.email.matches('.*@phinmaed\\.com$');
+      return request.auth.token.email.matches('(?i).*@phinmaed\\.com$');
     }
 
     function callerIsSelf(uid) {
@@ -277,18 +283,14 @@ service cloud.firestore {
       }
     }
 
-    match /academic_calendars/{schoolYearId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if isRegistrar() && isPhinmaedEmail();
+    // Academic Calendars collection (school year config, holidays, no-class periods, PDF document & chunks)
+    match /academic_calendars/{calendarId} {
+      allow read: if isSignedIn();
+      allow write: if canManageCalendar() && isPhinmaedEmail();
 
-      match /holidays/{holidayId} {
-        allow read: if isMainRole() && isPhinmaedEmail();
-        allow write: if isRegistrar() && isPhinmaedEmail();
-      }
-
-      match /no_class_periods/{periodId} {
-        allow read: if isMainRole() && isPhinmaedEmail();
-        allow write: if isRegistrar() && isPhinmaedEmail();
+      match /{allSubcollections=**} {
+        allow read: if isSignedIn();
+        allow write: if canManageCalendar() && isPhinmaedEmail();
       }
     }
 
@@ -488,25 +490,14 @@ service cloud.firestore {
         ]);
     }
 
-    // Academic Calendars collection (including PDF calendar & chunks subcollection)
-    match /academic_calendars/{calendarId} {
-      allow read: if isSignedIn();
-      allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
-
-      match /{allSubcollections=**} {
-        allow read: if isSignedIn();
-        allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
-      }
-    }
-
     // System Settings collection
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
-      allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      allow write: if (canManageCalendar() || isRegistrar() || isDeveloper()) && isPhinmaedEmail();
 
       match /{allSubcollections=**} {
         allow read: if isSignedIn();
-        allow write: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+        allow write: if (canManageCalendar() || isRegistrar() || isDeveloper()) && isPhinmaedEmail();
       }
     }
 
@@ -523,6 +514,11 @@ service cloud.firestore {
     match /{path=**}/entries/{entryId} {
       // Allow all staff to read entries (matching the specific course_schedules/entries rule)
       allow read: if isMainRole() && isPhinmaedEmail();
+    }
+
+    // Notifications Collection - All authenticated staff can read and write notifications
+    match /notifications/{notificationId} {
+      allow read, write: if isMainRole() && isPhinmaedEmail();
     }
   }
 }

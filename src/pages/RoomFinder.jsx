@@ -446,17 +446,9 @@ export default function RoomFinder() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-[11px] font-semibold text-gray-400">Per page</label>
-              <select
-                className="form-input text-xs py-1.5 px-2"
-                style={{ width: 64, borderRadius: 8 }}
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
+              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
+                10 rooms per page
+              </span>
             </div>
           </div>
 
@@ -483,20 +475,10 @@ export default function RoomFinder() {
                 ))}
               </div>
 
-              {/* Grouped rows */}
-              {paginatedGrouped.map((group) => (
-                <div key={group.buildingId}>
-                  {/* Building section header */}
-                  <div className="flex items-center gap-2 px-5 py-2 border-b border-gray-50" style={{ background: '#FAFBFC' }}>
-                    <Building2 size={13} style={{ color: MAROON }} />
-                    <span className="text-[11px] font-black" style={{ color: MAROON }}>{group.buildingName}</span>
-                    <span className="text-[10px] font-bold text-gray-400 ml-1">({group.rooms.length} room{group.rooms.length !== 1 ? 's' : ''})</span>
-                  </div>
-
-                  {/* Room rows */}
-                  {group.rooms.map((room, idx) => {
-                    const typeColor = TYPE_COLORS[room.type] || { bg: '#F3F4F6', text: '#374151' };
-                    const equipList = room.equipment || [];
+              {/* Room rows */}
+              {paginatedRooms.map((room, idx) => {
+                const typeColor = TYPE_COLORS[room.type] || { bg: '#F3F4F6', text: '#374151' };
+                const equipList = room.equipment || [];
 
                     return (
                       <div
@@ -588,8 +570,6 @@ export default function RoomFinder() {
                       </div>
                     );
                   })}
-                </div>
-              ))}
 
               {/* Pagination */}
               <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/40">

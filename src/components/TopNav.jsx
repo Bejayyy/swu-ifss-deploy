@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle,
+  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck,
 } from 'lucide-react';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,11 @@ import { getInitials } from '../firebase/authHelpers';
 import { getActivePendingRecord, isReservationActionable } from '../constants/approvalWorkflow';
 import { subscribeMaintenanceReports } from '../services/maintenanceService';
 import { getRoleLabel } from '../constants/rolePermissions';
+import {
+  subscribeUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+} from '../services/notificationService';
 
 export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav = () => {} }) {
   const navigate = useNavigate();
@@ -22,6 +27,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [maintenanceReports, setMaintenanceReports] = useState([]);
+  const [dbNotifications, setDbNotifications] = useState([]);
 
   const displayName = profile?.displayName || 'User';
   const initials = profile?.initials || getInitials(profile?.displayName, profile?.email) || 'U';
@@ -36,21 +42,28 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
 
   const isGsd = profile?.role === 'gsd';
 
+  // Subscribe to user notifications in Firestore
+  useEffect(() => {
+    if (!profile) return undefined;
+    return subscribeUserNotifications(
+      profile,
+      (items) => setDbNotifications(items),
+      (err) => console.error('Error subscribing to notifications:', err)
+    );
+  }, [profile]);
+
   // Subscribe to maintenance reports for GSD
   useEffect(() => {
     if (!isGsd) return;
 
-    // Subscribe to ALL reports, not just pending - we'll filter for notifications
     const unsubscribe = subscribeMaintenanceReports(
       (reports) => {
-        // Show pending and newly reported (not yet acknowledged)
         const unacknowledgedReports = reports.filter(r => 
           r.status === 'pending' || r.status === 'acknowledged'
         );
         setMaintenanceReports(unacknowledgedReports);
       },
       (error) => console.error('Error loading maintenance reports:', error)
-      // Remove filter to get all reports, we filter in the callback
     );
 
     return () => unsubscribe();
@@ -108,12 +121,29 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     return 'More than a week ago';
   };
 
-  // Generate notifications from pending approval requests and maintenance reports
+  // Generate notifications from Firestore notifications, pending approval requests, and maintenance reports
   const notifItems = useMemo(() => {
     const approvalNotifications = [];
     const maintenanceNotifications = [];
 
-    // Approval notifications
+    // 1. In-app Firestore notifications
+    const dbNotifsFormatted = (dbNotifications || []).map((n) => ({
+      id: n.id,
+      isDbNotif: true,
+      type: n.type || 'info',
+      notificationType: n.type || 'system',
+      title: n.title || 'System Notification',
+      message: n.message || '',
+      requester: n.userEmail || n.userId || 'System',
+      request: n.message || 'Notification detail',
+      location: 'System Alert',
+      submittedAt: formatDate(n.createdAt),
+      time: getTimeAgo(n.createdAt),
+      unread: !n.read,
+      rawItem: n,
+    }));
+
+    // 2. Approval notifications
     if (requests && profile?.role && profile) {
       requests.forEach((req) => {
         if (!isReservationActionable(req, profile.role, profile)) return;
@@ -138,7 +168,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
       });
     }
 
-    // Maintenance notifications (for GSD only)
+    // 3. Maintenance notifications (for GSD only)
     if (isGsd && maintenanceReports.length > 0) {
       maintenanceReports.forEach((report) => {
         const timeAgo = getTimeAgo(report.createdAt);
@@ -163,13 +193,18 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
       });
     }
 
-    // Combine and sort by most recent first
-    return [...maintenanceNotifications, ...approvalNotifications].sort((a, b) => {
+    // Combine and sort by unread first, then by date
+    return [...dbNotifsFormatted, ...maintenanceNotifications, ...approvalNotifications].sort((a, b) => {
+      if (a.unread !== b.unread) return a.unread ? -1 : 1;
       const aTime = a.submittedAt === 'N/A' ? 0 : new Date(a.submittedAt).getTime();
       const bTime = b.submittedAt === 'N/A' ? 0 : new Date(b.submittedAt).getTime();
       return bTime - aTime;
     });
-  }, [requests, profile, maintenanceReports, isGsd]);
+  }, [dbNotifications, requests, profile, maintenanceReports, isGsd]);
+
+  const unreadCount = useMemo(() => {
+    return notifItems.filter((n) => n.unread).length;
+  }, [notifItems]);
 
   const handleSignOut = async () => {
     closeAll();
@@ -177,24 +212,41 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     navigate('/login');
   };
 
-  const handleViewRequest = (notification) => {
+  const handleViewRequest = async (notification) => {
     setShowNotif(false);
     
-    if (notification.notificationType === 'maintenance') {
-      // Navigate to maintenance dashboard
+    // Mark as read in Firestore if it's a db notification
+    if (notification.isDbNotif && notification.id) {
+      await markNotificationAsRead(notification.id);
+    }
+
+    const nType = notification.notificationType || notification.type;
+    
+    if (nType === 'access_granted' || nType === 'course_scheduling') {
+      navigate('/course-scheduling');
+    } else if (nType === 'maintenance') {
       navigate('/maintenance-dashboard');
-    } else {
-      // Navigate to the request details page based on type
+    } else if (nType === 'approval') {
       const isAcademic = notification.reservationType === 'academic';
       const path = isAcademic 
         ? `/academic-request/${notification.reservationId}` 
         : `/request/${notification.reservationId}`;
-      
       navigate(path);
+    } else if (notification.rawItem?.link) {
+      navigate(notification.rawItem.link);
+    } else {
+      if (profile?.role === 'dean') {
+        navigate('/course-scheduling');
+      }
     }
   };
 
-  const unreadCount = notifItems.length; // All pending approvals are considered unread
+  const handleMarkAllRead = async () => {
+    if (dbNotifications.length > 0) {
+      await markAllNotificationsAsRead(dbNotifications);
+    }
+  };
+
   const r = 10;
   const closeAll = () => {
     setShowNotif(false);
@@ -337,23 +389,44 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             style={{ borderRadius: r }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
               <div>
-                <p className="font-black text-base" style={{ color: '#2B3235' }}>Notifications</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-black text-base" style={{ color: '#2B3235' }}>Notifications</p>
+                  {unreadCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#800000] text-white">
+                      {unreadCount} Unread
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs font-medium mt-0.5" style={{ color: '#2B3235', opacity: 0.65 }}>
-                  Request details and important events
+                  System alerts, scheduling access, and request updates
                 </p>
               </div>
-              <button type="button" className="btn-outline-maroon text-xs py-2 px-3" onClick={() => setShowNotif(false)}>
-                Close
-              </button>
+
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllRead}
+                    className="text-xs font-extrabold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1"
+                  >
+                    <CheckCheck size={14} className="text-[#800000]" />
+                    Mark all as read
+                  </button>
+                )}
+                <button type="button" className="btn-outline-maroon text-xs py-1.5 px-3" onClick={() => setShowNotif(false)}>
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="overflow-y-auto">
+
+            <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
               {notifItems.length === 0 ? (
-                <div className="px-6 py-12 text-center">
-                  <Bell size={48} className="mx-auto mb-3" style={{ color: '#D1D5DB' }} />
+                <div className="px-6 py-16 text-center">
+                  <Bell size={48} className="mx-auto mb-3 text-gray-300" />
                   <p className="text-sm font-bold mb-1" style={{ color: '#2B3235' }}>No new notifications</p>
-                  <p className="text-xs" style={{ color: '#2B3235', opacity: 0.65 }}>
+                  <p className="text-xs text-gray-500">
                     You're all caught up! Check back later for updates.
                   </p>
                 </div>
@@ -361,81 +434,110 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                 notifItems.map((n) => {
                   const isMaintenance = n.notificationType === 'maintenance';
                   const isUrgent = n.priority === 'urgent' || n.priority === 'high';
+                  const isUnread = n.unread;
                   
                   return (
-                  <div 
-                    key={n.id} 
-                    className={`px-6 py-4 border-b border-gray-100 transition-colors cursor-pointer ${
-                      isMaintenance 
-                        ? (isUrgent ? 'bg-red-50 hover:bg-red-100' : 'bg-orange-50 hover:bg-orange-100')
-                        : 'bg-[#FFFBFB] hover:bg-[#FFF5F5]'
-                    }`}
-                    onClick={() => handleViewRequest(n)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        {isMaintenance && (
-                          <div className={`p-2 rounded-lg flex-shrink-0 ${
-                            isUrgent ? 'bg-red-100' : 'bg-orange-100'
-                          }`}>
-                            <AlertTriangle size={18} className={isUrgent ? 'text-red-600' : 'text-orange-600'} />
+                    <div 
+                      key={n.id} 
+                      className={`px-6 py-4 transition-all cursor-pointer border-b border-gray-100 ${
+                        isUnread
+                          ? isMaintenance
+                            ? (isUrgent ? 'bg-red-50/90 border-l-4 border-l-red-600' : 'bg-orange-50/90 border-l-4 border-l-orange-500')
+                            : 'bg-amber-50/70 hover:bg-amber-100/60 border-l-4 border-l-[#800000]'
+                          : 'bg-white hover:bg-gray-50/80 border-l-4 border-l-transparent text-gray-600'
+                      }`}
+                      onClick={() => handleViewRequest(n)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {isMaintenance ? (
+                            <div className={`p-2 rounded-lg flex-shrink-0 ${
+                              isUrgent ? 'bg-red-100' : 'bg-orange-100'
+                            }`}>
+                              <AlertTriangle size={18} className={isUrgent ? 'text-red-600' : 'text-orange-600'} />
+                            </div>
+                          ) : (
+                            <div className={`p-2 rounded-lg flex-shrink-0 ${
+                              isUnread ? 'bg-amber-100 text-[#800000]' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              <Bell size={18} />
+                            </div>
+                          )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span
+                                className="inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-md"
+                                style={{
+                                  color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#800000',
+                                  background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEE2E2',
+                                }}
+                              >
+                                {isMaintenance
+                                  ? (isUrgent ? '⚠️ URGENT MAINTENANCE' : 'Maintenance Report')
+                                  : n.notificationType === 'access_granted'
+                                    ? '📋 Course Scheduling Access'
+                                    : 'Pending Approval'}
+                              </span>
+
+                              {isUnread ? (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-[#800000] text-white">
+                                  UNREAD
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-500">
+                                  Read
+                                </span>
+                              )}
+                            </div>
+
+                            <p className={`text-sm ${isUnread ? 'font-black text-gray-900' : 'font-semibold text-gray-700'} truncate`}>
+                              {n.title}
+                            </p>
+                            {n.message && (
+                              <p className="text-xs mt-1 text-gray-700 leading-relaxed font-medium">
+                                {n.message}
+                              </p>
+                            )}
+                            {!n.isDbNotif && (
+                              <>
+                                <p className="text-xs mt-1 truncate text-gray-700">
+                                  <span className="font-bold">{isMaintenance ? 'Reported by:' : 'Requester:'}</span> {n.requester}
+                                </p>
+                                <p className="text-xs truncate text-gray-700">
+                                  <span className="font-bold">{isMaintenance ? 'Issue:' : 'Activity:'}</span> {n.request}
+                                </p>
+                                <p className="text-xs truncate text-gray-700">
+                                  <span className="font-bold">Location:</span> {n.location}
+                                </p>
+                              </>
+                            )}
+                            <p className="text-[11px] mt-2 text-gray-400 font-medium">
+                              {n.submittedAt} · {n.time}
+                            </p>
                           </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <span
-                            className="inline-flex items-center text-[10px] font-black mb-1 px-2 py-0.5"
-                            style={{
-                              color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#92400E',
-                              background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEF3C7',
-                              borderRadius: 6,
-                            }}
-                          >
-                            {isMaintenance ? (isUrgent ? '⚠️ URGENT' : 'Maintenance Report') : 'Pending Approval'}
-                          </span>
-                          <p className="text-sm font-bold truncate" style={{ color: '#2B3235' }}>{n.title}</p>
-                          <p className="text-xs mt-1 truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
-                            <span className="font-bold">{isMaintenance ? 'Reported by:' : 'Requester:'}</span> {n.requester}
-                          </p>
-                          <p className="text-xs truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
-                            <span className="font-bold">{isMaintenance ? 'Issue:' : 'Activity:'}</span> {n.request}
-                          </p>
-                          <p className="text-xs truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
-                            <span className="font-bold">Location:</span> {n.location}
-                          </p>
-                          <p className="text-[11px] mt-2" style={{ color: '#2B3235', opacity: 0.55 }}>
-                            {n.submittedAt} · {n.time}
-                          </p>
                         </div>
                       </div>
-                      <span 
-                        className="text-[10px] font-black px-2 py-1 text-white flex-shrink-0" 
-                        style={{ 
-                          background: isMaintenance ? (isUrgent ? '#DC2626' : '#F97316') : '#800000',
-                          borderRadius: 6 
-                        }}
-                      >
-                        NEW
-                      </span>
+
+                      <div className="mt-3 flex justify-end">
+                        <button 
+                          type="button" 
+                          className={`text-xs py-1.5 px-3 font-bold rounded-lg transition-all ${
+                            isUnread ? 'bg-[#800000] text-white hover:bg-[#600000]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewRequest(n);
+                          }}
+                        >
+                          {n.notificationType === 'access_granted'
+                            ? 'Open Course Scheduling'
+                            : isMaintenance
+                              ? 'View Maintenance Report'
+                              : 'View Details'}
+                        </button>
+                      </div>
                     </div>
-                    <div className="mt-3">
-                      <button 
-                        type="button" 
-                        className={`text-xs py-2 px-3 font-bold rounded-lg transition-all ${
-                          isMaintenance 
-                            ? (isUrgent 
-                                ? 'bg-red-600 text-white hover:bg-red-700' 
-                                : 'bg-orange-600 text-white hover:bg-orange-700')
-                            : 'btn-maroon'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewRequest(n);
-                        }}
-                      >
-                        {isMaintenance ? 'View Maintenance Report' : 'View & Review Request'}
-                      </button>
-                    </div>
-                  </div>
                   );
                 })
               )}
