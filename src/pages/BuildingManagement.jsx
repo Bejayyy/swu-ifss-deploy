@@ -86,6 +86,10 @@ export default function BuildingManagement() {
   const [floorCurrentPage, setFloorCurrentPage] = useState(1);
   const [floorItemsPerPage, setFloorItemsPerPage] = useState(5);
 
+  // Room Table Pagination State
+  const [roomCurrentPage, setRoomCurrentPage] = useState(1);
+  const [roomItemsPerPage, setRoomItemsPerPage] = useState(10);
+
   // Room Multi-Selection & Bulk Edit State
   const [selectedRoomDocIds, setSelectedRoomDocIds] = useState([]);
   const [showBulkEditRooms, setShowBulkEditRooms] = useState(false);
@@ -122,6 +126,7 @@ export default function BuildingManagement() {
 
   useEffect(() => {
     setFloorCurrentPage(1);
+    setRoomCurrentPage(1);
     setSelectedRoomDocIds([]);
   }, [selectedBuilding?.id, selectedFloor]);
 
@@ -143,6 +148,16 @@ export default function BuildingManagement() {
   const displayedRooms = selectedFloor === 'all'
     ? allRooms
     : allRooms.filter((r) => r.floor === selectedFloor);
+
+  const totalRoomCount = displayedRooms.length;
+  const totalRoomPages = Math.max(1, Math.ceil(totalRoomCount / roomItemsPerPage));
+  const roomStartIndex = totalRoomCount === 0 ? 0 : (roomCurrentPage - 1) * roomItemsPerPage + 1;
+  const roomEndIndex = Math.min(roomCurrentPage * roomItemsPerPage, totalRoomCount);
+
+  const paginatedRooms = useMemo(() => {
+    const start = (roomCurrentPage - 1) * roomItemsPerPage;
+    return displayedRooms.slice(start, start + roomItemsPerPage);
+  }, [displayedRooms, roomCurrentPage, roomItemsPerPage]);
 
   const allFloorRoomDocIds = useMemo(() => {
     return displayedRooms.map((r) => r.docId || r.id);
@@ -448,7 +463,7 @@ export default function BuildingManagement() {
                           </td>
                         </tr>
                       ) : (
-                        displayedRooms.map((rm) => {
+                        paginatedRooms.map((rm) => {
                           const docId = rm.docId || rm.id;
                           const isSelected = selectedRoomDocIds.includes(docId);
 
@@ -521,6 +536,63 @@ export default function BuildingManagement() {
                       )}
                     </tbody>
                   </table>
+
+                  {/* Room Table Pagination Footer */}
+                  {displayedRooms.length > 0 && (
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50/60 border-t border-gray-100 flex-wrap gap-3">
+                      <div className="text-xs font-semibold text-gray-500">
+                        Showing <span className="font-bold text-gray-800">{roomStartIndex}</span> to{' '}
+                        <span className="font-bold text-gray-800">{roomEndIndex}</span> of{' '}
+                        <span className="font-bold text-gray-800">{totalRoomCount}</span> rooms
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span>Show</span>
+                          <select
+                            value={roomItemsPerPage}
+                            onChange={(e) => {
+                              setRoomItemsPerPage(Number(e.target.value));
+                              setRoomCurrentPage(1);
+                            }}
+                            className="form-input text-xs py-1 px-2.5 rounded-xl border-gray-200 bg-white font-bold cursor-pointer"
+                          >
+                            <option value={5}>5</option>
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                          </select>
+                          <span>per page</span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setRoomCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={roomCurrentPage === 1}
+                            className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-gray-600 shadow-2xs"
+                            title="Previous Page"
+                          >
+                            <ChevronLeft size={15} />
+                          </button>
+
+                          <span className="text-xs font-bold px-2 text-gray-700">
+                            Page {roomCurrentPage} of {totalRoomPages}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => setRoomCurrentPage((p) => Math.min(totalRoomPages, p + 1))}
+                            disabled={roomCurrentPage === totalRoomPages || totalRoomPages === 0}
+                            className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-gray-600 shadow-2xs"
+                            title="Next Page"
+                          >
+                            <ChevronRight size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

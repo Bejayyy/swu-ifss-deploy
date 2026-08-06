@@ -35,6 +35,7 @@ export default function WeeklyScheduleGrid({
   dayStatuses = [],
   blocks = [],
   showLegend = true,
+  roomType = null,
   showControls = true,
   readOnly = false,
   canPlot = false,
@@ -112,11 +113,59 @@ export default function WeeklyScheduleGrid({
 
   const [typeFilter, setTypeFilter] = useState('All');
 
+  const legendItems = React.useMemo(() => {
+    if (roomType) {
+      const isLab = roomType.toLowerCase().includes('lab');
+      const schedulingColors = isLab ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture;
+      return [
+        { type: 'Scheduling', label: `Scheduling (${roomType})`, colors: schedulingColors },
+        { type: 'Reservation', label: 'Reservation', colors: SCHEDULE_TYPE_COLORS.Reservation },
+        { type: 'Maintenance', label: 'Maintenance', colors: SCHEDULE_TYPE_COLORS.Maintenance },
+      ];
+    }
+    return [
+      { type: 'Lecture', label: 'Lecture', colors: SCHEDULE_TYPE_COLORS.Lecture },
+      { type: 'Laboratory', label: 'Laboratory', colors: SCHEDULE_TYPE_COLORS.Laboratory },
+    ];
+  }, [roomType]);
+
+  const dropdownOptions = React.useMemo(() => {
+    if (roomType) {
+      const schedCount = blocks.filter(
+        (b) => b.isCourseSchedule || (!b.isReservation && !b.isMaintenance && b.type !== 'Maintenance' && !b.type?.startsWith?.('Reservation'))
+      ).length;
+      const resCount = blocks.filter(
+        (b) => b.isReservation || b.type === 'Reservation' || b.type?.startsWith?.('Reservation')
+      ).length;
+      const maintCount = blocks.filter(
+        (b) => b.isMaintenance || b.type === 'Maintenance'
+      ).length;
+
+      return [
+        { value: 'All', label: `All Types (${blocks.length})` },
+        { value: 'Scheduling', label: `Scheduling (${roomType}) (${schedCount})` },
+        { value: 'Reservation', label: `Reservation (${resCount})` },
+        { value: 'Maintenance', label: `Maintenance (${maintCount})` },
+      ];
+    }
+    return [
+      { value: 'All', label: `All Types (${blocks.length})` },
+      { value: 'Lecture', label: `Lecture (${blocks.filter((b) => b.type === 'Lecture').length})` },
+      { value: 'Laboratory', label: `Laboratory (${blocks.filter((b) => b.type === 'Laboratory').length})` },
+    ];
+  }, [roomType, blocks]);
+
   const filteredBlocks = React.useMemo(() => {
     if (!typeFilter || typeFilter === 'All') return blocks;
     return blocks.filter((b) => {
+      if (typeFilter === 'Scheduling') {
+        return b.isCourseSchedule || (!b.isReservation && !b.isMaintenance && b.type !== 'Maintenance' && !b.type?.startsWith?.('Reservation'));
+      }
       if (typeFilter === 'Reservation') {
-        return b.type === 'Reservation' || b.type?.startsWith('Reservation');
+        return b.isReservation || b.type === 'Reservation' || b.type?.startsWith?.('Reservation');
+      }
+      if (typeFilter === 'Maintenance') {
+        return b.isMaintenance || b.type === 'Maintenance';
       }
       return b.type === typeFilter;
     });
@@ -250,11 +299,8 @@ export default function WeeklyScheduleGrid({
           {/* Interactive Legend Items */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1">Legend:</span>
-            {[
-              { type: 'Lecture', label: 'Lecture' },
-              { type: 'Laboratory', label: 'Laboratory' },
-            ].map(({ type, label }) => {
-              const colors = SCHEDULE_TYPE_COLORS[type];
+            {legendItems.map(({ type, label, colors: itemColors }) => {
+              const colors = itemColors || SCHEDULE_TYPE_COLORS[type] || SCHEDULE_TYPE_COLORS.Lecture;
               const isSelected = typeFilter === type;
 
               return (
@@ -286,9 +332,11 @@ export default function WeeklyScheduleGrid({
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
             >
-              <option value="All">All Types ({blocks.length})</option>
-              <option value="Lecture">Lecture ({blocks.filter((b) => b.type === 'Lecture').length})</option>
-              <option value="Laboratory">Laboratory ({blocks.filter((b) => b.type === 'Laboratory').length})</option>
+              {dropdownOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -382,8 +430,11 @@ export default function WeeklyScheduleGrid({
               {blocksByDay.map((dayBlocks, dayIndex) => (
                 <div key={dayIndex} className="relative h-full" style={{ minHeight: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))` }}>
                   {dayBlocks.map((sched) => {
+                    const isLabRoom = roomType ? roomType.toLowerCase().includes('lab') : false;
                     const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
-                      (sched.type?.startsWith('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
+                      (sched.isCourseSchedule ? (isLabRoom ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture) : null) ||
+                      (sched.isReservation || sched.type?.startsWith?.('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
+                      (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
                       SCHEDULE_TYPE_COLORS.Lecture;
                     const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
                     const durationSlots = (sched.end - sched.start) * 2;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
@@ -30,7 +30,11 @@ export default function BuildingDetails() {
   const [editRoom, setEditRoom] = useState(null);
   const [editFloor, setEditFloor] = useState(null);
 
+  const [roomCurrentPage, setRoomCurrentPage] = useState(1);
+  const [roomItemsPerPage, setRoomItemsPerPage] = useState(5);
+
   useEffect(() => {
+    setRoomCurrentPage(1);
     if (building?.floorData?.length) {
       const exists = building.floorData.some((f) => f.floor === activeFloor);
       if (!exists) setActiveFloor(building.floorData[0].floor);
@@ -68,11 +72,6 @@ export default function BuildingDetails() {
     occupied: floorData.rooms.filter((r) => r.status === 'Occupied').length,
     capacity: floorData.rooms.reduce((a, r) => a + (r.capacity || 0), 0),
   };
-
-  const roomTypes = floorData.rooms.reduce((acc, r) => {
-    acc[r.type] = (acc[r.type] || 0) + 1;
-    return acc;
-  }, {});
 
   return (
     <Layout title={building.name} subtitle="Building management and room overview">
@@ -181,87 +180,154 @@ export default function BuildingDetails() {
               </div>
             ) : (
               <div className="space-y-3">
-                {floorData.rooms.map((room) => {
-                  const isUnderMaintenance = room.maintenanceStatus === 'under-maintenance';
-                  
+                {(() => {
+                  const totalFloorRooms = floorData.rooms.length;
+                  const totalRoomPages = Math.max(1, Math.ceil(totalFloorRooms / roomItemsPerPage));
+                  const roomStartIndex = totalFloorRooms === 0 ? 0 : (roomCurrentPage - 1) * roomItemsPerPage + 1;
+                  const roomEndIndex = Math.min(roomCurrentPage * roomItemsPerPage, totalFloorRooms);
+                  const paginatedRooms = floorData.rooms.slice((roomCurrentPage - 1) * roomItemsPerPage, roomCurrentPage * roomItemsPerPage);
+
                   return (
-                  <div 
-                    key={room.docId || room.id} 
-                    className={`border border-gray-100 rounded-xl p-5 transition-all ${
-                      isUnderMaintenance 
-                        ? 'bg-gray-50 opacity-60' 
-                        : 'hover:shadow-sm'
-                    }`}
-                    style={isUnderMaintenance ? { filter: 'blur(0.5px)' } : {}}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2 flex-wrap">
-                          <h4 className="font-black text-base text-dark">{room.id || room.name}</h4>
-                          {isUnderMaintenance ? (
-                            <span className="badge-maintenance">Under Maintenance</span>
-                          ) : (
-                            <span className={statusBadge[room.status] || 'badge-available'}>{room.status}</span>
-                          )}
+                    <>
+                      {paginatedRooms.map((room) => {
+                        const isUnderMaintenance = room.maintenanceStatus === 'under-maintenance';
+                        
+                        return (
+                          <div 
+                            key={room.docId || room.id} 
+                            className={`border border-gray-100 rounded-xl p-5 transition-all ${
+                              isUnderMaintenance 
+                                ? 'bg-gray-50 opacity-60' 
+                                : 'hover:shadow-sm'
+                            }`}
+                            style={isUnderMaintenance ? { filter: 'blur(0.5px)' } : {}}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                  <h4 className="font-black text-base text-dark">{room.id || room.name}</h4>
+                                  {isUnderMaintenance ? (
+                                    <span className="badge-maintenance">Under Maintenance</span>
+                                  ) : (
+                                    <span className={statusBadge[room.status] || 'badge-available'}>{room.status}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-400 mb-2">{room.type}</p>
+                                <p className="text-xs text-gray-500">Capacity: {room.capacity}</p>
+                                {isUnderMaintenance && room.maintenanceEndDate && (
+                                  <p className="text-[11px] font-bold text-orange-600 mt-2">
+                                    Maintenance until {room.maintenanceEndDate}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                                {canSubmitReservation() && !isUnderMaintenance && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openReservation({
+                                      building: building.name,
+                                      buildingId: building.id,
+                                      room: room.id,
+                                      roomDocId: room.docId,
+                                      floor: activeFloor,
+                                      floorId: floorEntry.floorId,
+                                      designatedVenue: `${room.id}, ${building.name} Floor ${activeFloor}`,
+                                    })}
+                                    className="btn-outline-maroon text-xs py-1.5 px-4"
+                                  >
+                                    Reserve
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    navigate(`/room/${room.id}`, {
+                                      state: {
+                                        room,
+                                        buildingId: building.id,
+                                        buildingName: building.name,
+                                        floor: activeFloor,
+                                        floorId: floorEntry.floorId,
+                                      },
+                                    })
+                                  }
+                                  className="btn-maroon text-xs py-1.5 px-4"
+                                >
+                                  View
+                                </button>
+                                {(canManageBuilding || canEditRoom(room)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditRoom(room)}
+                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1 text-xs font-semibold"
+                                    title="Edit room details and manager"
+                                  >
+                                    <Edit2 size={14} /> Edit Room
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {totalFloorRooms > 0 && (
+                        <div className="flex items-center justify-between p-3 bg-gray-50/60 border border-gray-100 rounded-xl flex-wrap gap-3 mt-4">
+                          <div className="text-xs font-semibold text-gray-500">
+                            Showing <span className="font-bold text-gray-800">{roomStartIndex}</span> to{' '}
+                            <span className="font-bold text-gray-800">{roomEndIndex}</span> of{' '}
+                            <span className="font-bold text-gray-800">{totalFloorRooms}</span> rooms
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                              <span>Show</span>
+                              <select
+                                value={roomItemsPerPage}
+                                onChange={(e) => {
+                                  setRoomItemsPerPage(Number(e.target.value));
+                                  setRoomCurrentPage(1);
+                                }}
+                                className="form-input text-xs py-1 px-2.5 rounded-xl border-gray-200 bg-white font-bold cursor-pointer"
+                              >
+                                <option value={5}>5</option>
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                              </select>
+                              <span>per page</span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setRoomCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={roomCurrentPage === 1}
+                                className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-gray-600 shadow-2xs"
+                                title="Previous Page"
+                              >
+                                <ChevronLeft size={15} />
+                              </button>
+
+                              <span className="text-xs font-bold px-2 text-gray-700">
+                                Page {roomCurrentPage} of {totalRoomPages}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => setRoomCurrentPage((p) => Math.min(totalRoomPages, p + 1))}
+                                disabled={roomCurrentPage === totalRoomPages || totalRoomPages === 0}
+                                className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-gray-600 shadow-2xs"
+                                title="Next Page"
+                              >
+                                <ChevronRight size={15} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-xs text-gray-400 mb-2">{room.type}</p>
-                        <p className="text-xs text-gray-500">Capacity: {room.capacity}</p>
-                        {isUnderMaintenance && room.maintenanceEndDate && (
-                          <p className="text-[11px] font-bold text-orange-600 mt-2">
-                            Maintenance until {room.maintenanceEndDate}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0 flex-wrap">
-                        {canSubmitReservation() && !isUnderMaintenance && (
-                          <button
-                            type="button"
-                            onClick={() => openReservation({
-                              building: building.name,
-                              buildingId: building.id,
-                              room: room.id,
-                              roomDocId: room.docId,
-                              floor: activeFloor,
-                              floorId: floorEntry.floorId,
-                              designatedVenue: `${room.id}, ${building.name} Floor ${activeFloor}`,
-                            })}
-                            className="btn-outline-maroon text-xs py-1.5 px-4"
-                          >
-                            Reserve
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            navigate(`/room/${room.id}`, {
-                              state: {
-                                room,
-                                buildingId: building.id,
-                                buildingName: building.name,
-                                floor: activeFloor,
-                                floorId: floorEntry.floorId,
-                              },
-                            })
-                          }
-                          className="btn-maroon text-xs py-1.5 px-4"
-                        >
-                          View
-                        </button>
-                        {(canManageBuilding || canEditRoom(room)) && (
-                          <button
-                            type="button"
-                            onClick={() => setEditRoom(room)}
-                            className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1 text-xs font-semibold"
-                            title="Edit room details and manager"
-                          >
-                            <Edit2 size={14} /> Edit Room
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                      )}
+                    </>
                   );
-                })}
+                })()}
               </div>
             )}
 
@@ -329,7 +395,7 @@ export default function BuildingDetails() {
       {canManageBuilding && showAddFloor && (
         <AddFloorModal
           buildingId={building.id}
-          buildingName={building.name}
+          existingFloors={building.floorData}
           onClose={() => setShowAddFloor(false)}
         />
       )}
@@ -337,16 +403,6 @@ export default function BuildingDetails() {
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
-          onSave={updateBuilding}
-        />
-      )}
-      {(canManageBuilding || (editRoom && canEditRoom(editRoom))) && editRoom && floorEntry.floorId && (
-        <EditRoomModal
-          room={editRoom}
-          buildingId={building.id}
-          floorId={floorEntry.floorId}
-          floorManagedBy={floorEntry.managedBy}
-          onClose={() => setEditRoom(null)}
         />
       )}
       {canManageBuilding && editFloor && (
@@ -354,6 +410,14 @@ export default function BuildingDetails() {
           buildingId={building.id}
           floor={editFloor}
           onClose={() => setEditFloor(null)}
+        />
+      )}
+      {editRoom && (
+        <EditRoomModal
+          room={editRoom}
+          buildingId={building.id}
+          floorId={floorEntry.floorId}
+          onClose={() => setEditRoom(null)}
         />
       )}
     </Layout>

@@ -109,22 +109,30 @@ export function filterReservationsForRole(reservations, role, profile) {
       return false; // Still waiting, hasn't reached this role yet
     }
     
-    // For deans, check if this is assigned to them specifically (custom manager)
+    // For deans, check if this is assigned to them specifically (custom manager) or matching college
     if (role === 'dean') {
       // Check if this dean is the room manager for this reservation
-      const roomManagerRecord = myRecord.customManagerUid ? myRecord : null;
-      if (roomManagerRecord && roomManagerRecord.customManagerUid === profile.uid) {
-        return true; // This dean is the room manager
+      const isRoomManager = myRecord.customManagerUid && myRecord.customManagerUid === profile.uid;
+      if (isRoomManager) {
+        return true;
       }
       
       // For standard college dean role (not room manager)
       if (myRecord.roleId === 'dean' && !myRecord.customManagerUid) {
-        if (profile.college && reservation.college) {
-          const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
-          const normalizedReservationCollege = (reservation.college || '').trim().toLowerCase();
-          return normalizedProfileCollege === normalizedReservationCollege;
+        const pCol = (profile.college || profile.department || profile.collegeCode || profile.departmentCode || '').trim().toLowerCase();
+        const rCol = (reservation.college || reservation.department || '').trim().toLowerCase();
+
+        if (pCol && rCol) {
+          return rCol.includes(pCol) || pCol.includes(rCol);
         }
-        return true; // No college filter
+        
+        // If reservation has no college tag, check if creator UID matches this dean or if dean's college matches
+        if (!rCol && reservation.createdByUid === profile.uid) {
+          return true;
+        }
+
+        // Strict: Do not display reservations of other colleges in this Dean's Endorsement & Request table
+        return false;
       }
     }
     

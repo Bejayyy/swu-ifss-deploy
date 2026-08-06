@@ -20,6 +20,7 @@ import {
  */
 export default function RoomScheduleViewer({ 
   roomCode, 
+  roomType = null,
   scheduleMode = 'regular',
   semester = '1',
   deanUid, // Required: The dean's UID to query their schedules
@@ -200,13 +201,31 @@ export default function RoomScheduleViewer({
 
       {/* Legend */}
       <div className="flex items-center gap-3 flex-wrap text-[10px]">
+        {roomType ? (
+          (() => {
+            const isLab = roomType.toLowerCase().includes('lab');
+            const bg = isLab ? '#D1FAE5' : '#DBEAFE';
+            const border = isLab ? '1.5px solid #10B981' : '1.5px solid #3B82F6';
+            return (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-sm" style={{ background: bg, border }}></div>
+                <span className="text-gray-600 font-semibold">Scheduling ({roomType})</span>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-sm" style={{ background: '#DBEAFE', border: '1.5px solid #3B82F6' }}></div>
+            <span className="text-gray-600 font-semibold">Scheduling</span>
+          </div>
+        )}
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ background: '#DBEAFE', border: '1.5px solid #3B82F6' }}></div>
-          <span className="text-gray-600 font-semibold">Lecture</span>
+          <div className="w-3 h-3 rounded-sm" style={{ background: '#F3E8FF', border: '1.5px solid #D8B4FE' }}></div>
+          <span className="text-gray-600 font-semibold">Reservation</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ background: '#D1FAE5', border: '1.5px solid #10B981' }}></div>
-          <span className="text-gray-600 font-semibold">Laboratory</span>
+          <div className="w-3 h-3 rounded-sm" style={{ background: '#FFEDD5', border: '1.5px solid #FDBA74' }}></div>
+          <span className="text-gray-600 font-semibold">Maintenance</span>
         </div>
         {onTimeSelect && (
           <div className="flex items-center gap-1">

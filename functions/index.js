@@ -528,4 +528,78 @@ exports.sendScheduleAccessGrantedEmail = functions.https.onCall(async (data, con
   }
 });
 
+// Send email notification to an approver when a reservation is waiting for their approval
+exports.sendApprovalPendingEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const { email, displayName, title, resType, venue, levelNumber, roleLabel, link } = data;
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'email is required.');
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: email,
+    subject: `SWU IFSS — Action Required: ${resType || 'Academic'} Reservation Approval`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #800000; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background-color: #800000; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .info-box { background-color: #fff; padding: 18px; border-left: 4px solid #800000; margin: 20px 0; border-radius: 6px; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Reservation Approval Required</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${displayName || 'Approver'},</h2>
+            <p>A room reservation request requires your review and approval.</p>
+            
+            <div class="info-box">
+              <h3 style="margin-top:0;color:#800000;">Reservation Details:</h3>
+              <p><strong>Activity / Title:</strong> ${title || 'Room Reservation'}</p>
+              <p><strong>Request Type:</strong> ${resType || 'Academic'}</p>
+              <p><strong>Designated Venue:</strong> ${venue || 'Campus Venue'}</p>
+              <p><strong>Approval Step:</strong> Level ${levelNumber || 1} (${roleLabel || 'Approver'})</p>
+            </div>
+
+            <p>It is currently your turn to review, endorse, or sign this reservation request.</p>
+
+            <center>
+              <a href="${APP_URL}${link || '/request'}" class="button">Review & Approve Request</a>
+            </center>
+
+            <p>Thank you for your prompt attention to this matter.</p>
+
+            <p>Best regards,<br>SWU IFSS System</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'Approval pending email sent successfully' };
+  } catch (error) {
+    console.error('Error sending approval pending email:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 

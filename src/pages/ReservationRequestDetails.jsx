@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Printer, Edit3, MapPin, Upload, Trash2, CheckCircle, FileText, Check, Clock, X } from 'lucide-react';
+import { ArrowLeft, Printer, Edit3, MapPin, Upload, Trash2, CheckCircle, FileText, Check, Clock, X, AlertTriangle } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
@@ -512,6 +512,21 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
         </div>
       </div>
 
+      {/* Rejection / Modification Remarks Banner */}
+      {(request.rejectReason || request.approvalRecords?.some((r) => (r.status === 'rejected' || r.status === 'cancelled') && r.remarks)) && (
+        <div className="max-w-4xl mx-auto mb-6 print:hidden">
+          <div className="bg-red-50 border-2 border-red-200 rounded-3xl p-5 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2 text-red-900 font-bold text-sm">
+              <AlertTriangle size={18} className="text-red-600 flex-shrink-0" />
+              <span>Modification Required / Rejection Reason</span>
+            </div>
+            <p className="text-xs font-semibold text-red-800 leading-relaxed pl-6">
+              {request.rejectReason || request.approvalRecords?.find((r) => (r.status === 'rejected' || r.status === 'cancelled') && r.remarks)?.remarks}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* TOP HORIZONTAL APPROVAL PROGRESS BAR */}
       <div className="max-w-4xl mx-auto mb-6 print:hidden">
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
@@ -805,6 +820,26 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
                 />
                 <p className="text-[11px] text-gray-400">
                   This name will be overprinted on the permit above your designated role line.
+                </p>
+              </div>
+
+              {/* Remarks / Reason for Modification or Rejection Textarea */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                  REMARKS / REASON FOR MODIFICATION OR REJECTION
+                </label>
+                <textarea
+                  rows={3}
+                  className="form-input text-xs rounded-xl py-2.5 px-3.5 border-gray-200 w-full focus:ring-2 focus:ring-[#7A0808]/20 focus:border-[#7A0808]"
+                  value={remarks}
+                  onChange={(e) => {
+                    setRemarks(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="Required if requesting modification or rejecting. Enter specific reasons or feedback..."
+                />
+                <p className="text-[11px] text-gray-400">
+                  Provide specific comments or requested changes if rejecting or requesting modification.
                 </p>
               </div>
 

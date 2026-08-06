@@ -1077,6 +1077,7 @@ export default function AddPlotEntryModalEnhanced({
 
                           <RoomScheduleViewer
                             roomCode={selectedRoom.roomCode}
+                            roomType={selectedRoom.type || selectedRoom.roomType}
                             scheduleMode={scheduleMode}
                             semester={semester}
                             deanUid={deanUid}

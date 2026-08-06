@@ -11,8 +11,10 @@ import {
   deleteDoc,
   where,
   getDocs,
+  addDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
 import {
   APPROVAL_RECORD_STATUS,
@@ -492,10 +494,25 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
         // Role matching per workflow level
         if (targetRoleId === 'dean') {
           if (r !== 'dean') return false;
-          const reqCollege = (reservationData.college || reservationData.department || '').trim().toLowerCase();
+
+          let reqCollege = (reservationData.college || reservationData.department || '').trim().toLowerCase();
+
+          // Fallback to creator's profile college if payload didn't explicitly store it
+          if (!reqCollege && reservationData.createdByUid) {
+            const creatorDoc = allUsers.find((user) => user.uid === reservationData.createdByUid);
+            if (creatorDoc) {
+              reqCollege = (creatorDoc.college || creatorDoc.department || creatorDoc.collegeCode || creatorDoc.departmentCode || '').trim().toLowerCase();
+            }
+          }
+
           const userCollege = (u.college || u.department || u.collegeCode || u.departmentCode || '').trim().toLowerCase();
-          if (!reqCollege || !userCollege) return true;
-          return reqCollege.includes(userCollege) || userCollege.includes(reqCollege);
+
+          if (reqCollege && userCollege) {
+            return reqCollege.includes(userCollege) || userCollege.includes(reqCollege);
+          }
+
+          // Do NOT notify deans of other colleges
+          return false;
         }
 
         if (targetRoleId === 'registrar') {
@@ -514,7 +531,7 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
       });
     }
 
-    if (targetUsers.length === 0) {
+    if (targetUsers.length === 0 && targetRoleId !== 'dean') {
       targetUsers = allUsers.filter((u) => (u.role || u.roleValue || '').toLowerCase() === targetRoleId);
     }
 
@@ -527,6 +544,7 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
     const messageText = `Reservation "${reservationData.title || reservationData.activity || 'Room Reservation'}" (${reservationData.designatedVenue || reservationData.room || 'Venue'}) requires your approval (Level ${pendingRecord.levelNumber || 1}: ${pendingRecord.roleLabel || 'Approver'}).`;
 
     for (const targetUser of targetUsers) {
+      // 1. In-app notification
       try {
         await addDoc(collection(db, 'notifications'), {
           userId: targetUser.uid,
@@ -542,6 +560,26 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
         });
       } catch (err) {
         console.warn('Failed to save approval notification for user:', targetUser.uid, err);
+      }
+
+      // 2. Email notification to assigned approver whose turn it is to approve
+      if (targetUser.email) {
+        try {
+          const sendApprovalEmail = httpsCallable(functions, 'sendApprovalPendingEmail');
+          await sendApprovalEmail({
+            email: targetUser.email,
+            displayName: targetUser.name || targetUser.displayName || targetUser.email,
+            title: reservationData.title || reservationData.activity || 'Room Reservation',
+            resType: resType,
+            venue: reservationData.designatedVenue || reservationData.room || 'Campus Venue',
+            levelNumber: pendingRecord.levelNumber || 1,
+            roleLabel: pendingRecord.roleLabel || 'Approver',
+            link: linkPath,
+          });
+        } catch (emailErr) {
+          // Graceful fallback if Cloud Function is not yet deployed to GCP
+          console.info('Note: Email notification skipped until "sendApprovalPendingEmail" is deployed via `firebase deploy --only functions`. In-app notifications remain fully active.');
+        }
       }
     }
   } catch (err) {
@@ -734,6 +772,8 @@ export async function processApprovalAction({
       reservationId,
       pendingRecord: records[nextIndex],
       reservationData: data,
+      approvedRecord: records[pendingIndex],
+      approverName,
     };
   });
 
@@ -745,9 +785,44 @@ export async function processApprovalAction({
         notificationToTrigger.pendingRecord,
         notificationToTrigger.reservationData
       );
+      await notifyRequestorProgress({
+        requestorUid: notificationToTrigger.reservationData.createdByUid,
+        requestorEmail: notificationToTrigger.reservationData.requestorEmail,
+        title: notificationToTrigger.reservationData.title || notificationToTrigger.reservationData.activity || 'Room Reservation',
+        resType: notificationToTrigger.reservationData.type,
+        reservationId: notificationToTrigger.reservationId,
+        approverName: notificationToTrigger.approverName,
+        roleLabel: notificationToTrigger.approvedRecord?.roleLabel,
+      });
     } else if (notificationToTrigger.type === 'requestor_rejected' || notificationToTrigger.type === 'requestor_approved') {
       await notifyRequestorStatus(notificationToTrigger);
     }
+  }
+}
+
+/**
+ * Real-time notification helper for requestor when reservation step is approved
+ */
+async function notifyRequestorProgress({ requestorUid, requestorEmail, title, resType, reservationId, approverName, roleLabel }) {
+  if (!requestorUid && !requestorEmail) return;
+
+  const linkPath = resType === 'academic' ? `/academic-request/${reservationId}` : `/request/${reservationId}`;
+
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      userId: requestorUid || '',
+      userEmail: requestorEmail || '',
+      title: '✅ Reservation Step Approved',
+      message: `Your room reservation "${title}" was approved by ${approverName || 'Approver'} (${roleLabel || 'Step'}).`,
+      type: 'approval',
+      reservationId,
+      reservationType: resType,
+      link: linkPath,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Failed to send requestor progress notification:', err);
   }
 }
 

@@ -871,6 +871,7 @@ export default function RoomDetails() {
         readOnly
         showControls={false}
         showLegend={true}
+        roomType={displayRoom.type || 'Lecture Room'}
         emptyMessage={
           courseSchedules.length === 0 && approvedReservations.length === 0
             ? "No course schedules or reservations for this room"
