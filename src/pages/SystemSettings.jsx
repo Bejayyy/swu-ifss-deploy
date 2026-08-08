@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Sliders, Clock, FileUp, Download, Trash2, Check,
   FileText, ChevronRight, ChevronLeft, Plus, BookOpen, X, Eye, ChevronDown, Award, Edit,
-  FileSpreadsheet, Upload, Search, User, RefreshCw, AlertCircle, CheckCircle2, Building2
+  FileSpreadsheet, Upload, Search, User, RefreshCw, AlertCircle, CheckCircle2, Building2,
+  CalendarOff, AlertTriangle, Calendar
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -32,6 +33,11 @@ import {
   updateActivity,
   deleteActivity,
 } from '../services/activitiesService';
+import {
+  fetchApprovedReservationsByDate,
+  declareNoClassDay,
+  subscribeNoClassDays,
+} from '../services/noClassDayService';
 
 export default function SystemSettings() {
   const { profile } = useAuth();
@@ -68,6 +74,97 @@ export default function SystemSettings() {
   const [calendarPdfData, setCalendarPdfData] = useState(null);
   const [pdfUploading, setPdfUploading] = useState(false);
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
+
+  // No Class Day state
+  const [noClassDate, setNoClassDate] = useState('');
+  const [noClassReason, setNoClassReason] = useState('');
+  const [scannedReservations, setScannedReservations] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [hasScanned, setHasScanned] = useState(false);
+  const [isDeclaring, setIsDeclaring] = useState(false);
+  const [noClassHistory, setNoClassHistory] = useState([]);
+
+  // Subscribe to No Class Days history
+  useEffect(() => {
+    const unsub = subscribeNoClassDays(
+      (data) => setNoClassHistory(data),
+      (err) => console.error('Error loading no class days:', err)
+    );
+    return () => unsub();
+  }, []);
+
+  // Scan reservations for the selected date
+  const handleScanNoClassDate = async () => {
+    if (!noClassDate) {
+      showNotification({
+        type: 'error',
+        title: 'Select Date',
+        message: 'Please select a date to scan for affected reservations.',
+      });
+      return;
+    }
+
+    setIsScanning(true);
+    try {
+      const resList = await fetchApprovedReservationsByDate(noClassDate);
+      setScannedReservations(resList);
+      setHasScanned(true);
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Scan Failed',
+        message: err.message || 'Failed to scan reservations.',
+      });
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  // Declare No Class Day and send notifications
+  const handleDeclareNoClassDay = async () => {
+    if (!noClassDate || !noClassReason.trim()) {
+      showNotification({
+        type: 'error',
+        title: 'Missing Fields',
+        message: 'Please provide both date and reason for the class suspension.',
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm({
+      title: 'Declare No Class Day?',
+      message: `Declaring a No Class Day on ${noClassDate} will postpone ${scannedReservations.length} approved reservation(s). Owners will receive email and in-app notifications with smart room recommendations. Continue?`,
+      confirmText: 'Declare & Notify Users',
+      cancelText: 'Cancel',
+      variant: 'warning',
+    });
+
+    if (!confirmed) return;
+
+    setIsDeclaring(true);
+    try {
+      const result = await declareNoClassDay(noClassDate, noClassReason, profile, scannedReservations);
+      showNotification({
+        type: 'success',
+        title: 'No Class Day Declared!',
+        message: `Successfully declared No Class Day on ${noClassDate}. ${result.affectedCount} reservation(s) were postponed and notified.`,
+      });
+
+      // Reset form
+      setNoClassDate('');
+      setNoClassReason('');
+      setScannedReservations([]);
+      setHasScanned(false);
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Declaration Failed',
+        message: err.message || 'Failed to declare No Class Day.',
+      });
+    } finally {
+      setIsDeclaring(false);
+    }
+  };
 
   const { config } = calendarData;
   const examPeriods = useMemo(() => normalizeExamPeriods(config?.examPeriods), [config?.examPeriods]);
@@ -704,82 +801,100 @@ export default function SystemSettings() {
               </div>
               <ChevronRight size={14} className={activeTab === 'activities' ? 'opacity-100' : 'opacity-40'} />
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('noClassDay')}
+              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'noClassDay'
+                  ? 'bg-[#800000] text-white shadow-2xs'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <CalendarOff size={16} />
+                <span>No Class Day Declaration</span>
+              </div>
+              <ChevronRight size={14} className={activeTab === 'noClassDay' ? 'opacity-100' : 'opacity-40'} />
+            </button>
           </div>
 
-          {/* College Filter Card (In List Style below System Configuration) */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
-            <div className="px-3 pt-2 pb-2 flex items-center justify-between">
-              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                <Building2 size={13} className="text-[#800000]" /> College Filter
-              </p>
-              {selectedCollegeFilter !== 'ALL' && (
+          {/* College Filter Card (Displayed only when Activities tab is active) */}
+          {activeTab === 'activities' && (
+            <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
+              <div className="px-3 pt-2 pb-2 flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                  <Building2 size={13} className="text-[#800000]" /> College Filter
+                </p>
+                {selectedCollegeFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedCollegeFilter('ALL'); setCurrentPage(1); }}
+                    className="text-[10px] font-bold text-[#800000] hover:underline"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1">
                 <button
                   type="button"
-                  onClick={() => { setSelectedCollegeFilter('ALL'); setCurrentPage(1); }}
-                  className="text-[10px] font-bold text-[#800000] hover:underline"
+                  onClick={() => {
+                    setSelectedCollegeFilter('ALL');
+                    setCurrentPage(1);
+                    if (activeTab !== 'activities') setActiveTab('activities');
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
+                    selectedCollegeFilter === 'ALL'
+                      ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
+                      : 'text-gray-700 hover:bg-gray-100 font-medium'
+                  }`}
                 >
-                  Reset
+                  <span>All Colleges</span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    selectedCollegeFilter === 'ALL' ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    {activities.length}
+                  </span>
                 </button>
-              )}
+
+                {collegesList.map((college) => {
+                  const colKey = college.code || college.id;
+                  const isSelected = selectedCollegeFilter === colKey;
+                  const count = activities.filter(a => Array.isArray(a.colleges) && a.colleges.includes(colKey)).length;
+
+                  return (
+                    <button
+                      key={college.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCollegeFilter(colKey);
+                        setCurrentPage(1);
+                        if (activeTab !== 'activities') setActiveTab('activities');
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
+                        isSelected
+                          ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
+                          : 'text-gray-700 hover:bg-gray-100 font-medium'
+                      }`}
+                      title={college.name}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-bold text-xs">{college.code}</span>
+                        <span className="text-[11px] text-gray-500 truncate">{college.name}</span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        isSelected ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
+                      }`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-
-            <div className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCollegeFilter('ALL');
-                  setCurrentPage(1);
-                  if (activeTab !== 'activities') setActiveTab('activities');
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
-                  selectedCollegeFilter === 'ALL'
-                    ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
-                    : 'text-gray-700 hover:bg-gray-100 font-medium'
-                }`}
-              >
-                <span>All Colleges</span>
-                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                  selectedCollegeFilter === 'ALL' ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
-                }`}>
-                  {activities.length}
-                </span>
-              </button>
-
-              {collegesList.map((college) => {
-                const colKey = college.code || college.id;
-                const isSelected = selectedCollegeFilter === colKey;
-                const count = activities.filter(a => Array.isArray(a.colleges) && a.colleges.includes(colKey)).length;
-
-                return (
-                  <button
-                    key={college.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCollegeFilter(colKey);
-                      setCurrentPage(1);
-                      if (activeTab !== 'activities') setActiveTab('activities');
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
-                      isSelected
-                        ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
-                        : 'text-gray-700 hover:bg-gray-100 font-medium'
-                    }`}
-                    title={college.name}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="font-bold text-xs">{college.code}</span>
-                      <span className="text-[11px] text-gray-500 truncate">{college.name}</span>
-                    </div>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${
-                      isSelected ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
-                    }`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Tab Contents */}
@@ -1366,8 +1481,175 @@ export default function SystemSettings() {
               )}
             </div>
           )}
-        </div>
-      </div>
+
+              {/* TAB 5: No Class Day Declaration */}
+              {activeTab === 'noClassDay' && (
+                <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs space-y-6">
+                  <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                        <CalendarOff size={18} className="text-[#800000]" />
+                        No Class Day Declaration & Recommender
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Declare class suspension days (e.g. typhoons, holidays). Automatically scan affected approved reservations, postpone them, and send notifications with smart room recommendations.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Form Card */}
+                  <div className="p-5 rounded-2xl border border-amber-200 bg-amber-50/40 space-y-4">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                      <AlertTriangle size={16} className="text-amber-600" />
+                      <span>Declare Class Suspension</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                          Suspension Date
+                        </label>
+                        <input
+                          type="date"
+                          value={noClassDate}
+                          onChange={(e) => {
+                            setNoClassDate(e.target.value);
+                            setHasScanned(false);
+                            setScannedReservations([]);
+                          }}
+                          className="input-field w-full text-xs font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                          Reason for Suspension
+                        </label>
+                        <input
+                          type="text"
+                          value={noClassReason}
+                          onChange={(e) => setNoClassReason(e.target.value)}
+                          placeholder="e.g. Typhoon Signal #3, Special Holiday"
+                          className="input-field w-full text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleScanNoClassDate}
+                        disabled={isScanning || !noClassDate}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <Search size={14} />
+                        {isScanning ? 'Scanning...' : '1. Scan Affected Reservations'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scanned Preview Section */}
+                  {hasScanned && (
+                    <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <div>
+                          <h4 className="font-bold text-xs text-gray-900 flex items-center gap-2">
+                            <span>Affected Approved Reservations on {noClassDate}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black">
+                              {scannedReservations.length} Found
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-gray-500 mt-0.5">
+                            {scannedReservations.length === 0
+                              ? 'No approved room reservations found on this date.'
+                              : 'These reservations will be marked as Postponed and users will receive notifications with smart recommendations.'}
+                          </p>
+                        </div>
+
+                        {scannedReservations.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleDeclareNoClassDay}
+                            disabled={isDeclaring || !noClassReason.trim()}
+                            className="btn-maroon text-xs px-4 py-2 flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <CalendarOff size={14} />
+                            {isDeclaring ? 'Processing...' : '2. Declare & Notify Users'}
+                          </button>
+                        )}
+                      </div>
+
+                      {scannedReservations.length > 0 && (
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-gray-50 text-gray-600 font-bold text-[10px] uppercase border-b border-gray-100">
+                              <tr>
+                                <th className="p-3">Title / Activity</th>
+                                <th className="p-3">Venue</th>
+                                <th className="p-3">Time</th>
+                                <th className="p-3">Requestor</th>
+                                <th className="p-3">Email</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {scannedReservations.map((r) => (
+                                <tr key={r.id} className="hover:bg-gray-50/50">
+                                  <td className="p-3 font-bold text-gray-900">{r.title || r.activity}</td>
+                                  <td className="p-3 text-gray-600">{r.designatedVenue || r.room}</td>
+                                  <td className="p-3 font-mono text-[11px] text-gray-500">{r.timeStart} – {r.timeEnd}</td>
+                                  <td className="p-3 font-medium text-gray-700">{r.requestedBy || r.requestor}</td>
+                                  <td className="p-3 text-gray-500">{r.requestorEmail || 'N/A'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Declaration History Section */}
+                  <div className="pt-4 border-t border-gray-100 space-y-3">
+                    <h4 className="font-bold text-xs text-gray-900 flex items-center gap-2">
+                      <Calendar size={15} className="text-[#800000]" />
+                      No Class Day Declaration History
+                    </h4>
+
+                    {noClassHistory.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-4 text-center">No class suspensions declared yet.</p>
+                    ) : (
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-gray-50 text-gray-600 font-bold text-[10px] uppercase border-b border-gray-100">
+                            <tr>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Reason</th>
+                              <th className="p-3">Declared By</th>
+                              <th className="p-3">Affected Reservations</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {noClassHistory.map((h) => (
+                              <tr key={h.id} className="hover:bg-gray-50/50">
+                                <td className="p-3 font-bold text-[#800000]">{h.date}</td>
+                                <td className="p-3 font-medium text-gray-800">{h.reason}</td>
+                                <td className="p-3 text-gray-600">{h.declaredByName || 'Registrar'}</td>
+                                <td className="p-3">
+                                  <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 font-bold text-[10px] border border-red-200">
+                                    {h.affectedReservationCount || 0} postponed
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
       {/* Add/Edit Activity Modal */}
       {showActivityModal && (

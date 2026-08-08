@@ -602,4 +602,250 @@ exports.sendApprovalPendingEmail = functions.https.onCall(async (data, context) 
   }
 });
 
+// Send email notification to requestor confirming request submission
+exports.sendReservationSubmittedEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
 
+  const { email, displayName, title, resType, venue, levelNumber, roleLabel, link } = data;
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'email is required.');
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: email,
+    subject: `📋 SWU IFSS — Reservation Request Submitted (${title || 'Room Reservation'})`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #800000; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background-color: #800000; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .info-box { background-color: #fff; padding: 18px; border-left: 4px solid #800000; margin: 20px 0; border-radius: 6px; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Reservation Submitted</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${displayName || 'Requestor'},</h2>
+            <p>Your room reservation request has been submitted successfully and is currently under review.</p>
+            
+            <div class="info-box">
+              <h3 style="margin-top:0;color:#800000;">Submitted Request Details:</h3>
+              <p><strong>Activity / Title:</strong> ${title || 'Room Reservation'}</p>
+              <p><strong>Request Type:</strong> ${resType || 'Academic'}</p>
+              <p><strong>Designated Venue:</strong> ${venue || 'Campus Venue'}</p>
+              <p><strong>Current Status:</strong> Pending Review (Level ${levelNumber || 1}: ${roleLabel || 'Approver'})</p>
+            </div>
+
+            <p>You will receive notification emails as your request progresses through the approval workflow.</p>
+
+            <center>
+              <a href="${APP_URL}${link || '/request'}" class="button">Track Request Status</a>
+            </center>
+
+            <p>Best regards,<br>SWU IFSS System</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'Submission confirmation email sent successfully' };
+  } catch (error) {
+    console.error('Error sending submission confirmation email:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Send email notification to requestor when reservation is approved or rejected by an approver
+exports.sendReservationDecisionEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const { email, displayName, title, resType, venue, status, approverName, approverRole, remarks, link } = data;
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'email is required.');
+  }
+
+  const isApproved = status === 'approved';
+  const subjectText = isApproved
+    ? `✅ SWU IFSS — Reservation Request Approved (${title || 'Room Reservation'})`
+    : `❌ SWU IFSS — Reservation Request Rejected (${title || 'Room Reservation'})`;
+
+  const headerBg = isApproved ? '#166534' : '#991B1B';
+  const statusBadge = isApproved ? 'APPROVED' : 'REJECTED';
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: email,
+    subject: subjectText,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: ${headerBg}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background-color: #800000; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .info-box { background-color: #fff; padding: 18px; border-left: 4px solid ${headerBg}; margin: 20px 0; border-radius: 6px; }
+          .remarks-box { background-color: #fee2e2; border: 1px solid #fca5a5; padding: 14px; border-radius: 6px; margin: 15px 0; color: #991b1b; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Reservation Request ${statusBadge}</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${displayName || 'Requestor'},</h2>
+            <p>Your room reservation request status has been updated by <strong>${approverName || 'Approver'}</strong> (${approverRole || 'Approver'}).</p>
+            
+            <div class="info-box">
+              <h3 style="margin-top:0;color:${headerBg};">Reservation Details:</h3>
+              <p><strong>Activity / Title:</strong> ${title || 'Room Reservation'}</p>
+              <p><strong>Request Type:</strong> ${resType || 'Academic'}</p>
+              <p><strong>Designated Venue:</strong> ${venue || 'Campus Venue'}</p>
+              <p><strong>Status:</strong> <strong>${statusBadge}</strong></p>
+              <p><strong>Action Taken By:</strong> ${approverName || 'Approver'} (${approverRole || 'Approver'})</p>
+            </div>
+
+            ${remarks ? `
+            <div class="remarks-box">
+              <strong>Remarks / Reason for Rejection:</strong>
+              <p style="margin: 5px 0 0 0;">${remarks}</p>
+            </div>
+            ` : ''}
+
+            <center>
+              <a href="${APP_URL}${link || '/request'}" class="button">View Request Details</a>
+            </center>
+
+            <p>Best regards,<br>SWU IFSS System</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'Decision email sent successfully' };
+  } catch (error) {
+    console.error('Error sending decision email:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Send Postponement Email — No Class Day reservation displacement
+// ═══════════════════════════════════════════════════════════════════════
+exports.sendPostponementEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const { email, displayName, reservationTitle, originalDate, venue, reason, rescheduleLink } = data;
+
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'Recipient email is required.');
+  }
+
+  const mailOptions = {
+    from: `"SWU IFSS" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `⚠️ Reservation Postponed — No Class Day (${originalDate || 'Date'})`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { margin: 0; padding: 0; background: #f4f4f7; font-family: 'Segoe UI', Arial, sans-serif; }
+          .container { max-width: 560px; margin: 30px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+          .header { background: #800000; color: #fff; padding: 28px 30px; text-align: center; }
+          .header h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+          .header p { margin: 8px 0 0; font-size: 12px; opacity: 0.85; }
+          .body { padding: 30px; color: #2B3235; line-height: 1.6; }
+          .alert-box { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 14px 18px; border-radius: 8px; margin: 16px 0; }
+          .alert-box h3 { margin: 0 0 6px; color: #92400E; font-size: 14px; }
+          .alert-box p { margin: 0; font-size: 13px; color: #78350F; }
+          .details { background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px; border-radius: 10px; margin: 16px 0; }
+          .details p { margin: 4px 0; font-size: 13px; }
+          .button { display: inline-block; background: #800000; color: #fff !important; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-top: 16px; }
+          .footer { text-align: center; padding: 18px; font-size: 11px; color: #999; background: #f9fafb; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>⚠️ RESERVATION POSTPONED</h1>
+            <p>No Class Day Declaration</p>
+          </div>
+          <div class="body">
+            <p>Hi <strong>${displayName || 'User'}</strong>,</p>
+
+            <div class="alert-box">
+              <h3>No Class Day Declared</h3>
+              <p><strong>Reason:</strong> ${reason || 'Class suspension'}</p>
+            </div>
+
+            <p>Your reservation has been <strong>postponed</strong> due to a declared No Class Day. Please reschedule at your earliest convenience.</p>
+
+            <div class="details">
+              <h3 style="margin-top:0;color:#800000;">Affected Reservation:</h3>
+              <p><strong>Activity / Title:</strong> ${reservationTitle || 'Room Reservation'}</p>
+              <p><strong>Original Date:</strong> ${originalDate || 'N/A'}</p>
+              <p><strong>Venue:</strong> ${venue || 'Campus Venue'}</p>
+            </div>
+
+            <p>Our system has prepared <strong>room recommendations</strong> for you to quickly find an available slot. Click below to view suggestions and reschedule:</p>
+
+            <center>
+              <a href="${APP_URL}${rescheduleLink || '/reschedule'}" class="button">View Recommendations & Reschedule</a>
+            </center>
+
+            <p style="margin-top:20px;">If you need assistance, contact the Registrar's Office.</p>
+
+            <p>Best regards,<br>SWU IFSS System</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+    return { success: true, message: 'Postponement email sent successfully' };
+  } catch (error) {
+    console.error('Error sending postponement email:', error);
+    return { success: false, error: error.message };
+  }
+});

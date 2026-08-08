@@ -30,6 +30,7 @@ import MaintenanceDashboard from './pages/MaintenanceDashboard';
 import CollegeInventory from './pages/CollegeInventory';
 import TeachersDirectory from './pages/TeachersDirectory';
 import CourseInventory from './pages/CourseInventory';
+import RescheduleReservation from './pages/RescheduleReservation';
 
 function RegistrarPage({ children }) {
   return <RegistrarRoute>{children}</RegistrarRoute>;
@@ -96,6 +97,7 @@ export default function App() {
             <Route path="/request/:id" element={<RegistrarPage><NonAcademicRequestDetails /></RegistrarPage>} />
             <Route path="/academic-request/:id" element={<RegistrarPage><AcademicRequestDetails /></RegistrarPage>} />
             <Route path="/maintenance-dashboard" element={<RegistrarPage><MaintenanceDashboard /></RegistrarPage>} />
+            <Route path="/reschedule/:reservationId" element={<RegistrarPage><RescheduleReservation /></RegistrarPage>} />
           </Routes>
         </BrowserRouter>
         </AppProvider>

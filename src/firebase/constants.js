@@ -43,6 +43,7 @@ export const COLLECTIONS = {
   ROLE_DEFINITIONS: 'role_definitions',
   MAINTENANCE_SCHEDULES: 'maintenance_schedules',
   MAINTENANCE_REPORTS: 'maintenance_reports',
+  NO_CLASS_DAYS: 'no_class_days',
 };
 
 /** Default permission keys assignable to Registrar accounts by Developers */

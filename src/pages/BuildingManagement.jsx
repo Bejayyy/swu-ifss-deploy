@@ -518,6 +518,27 @@ export default function BuildingManagement() {
                                   >
                                     <Eye size={15} />
                                   </button>
+                                  {canSubmitReservation() && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openReservation({
+                                          building: building.name,
+                                          buildingId: building.id,
+                                          room: rm.id || rm.name,
+                                          roomId: rm.id || rm.name,
+                                          roomDocId: rm.docId || rm.id,
+                                          floor: rm.floor,
+                                          floorId: rm.floorId,
+                                          designatedVenue: `${rm.id || rm.name}, ${building.name}${rm.floor ? ` Floor ${rm.floor}` : ''}`,
+                                        })
+                                      }
+                                      className="p-1.5 text-gray-500 hover:text-[#7A0808] hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Reserve Room"
+                                    >
+                                      <Calendar size={15} />
+                                    </button>
+                                  )}
                                   {canEditRoom(rm) && (
                                     <button
                                       type="button"
@@ -645,6 +666,7 @@ export default function BuildingManagement() {
           }}
         />
       )}
+      {modals}
     </Layout>
   );
 }

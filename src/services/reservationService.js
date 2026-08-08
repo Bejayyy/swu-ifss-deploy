@@ -20,6 +20,7 @@ import {
   APPROVAL_RECORD_STATUS,
   APPROVAL_TYPES,
   RESERVATION_STATUS,
+  isCollegeMatch,
 } from '../constants/approvalWorkflow';
 import { getWorkflowSnapshot } from './approvalWorkflowService';
 
@@ -489,42 +490,37 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
       targetUsers = allUsers.filter((u) => {
         const r = (u.role || u.roleValue || '').toLowerCase();
         const s = (u.status || 'active').toLowerCase();
-        if (s === 'inactive') return false;
+        if (s === 'inactive' || r === 'developer') return false;
 
         // Role matching per workflow level
         if (targetRoleId === 'dean') {
           if (r !== 'dean') return false;
 
-          let reqCollege = (reservationData.college || reservationData.department || '').trim().toLowerCase();
+          let reqCollege = (reservationData.college || reservationData.department || '').trim();
 
           // Fallback to creator's profile college if payload didn't explicitly store it
           if (!reqCollege && reservationData.createdByUid) {
             const creatorDoc = allUsers.find((user) => user.uid === reservationData.createdByUid);
             if (creatorDoc) {
-              reqCollege = (creatorDoc.college || creatorDoc.department || creatorDoc.collegeCode || creatorDoc.departmentCode || '').trim().toLowerCase();
+              reqCollege = creatorDoc.college || creatorDoc.department || creatorDoc.collegeCode || creatorDoc.departmentCode || '';
             }
           }
 
-          const userCollege = (u.college || u.department || u.collegeCode || u.departmentCode || '').trim().toLowerCase();
+          const userCollege = u.college || u.department || u.collegeCode || u.departmentCode || '';
 
-          if (reqCollege && userCollege) {
-            return reqCollege.includes(userCollege) || userCollege.includes(reqCollege);
-          }
-
-          // Do NOT notify deans of other colleges
-          return false;
+          return isCollegeMatch(userCollege, reqCollege);
         }
 
         if (targetRoleId === 'registrar') {
-          return r === 'registrar' || r === 'developer';
+          return r === 'registrar';
         }
 
         if (targetRoleId === 'gsd' || targetRoleId === 'gsd-head' || targetRoleId === 'general-services-head') {
-          return r === 'gsd' || r === 'developer';
+          return r === 'gsd' || r === 'gsd-head' || r === 'general-services-head';
         }
 
         if (targetRoleId === 'student-life' || targetRoleId === 'sfo') {
-          return r === 'student-life' || r === 'sfo' || r === 'developer';
+          return r === 'student-life' || r === 'sfo';
         }
 
         return r === targetRoleId;
@@ -532,13 +528,54 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
     }
 
     if (targetUsers.length === 0 && targetRoleId !== 'dean') {
-      targetUsers = allUsers.filter((u) => (u.role || u.roleValue || '').toLowerCase() === targetRoleId);
+      targetUsers = allUsers.filter((u) => {
+        const r = (u.role || u.roleValue || '').toLowerCase();
+        const s = (u.status || 'active').toLowerCase();
+        return s !== 'inactive' && r !== 'developer' && r === targetRoleId;
+      });
     }
+
+    // Exclude developers, inactive users, and the requestor (creator) so they never receive an approval-pending action email ("Review & Approve Request")
+    targetUsers = targetUsers.filter((u) => {
+      const r = (u.role || u.roleValue || '').toLowerCase();
+      const s = (u.status || 'active').toLowerCase();
+      const isDeveloper = r === 'developer' || (u.displayName || u.name || '').toLowerCase().includes('developer');
+      const isCreatorUid = reservationData.createdByUid && u.uid === reservationData.createdByUid;
+      const creatorEmail = (reservationData.requestorEmail || reservationData.createdByEmail || '').trim().toLowerCase();
+      const userEmail = (u.email || '').trim().toLowerCase();
+
+      if (s === 'inactive') return false;
+      if (isDeveloper) return false;
+      if (isCreatorUid) return false;
+      if (creatorEmail && userEmail === creatorEmail) return false;
+
+      return true;
+    });
 
     const resType = reservationData.type === 'academic' ? 'Academic' : 'Non-Academic';
     const linkPath = reservationData.type === 'academic'
       ? `/academic-request/${reservationId}`
       : `/request/${reservationId}`;
+
+    // Send submission confirmation email to requestor when Level 1 workflow starts
+    const reqEmail = (reservationData.requestorEmail || reservationData.createdByEmail || '').trim();
+    if (reqEmail && pendingRecord.levelNumber === 1) {
+      try {
+        const sendSubmittedEmail = httpsCallable(functions, 'sendReservationSubmittedEmail');
+        await sendSubmittedEmail({
+          email: reqEmail,
+          displayName: reservationData.requestedBy || reservationData.requestorName || '',
+          title: reservationData.title || reservationData.activity || 'Room Reservation',
+          resType,
+          venue: reservationData.designatedVenue || reservationData.room || 'Campus Venue',
+          levelNumber: pendingRecord.levelNumber || 1,
+          roleLabel: pendingRecord.roleLabel || 'Approver',
+          link: linkPath,
+        });
+      } catch (err) {
+        console.info('Note: Submission confirmation email skipped until "sendReservationSubmittedEmail" is deployed.');
+      }
+    }
 
     const titleText = `📋 Approval Needed: ${resType} Reservation`;
     const messageText = `Reservation "${reservationData.title || reservationData.activity || 'Room Reservation'}" (${reservationData.designatedVenue || reservationData.room || 'Venue'}) requires your approval (Level ${pendingRecord.levelNumber || 1}: ${pendingRecord.roleLabel || 'Approver'}).`;
@@ -590,12 +627,13 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
 /**
  * Real-time notification helper for requestor when reservation is approved or rejected
  */
-async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resType, reservationId, remarks, type }) {
+async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resType, reservationId, remarks, type, approverName, approverRole, venue }) {
   if (!requestorUid && !requestorEmail) return;
 
   const isApproved = type === 'requestor_approved';
   const linkPath = resType === 'academic' ? `/academic-request/${reservationId}` : `/request/${reservationId}`;
 
+  // 1. In-app notification
   try {
     await addDoc(collection(db, 'notifications'), {
       userId: requestorUid || '',
@@ -613,6 +651,27 @@ async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resT
     });
   } catch (err) {
     console.warn('Failed to send requestor notification:', err);
+  }
+
+  // 2. Email notification to requestor
+  if (requestorEmail) {
+    try {
+      const sendDecisionEmail = httpsCallable(functions, 'sendReservationDecisionEmail');
+      await sendDecisionEmail({
+        email: requestorEmail,
+        displayName: '',
+        title: title || 'Room Reservation',
+        resType: resType === 'academic' ? 'Academic' : 'Non-Academic',
+        venue: venue || 'Campus Venue',
+        status: isApproved ? 'approved' : 'rejected',
+        approverName: approverName || 'Approver',
+        approverRole: approverRole || 'Approver Step',
+        remarks: remarks || '',
+        link: linkPath,
+      });
+    } catch (emailErr) {
+      console.info('Note: Decision email notification skipped until "sendReservationDecisionEmail" is deployed via `firebase deploy --only functions`. In-app notifications remain fully active.');
+    }
   }
 }
 
@@ -721,6 +780,9 @@ export async function processApprovalAction({
         title: data.title || data.activity || 'Room Reservation',
         resType: data.type,
         remarks: remarks.trim() || 'Rejected by approver.',
+        approverName,
+        approverRole: pending.roleLabel,
+        venue: data.designatedVenue || data.room,
       };
       return;
     }
@@ -756,6 +818,9 @@ export async function processApprovalAction({
         requestorEmail: data.requestorEmail,
         title: data.title || data.activity || 'Room Reservation',
         resType: data.type,
+        approverName,
+        approverRole: pending.roleLabel,
+        venue: data.designatedVenue || data.room,
       };
       return;
     }

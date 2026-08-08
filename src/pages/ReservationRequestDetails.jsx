@@ -110,6 +110,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
   const [signatureUrl, setSignatureUrl] = useState('');
   const [adminPrintedName, setAdminPrintedName] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [showRejectForm, setShowRejectForm] = useState(false);
   const [isLoadingModal, setIsLoadingModal] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [isDragging, setIsDragging] = useState(false);
@@ -360,12 +361,12 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
 
   const handleRequestModification = async () => {
     if (!remarks.trim()) {
-      setError('Please provide a reason or remarks for requesting modification / rejection.');
+      setError('Please provide a reason or remarks for rejecting this reservation request.');
       return;
     }
 
     const confirmed = await showConfirm({
-      title: 'Reject / Request Modification?',
+      title: 'Reject Request?',
       message: 'This will reject the room reservation request and notify the requestor.',
       confirmText: 'Reject Request',
       cancelText: 'Cancel',
@@ -389,7 +390,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
       showNotification({
         type: 'success',
         title: 'Reservation Rejected',
-        message: 'The request modification has been submitted.',
+        message: 'The reservation request has been rejected.',
         autoCloseMs: 2000,
       });
       navigate('/approvals');
@@ -823,25 +824,28 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
                 </p>
               </div>
 
-              {/* Remarks / Reason for Modification or Rejection Textarea */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
-                  REMARKS / REASON FOR MODIFICATION OR REJECTION
-                </label>
-                <textarea
-                  rows={3}
-                  className="form-input text-xs rounded-xl py-2.5 px-3.5 border-gray-200 w-full focus:ring-2 focus:ring-[#7A0808]/20 focus:border-[#7A0808]"
-                  value={remarks}
-                  onChange={(e) => {
-                    setRemarks(e.target.value);
-                    if (error) setError('');
-                  }}
-                  placeholder="Required if requesting modification or rejecting. Enter specific reasons or feedback..."
-                />
-                <p className="text-[11px] text-gray-400">
-                  Provide specific comments or requested changes if rejecting or requesting modification.
-                </p>
-              </div>
+              {/* Remarks / Reason for Rejection Textarea - Shown ONLY when rejecting */}
+              {showRejectForm && (
+                <div className="space-y-1.5 p-3.5 bg-red-50/80 border border-red-200 rounded-2xl animate-fade-in">
+                  <label className="text-xs font-bold text-red-900 uppercase tracking-wider block">
+                    REMARKS / REASON FOR REJECTION <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="form-input text-xs rounded-xl py-2.5 px-3.5 border-red-300 w-full focus:ring-2 focus:ring-red-500/20 focus:border-red-600 bg-white"
+                    value={remarks}
+                    onChange={(e) => {
+                      setRemarks(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="Enter specific reasons or feedback for rejecting this request..."
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-red-700 font-medium">
+                    Provide specific comments or reasons for rejecting this request.
+                  </p>
+                </div>
+              )}
 
               {error && (
                 <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
@@ -852,23 +856,53 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
               {/* Action Buttons */}
               {canAct && !isTerminal && (
                 <div className="space-y-2.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleApproveConfirm}
-                    disabled={busy}
-                    className="btn-maroon w-full justify-center py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm"
-                  >
-                    {busy ? 'Processing…' : 'APPROVE & CONFIRM'}
-                  </button>
+                  {!showRejectForm ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleApproveConfirm}
+                        disabled={busy}
+                        className="btn-maroon w-full justify-center py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm"
+                      >
+                        {busy ? 'Processing…' : 'APPROVE & CONFIRM'}
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={handleRequestModification}
-                    disabled={busy}
-                    className="w-full flex items-center justify-center py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border border-[#7A0808] text-[#7A0808] hover:bg-red-50 transition-colors"
-                  >
-                    REQUEST MODIFICATION
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRejectForm(true);
+                          setError('');
+                        }}
+                        disabled={busy}
+                        className="w-full flex items-center justify-center py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border border-red-600 text-red-700 hover:bg-red-50 transition-colors"
+                      >
+                        REJECT REQUEST
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleRequestModification}
+                        disabled={busy}
+                        className="w-full flex items-center justify-center py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-red-700 text-white hover:bg-red-800 transition-colors shadow-sm"
+                      >
+                        {busy ? 'Processing…' : 'CONFIRM REJECT REQUEST'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRejectForm(false);
+                          setError('');
+                        }}
+                        disabled={busy}
+                        className="w-full flex items-center justify-center py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        CANCEL
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

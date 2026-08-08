@@ -28,6 +28,28 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [maintenanceReports, setMaintenanceReports] = useState([]);
   const [dbNotifications, setDbNotifications] = useState([]);
+  const [hasSeenBell, setHasSeenBell] = useState(false);
+
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`read_notifs_${profile?.uid || 'guest'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markNotifIdAsRead = (id) => {
+    if (!id) return;
+    setReadNotifIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try {
+        localStorage.setItem(`read_notifs_${profile?.uid || 'guest'}`, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   const displayName = profile?.displayName || 'User';
   const initials = profile?.initials || getInitials(profile?.displayName, profile?.email) || 'U';
@@ -127,32 +149,65 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     const maintenanceNotifications = [];
 
     // 1. In-app Firestore notifications
-    const dbNotifsFormatted = (dbNotifications || []).map((n) => ({
-      id: n.id,
-      isDbNotif: true,
-      type: n.type || 'info',
-      notificationType: n.type || 'system',
-      title: n.title || 'System Notification',
-      message: n.message || '',
-      requester: n.userEmail || n.userId || 'System',
-      request: n.message || 'Notification detail',
-      location: 'System Alert',
-      submittedAt: formatDate(n.createdAt),
-      time: getTimeAgo(n.createdAt),
-      unread: !n.read,
-      rawItem: n,
-    }));
+    const dbNotifsFormatted = (dbNotifications || []).map((n) => {
+      const isLocallyRead = readNotifIds.includes(n.id);
+      const resId = n.reservationId || n.resId || n.rawItem?.reservationId;
+      const resType = n.reservationType || n.resType || n.rawItem?.reservationType || 'academic';
 
-    // 2. Approval notifications
+      let computedLink = n.link;
+      if (!computedLink || computedLink.includes('undefined')) {
+        if (resId && resId !== 'undefined') {
+          computedLink = resType === 'academic' ? `/academic-request/${resId}` : `/request/${resId}`;
+        } else {
+          computedLink = '/approvals';
+        }
+      }
+
+      return {
+        id: n.id,
+        isDbNotif: true,
+        type: n.type || 'info',
+        notificationType: n.type || 'system',
+        title: n.title || 'System Notification',
+        message: n.message || '',
+        requester: n.userEmail || n.userId || 'System',
+        request: n.message || 'Notification detail',
+        location: 'System Alert',
+        submittedAt: formatDate(n.createdAt),
+        time: getTimeAgo(n.createdAt),
+        unread: !n.read && !isLocallyRead,
+        reservationId: resId,
+        reservationType: resType,
+        link: computedLink,
+        rawItem: n,
+      };
+    });
+
+    // Deduplicate dbNotifsFormatted so only the latest notification per reservation is kept
+    const dbNotifsDeduplicated = [];
+    const seenResIds = new Set();
+
+    dbNotifsFormatted.forEach((n) => {
+      if (n.reservationId) {
+        if (seenResIds.has(n.reservationId)) return;
+        seenResIds.add(n.reservationId);
+      }
+      dbNotifsDeduplicated.push(n);
+    });
+
+    // 2. Approval notifications (only add if not already covered by a real-time db notification)
     if (requests && profile?.role && profile) {
       requests.forEach((req) => {
         if (!isReservationActionable(req, profile.role, profile)) return;
+        if (req.id && seenResIds.has(req.id)) return; // Exclude duplicate notification card for the same reservation
 
         const timeAgo = getTimeAgo(req.createdAt);
         const requestType = req.type === 'academic' ? 'Academic' : 'Non-Academic';
+        const notifId = `appr_${req.id}`;
+        const isLocallyRead = readNotifIds.includes(notifId);
 
         approvalNotifications.push({
-          id: req.id,
+          id: notifId,
           type: 'Pending',
           notificationType: 'approval',
           title: `${requestType} reservation needs approval`,
@@ -161,9 +216,10 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           location: req.designatedVenue || req.building || 'N/A',
           submittedAt: formatDate(req.createdAt),
           time: timeAgo,
-          unread: true,
+          unread: !isLocallyRead,
           reservationId: req.id,
           reservationType: req.type,
+          link: req.type === 'academic' ? `/academic-request/${req.id}` : `/request/${req.id}`,
         });
       });
     }
@@ -172,12 +228,14 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     if (isGsd && maintenanceReports.length > 0) {
       maintenanceReports.forEach((report) => {
         const timeAgo = getTimeAgo(report.createdAt);
+        const notifId = `maint_${report.id}`;
+        const isLocallyRead = readNotifIds.includes(notifId);
         const priorityLabel = report.priority === 'urgent' ? 'URGENT' :
                             report.priority === 'high' ? 'High Priority' :
                             report.priority === 'medium' ? 'Medium Priority' : 'Low Priority';
 
         maintenanceNotifications.push({
-          id: report.id,
+          id: notifId,
           type: report.priority === 'urgent' || report.priority === 'high' ? 'Urgent' : 'Info',
           notificationType: 'maintenance',
           title: `${priorityLabel} maintenance report`,
@@ -186,7 +244,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           location: `${report.roomName} - ${report.buildingName}`,
           submittedAt: formatDate(report.createdAt),
           time: timeAgo,
-          unread: true,
+          unread: !isLocallyRead,
           reportId: report.id,
           priority: report.priority,
         });
@@ -194,17 +252,25 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     }
 
     // Combine and sort by unread first, then by date
-    return [...dbNotifsFormatted, ...maintenanceNotifications, ...approvalNotifications].sort((a, b) => {
+    return [...dbNotifsDeduplicated, ...maintenanceNotifications, ...approvalNotifications].sort((a, b) => {
       if (a.unread !== b.unread) return a.unread ? -1 : 1;
       const aTime = a.submittedAt === 'N/A' ? 0 : new Date(a.submittedAt).getTime();
       const bTime = b.submittedAt === 'N/A' ? 0 : new Date(b.submittedAt).getTime();
       return bTime - aTime;
     });
-  }, [dbNotifications, requests, profile, maintenanceReports, isGsd]);
+  }, [dbNotifications, requests, profile, maintenanceReports, isGsd, readNotifIds]);
 
   const unreadCount = useMemo(() => {
     return notifItems.filter((n) => n.unread).length;
   }, [notifItems]);
+
+  const prevCountRef = React.useRef(unreadCount);
+  useEffect(() => {
+    if (unreadCount > prevCountRef.current) {
+      setHasSeenBell(false);
+    }
+    prevCountRef.current = unreadCount;
+  }, [unreadCount]);
 
   const handleSignOut = async () => {
     closeAll();
@@ -215,33 +281,47 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const handleViewRequest = async (notification) => {
     setShowNotif(false);
     
+    if (notification.id) {
+      markNotifIdAsRead(notification.id);
+    }
+
     // Mark as read in Firestore if it's a db notification
-    if (notification.isDbNotif && notification.id) {
+    if (notification.isDbNotif && notification.rawItem?.id) {
+      await markNotificationAsRead(notification.rawItem.id);
+    } else if (notification.isDbNotif && notification.id) {
       await markNotificationAsRead(notification.id);
     }
 
     const nType = notification.notificationType || notification.type;
-    
+    const raw = notification.rawItem || {};
+    const resId = notification.reservationId || raw.reservationId || raw.resId;
+    const resType = notification.reservationType || raw.reservationType || raw.resType || 'academic';
+    const targetLink = notification.link || raw.link;
+
+    if (targetLink && !targetLink.includes('undefined')) {
+      navigate(targetLink);
+      return;
+    }
+
+    if (resId && resId !== 'undefined') {
+      const path = resType === 'academic' ? `/academic-request/${resId}` : `/request/${resId}`;
+      navigate(path);
+      return;
+    }
+
     if (nType === 'access_granted' || nType === 'course_scheduling') {
       navigate('/course-scheduling');
     } else if (nType === 'maintenance') {
       navigate('/maintenance-dashboard');
-    } else if (nType === 'approval') {
-      const isAcademic = notification.reservationType === 'academic';
-      const path = isAcademic 
-        ? `/academic-request/${notification.reservationId}` 
-        : `/request/${notification.reservationId}`;
-      navigate(path);
-    } else if (notification.rawItem?.link) {
-      navigate(notification.rawItem.link);
     } else {
-      if (profile?.role === 'dean') {
-        navigate('/course-scheduling');
-      }
+      navigate('/approvals');
     }
   };
 
   const handleMarkAllRead = async () => {
+    const unreadIds = notifItems.filter((n) => n.unread).map((n) => n.id);
+    unreadIds.forEach((id) => markNotifIdAsRead(id));
+
     if (dbNotifications.length > 0) {
       await markAllNotificationsAsRead(dbNotifications);
     }
@@ -292,7 +372,9 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           <button
             type="button"
             onClick={() => {
-              setShowNotif(!showNotif);
+              const nextShow = !showNotif;
+              setShowNotif(nextShow);
+              setHasSeenBell(true); // Resets bell counter icon number to normal!
               setShowProfile(false);
               setShowProfileModal(false);
               setShowSettingsModal(false);
@@ -300,11 +382,12 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             }}
             className="relative p-2 hover:bg-white/10 transition-colors"
             style={{ borderRadius: r }}
+            title="Notifications"
           >
             <Bell size={22} className="text-white" />
-            {unreadCount > 0 && (
+            {unreadCount > 0 && !hasSeenBell && (
               <span
-                className="absolute -top-0.5 -right-0.5 text-[#2B3235] text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center"
+                className="absolute -top-0.5 -right-0.5 text-[#2B3235] text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center shadow-xs"
                 style={{ background: '#FFC107', borderRadius: 6 }}
               >
                 {unreadCount}
@@ -442,8 +525,8 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                       className={`px-6 py-4 transition-all cursor-pointer border-b border-gray-100 ${
                         isUnread
                           ? isMaintenance
-                            ? (isUrgent ? 'bg-red-50/90 border-l-4 border-l-red-600' : 'bg-orange-50/90 border-l-4 border-l-orange-500')
-                            : 'bg-amber-50/70 hover:bg-amber-100/60 border-l-4 border-l-[#800000]'
+                            ? (isUrgent ? 'bg-red-100/90 hover:bg-red-200/80 border-l-4 border-l-red-600 font-semibold' : 'bg-orange-100/90 hover:bg-orange-200/80 border-l-4 border-l-orange-500 font-semibold')
+                            : 'bg-red-100/90 hover:bg-red-200/80 border-l-4 border-l-[#800000] font-semibold text-gray-900 shadow-2xs'
                           : 'bg-white hover:bg-gray-50/80 border-l-4 border-l-transparent text-gray-600'
                       }`}
                       onClick={() => handleViewRequest(n)}
@@ -452,13 +535,13 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                         <div className="flex items-start gap-3 flex-1 min-w-0">
                           {isMaintenance ? (
                             <div className={`p-2 rounded-lg flex-shrink-0 ${
-                              isUrgent ? 'bg-red-100' : 'bg-orange-100'
+                              isUrgent ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'
                             }`}>
-                              <AlertTriangle size={18} className={isUrgent ? 'text-red-600' : 'text-orange-600'} />
+                              <AlertTriangle size={18} className={isUrgent ? 'text-red-700' : 'text-orange-700'} />
                             </div>
                           ) : (
                             <div className={`p-2 rounded-lg flex-shrink-0 ${
-                              isUnread ? 'bg-amber-100 text-[#800000]' : 'bg-gray-100 text-gray-500'
+                              isUnread ? 'bg-red-200 text-[#800000]' : 'bg-gray-100 text-gray-500'
                             }`}>
                               <Bell size={18} />
                             </div>

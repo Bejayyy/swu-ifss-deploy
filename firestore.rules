@@ -520,5 +520,12 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read, write: if isMainRole() && isPhinmaedEmail();
     }
+
+    // No Class Days Collection - Registrar/Developer can write, all staff can read
+    match /no_class_days/{dayId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create, update, delete: if isSignedIn() && isPhinmaedEmail()
+        && (getRole() == 'registrar' || getRole() == 'developer');
+    }
   }
 }

@@ -8,7 +8,8 @@ import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useModal } from '../hooks/useModal';
 import ProgressStatCards from '../components/ProgressStatCards';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
-import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS, isReservationActionable, getActivePendingRecord } from '../constants/approvalWorkflow';
+import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS, isReservationActionable, filterReservationsForRole, getApproverSpecificStatus, getActivePendingRecord } from '../constants/approvalWorkflow';
+
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
 import { formatCollegeName } from '../constants/colleges';
@@ -103,7 +104,7 @@ export default function ApprovalManagement() {
 
   const actionableRoleRequests = useMemo(() => {
     if (!hasApprovalPermission || !requests?.length || !profile || !role) return [];
-    return requests.filter((r) => isReservationActionable(r, role, profile));
+    return filterReservationsForRole(requests, role, profile);
   }, [hasApprovalPermission, requests, role, profile]);
 
   const myRequests = useMemo(() => {
@@ -134,10 +135,14 @@ export default function ApprovalManagement() {
     return activeCategoryRequests.filter((r) => {
       const typeMatch = tab === 'academic' ? r.type === 'academic' : r.type === 'non-academic';
 
+      const effectiveStatus = (hasApprovalPermission && showSection === 'approvals')
+        ? getApproverSpecificStatus(r, role, profile)
+        : r.status;
+
       const statusMatch =
         filter === 'All' ||
-        r.status === filter ||
-        (filter === 'Pending' && (r.status === 'Pending' || r.status === 'In Progress' || r.status === 'Draft'));
+        effectiveStatus === filter ||
+        (filter === 'Pending' && (effectiveStatus === 'Pending' || effectiveStatus === 'In Progress' || effectiveStatus === 'Draft'));
 
       let dateMatch = true;
       if (dateFrom || dateTo) {
@@ -162,7 +167,7 @@ export default function ApprovalManagement() {
 
       return typeMatch && statusMatch && dateMatch && searchMatch;
     });
-  }, [activeCategoryRequests, tab, filter, dateFrom, dateTo, searchQuery]);
+  }, [activeCategoryRequests, tab, filter, dateFrom, dateTo, searchQuery, hasApprovalPermission, showSection, role, profile]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -178,15 +183,34 @@ export default function ApprovalManagement() {
   const startIndex = filteredRequests.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
   const endIndex = Math.min(currentPage * itemsPerPage, filteredRequests.length);
 
-  const counts = useMemo(
-    () => ({
+  const counts = useMemo(() => {
+    if (hasApprovalPermission && showSection === 'approvals') {
+      let pendingCount = 0;
+      let approvedCount = 0;
+      let rejectedCount = 0;
+
+      activeCategoryRequests.forEach((r) => {
+        const st = getApproverSpecificStatus(r, role, profile);
+        if (st === 'Approved') approvedCount += 1;
+        else if (st === 'Rejected') rejectedCount += 1;
+        else pendingCount += 1;
+      });
+
+      return {
+        total: activeCategoryRequests.length,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+      };
+    }
+
+    return {
       total: activeCategoryRequests.length,
       pending: activeCategoryRequests.filter((r) => r.status === 'Pending' || r.status === 'In Progress' || r.status === 'Draft').length,
       approved: activeCategoryRequests.filter((r) => r.status === 'Approved').length,
       rejected: activeCategoryRequests.filter((r) => r.status === 'Rejected').length,
-    }),
-    [activeCategoryRequests],
-  );
+    };
+  }, [activeCategoryRequests, hasApprovalPermission, showSection, role, profile]);
 
   const stats = [
     { label: 'Total Requests', value: counts.total, icon: ClipboardList, accent: 'total' },
@@ -536,20 +560,48 @@ export default function ApprovalManagement() {
 
                         <td className="py-3.5 px-4 align-top">
                           <div className="space-y-1.5">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                              req.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              req.status === 'Rejected' ? 'bg-red-50 text-red-700 border border-red-200' :
-                              'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {req.status === 'Approved' ? <CheckCircle size={12} /> : <Clock size={12} />}
-                              {req.status}
-                            </span>
+                            {(() => {
+                              const effectiveStatus = (hasApprovalPermission && showSection === 'approvals')
+                                ? getApproverSpecificStatus(req, role, profile)
+                                : req.status;
 
-                            {req.status !== 'Approved' && req.status !== 'Rejected' && activePending && (
-                              <div className="text-[11px] text-gray-600 font-semibold bg-gray-50 p-1.5 rounded-lg border border-gray-100">
-                                Pending Step: <span className="font-bold text-[#7A0808]">{activeStepLabel}</span>
-                              </div>
-                            )}
+                              const isAppr = effectiveStatus === 'Approved';
+                              const isRej = effectiveStatus === 'Rejected';
+
+                              return (
+                                <>
+                                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                    isAppr ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                    isRej ? 'bg-red-50 text-red-700 border border-red-200' :
+                                    'bg-amber-50 text-amber-700 border border-amber-200'
+                                  }`}>
+                                    {isAppr ? <CheckCircle size={12} /> : isRej ? <XCircle size={12} /> : <Clock size={12} />}
+                                    {isAppr ? 'Approved' : isRej ? 'Rejected' : 'Pending Action'}
+                                  </span>
+
+                                  {isAppr && req.status !== 'Approved' && (
+                                    <div className="text-[10px] text-emerald-700 font-semibold bg-emerald-50/60 p-1.5 rounded-lg border border-emerald-100 flex items-center gap-1">
+                                      <span>✓ Approved on your side</span>
+                                      {activePending && (
+                                        <span className="text-gray-500 font-normal">· Pending {activeStepLabel}</span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {isRej && (
+                                    <div className="text-[10px] text-red-700 font-semibold bg-red-50/60 p-1.5 rounded-lg border border-red-100">
+                                      ✕ Rejected on your side
+                                    </div>
+                                  )}
+
+                                  {!isAppr && !isRej && activePending && (
+                                    <div className="text-[11px] text-gray-600 font-semibold bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                                      Pending Step: <span className="font-bold text-[#7A0808]">{activeStepLabel}</span>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </td>
 
