@@ -628,7 +628,21 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
  * Real-time notification helper for requestor when reservation is approved or rejected
  */
 async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resType, reservationId, remarks, type, approverName, approverRole, venue }) {
-  if (!requestorUid && !requestorEmail) return;
+  let targetEmail = (requestorEmail || '').trim();
+
+  // If email is missing, lookup requestor profile by UID
+  if (!targetEmail && requestorUid) {
+    try {
+      const uSnap = await getDoc(doc(db, COLLECTIONS.USERS, requestorUid));
+      if (uSnap.exists()) {
+        targetEmail = (uSnap.data().email || '').trim();
+      }
+    } catch (e) {
+      console.warn('Could not fetch requestor profile for email:', e);
+    }
+  }
+
+  if (!requestorUid && !targetEmail) return;
 
   const isApproved = type === 'requestor_approved';
   const linkPath = resType === 'academic' ? `/academic-request/${reservationId}` : `/request/${reservationId}`;
@@ -637,7 +651,7 @@ async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resT
   try {
     await addDoc(collection(db, 'notifications'), {
       userId: requestorUid || '',
-      userEmail: requestorEmail || '',
+      userEmail: targetEmail || '',
       title: isApproved ? '✅ Reservation Approved' : '❌ Reservation Rejected',
       message: isApproved
         ? `Your room reservation "${title}" has been fully approved!`
@@ -654,11 +668,11 @@ async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resT
   }
 
   // 2. Email notification to requestor
-  if (requestorEmail) {
+  if (targetEmail) {
     try {
       const sendDecisionEmail = httpsCallable(functions, 'sendReservationDecisionEmail');
       await sendDecisionEmail({
-        email: requestorEmail,
+        email: targetEmail,
         displayName: '',
         title: title || 'Room Reservation',
         resType: resType === 'academic' ? 'Academic' : 'Non-Academic',

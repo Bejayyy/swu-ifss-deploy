@@ -730,12 +730,17 @@ exports.sendReservationDecisionEmail = functions.https.onCall(async (data, conte
               <p><strong>Action Taken By:</strong> ${approverName || 'Approver'} (${approverRole || 'Approver'})</p>
             </div>
 
-            ${remarks ? `
+            ${!isApproved ? `
             <div class="remarks-box">
-              <strong>Remarks / Reason for Rejection:</strong>
+              <strong style="color: #991b1b; font-size: 14px;">Reason for Rejection:</strong>
+              <p style="margin: 6px 0 0 0; font-size: 13px; font-weight: 600; color: #7f1d1d;">${remarks || 'No reason provided by approver.'}</p>
+            </div>
+            ` : (remarks ? `
+            <div class="info-box">
+              <strong>Approver Remarks:</strong>
               <p style="margin: 5px 0 0 0;">${remarks}</p>
             </div>
-            ` : ''}
+            ` : '')}
 
             <center>
               <a href="${APP_URL}${link || '/request'}" class="button">View Request Details</a>

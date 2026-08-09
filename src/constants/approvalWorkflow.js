@@ -150,22 +150,22 @@ function findMyApprovalRecord(approvalRecords, role, profile) {
 export function getApproverSpecificStatus(reservation, role, profile) {
   if (!reservation || !role || !profile) return reservation?.status || 'Pending';
 
-  // Check if this specific user signed/acted on any step
+  // 1. Find the best matching approval record for this profile/role (Pending > Approved/Rejected > Waiting)
+  const myRecord = findMyApprovalRecord(reservation.approvalRecords, role, profile);
+
+  if (myRecord) {
+    if (myRecord.status === APPROVAL_RECORD_STATUS.PENDING) return 'Pending';
+    if (myRecord.status === APPROVAL_RECORD_STATUS.REJECTED) return 'Rejected';
+    if (myRecord.status === APPROVAL_RECORD_STATUS.APPROVED) return 'Approved';
+  }
+
+  // 2. Fallback: check if this specific user signed/acted on any step
   const userRecord = reservation.approvalRecords?.find(
     (r) => r.approvedByUid === profile.uid
   );
   if (userRecord) {
     if (userRecord.status === APPROVAL_RECORD_STATUS.REJECTED) return 'Rejected';
     if (userRecord.status === APPROVAL_RECORD_STATUS.APPROVED) return 'Approved';
-  }
-
-  // Find record for this role or custom manager
-  const myRecord = findMyApprovalRecord(reservation.approvalRecords, role, profile);
-
-  if (myRecord) {
-    if (myRecord.status === APPROVAL_RECORD_STATUS.REJECTED) return 'Rejected';
-    if (myRecord.status === APPROVAL_RECORD_STATUS.APPROVED) return 'Approved';
-    if (myRecord.status === APPROVAL_RECORD_STATUS.PENDING) return 'Pending';
   }
 
   return reservation.status;
@@ -178,47 +178,34 @@ export function getApproverSpecificStatus(reservation, role, profile) {
 export function filterReservationsForRole(reservations, role, profile) {
   if (!role || !profile) return [];
 
-  console.log('[filterReservationsForRole] role:', role, 'profile.uid:', profile.uid, 'profile.college:', profile.college, 'totalReservations:', reservations.length);
-
   return reservations.filter((reservation) => {
-    const resTitle = reservation.title || reservation.activity || reservation.id;
-
     // Skip user's own reservations - they should be in "My Requests" section
     if (reservation.createdByUid === profile.uid) {
-      console.log(`[FILTER] "${resTitle}" → SKIP (own reservation)`);
       return false;
     }
 
     // Skip reservations without proper approval workflow
     if (!Array.isArray(reservation.approvalRecords) || !reservation.approvalRecords.length) {
-      console.log(`[FILTER] "${resTitle}" → SKIP (no approvalRecords)`);
       return false;
     }
 
-    // Always keep in tracker if this user acted on/signed any step of the reservation
-    const userSigned = reservation.approvalRecords.some(
-      (r) => r.approvedByUid === profile.uid
-    );
-    if (userSigned) {
-      console.log(`[FILTER] "${resTitle}" → KEEP (user already signed)`);
-      return true;
-    }
-
-    // Find the correct approval record for this role/profile
+    // Find the correct approval record for this role/profile (Pending > Approved/Rejected > Waiting)
     const myRecord = findMyApprovalRecord(reservation.approvalRecords, role, profile);
+
+    // If no direct myRecord found, fallback to checking if user previously signed any step
     if (!myRecord) {
-      console.log(`[FILTER] "${resTitle}" → SKIP (no matching record). Records:`, JSON.stringify(reservation.approvalRecords?.map(r => ({ roleId: r.roleId, status: r.status, customManagerUid: r.customManagerUid }))));
+      const userSigned = reservation.approvalRecords.some(
+        (r) => r.approvedByUid === profile.uid
+      );
+      if (userSigned) return true;
       return false;
     }
-
-    console.log(`[FILTER] "${resTitle}" → myRecord: roleId=${myRecord.roleId}, status=${myRecord.status}, customManagerUid=${myRecord.customManagerUid}`);
 
     // For custom manager steps (e.g. room-manager-dean step with customManagerUid)
     if (myRecord.customManagerUid && myRecord.customManagerUid === profile.uid) {
       const keep = myRecord.status === APPROVAL_RECORD_STATUS.PENDING ||
              myRecord.status === APPROVAL_RECORD_STATUS.APPROVED ||
              myRecord.status === APPROVAL_RECORD_STATUS.REJECTED;
-      console.log(`[FILTER] "${resTitle}" → custom manager, keep=${keep}`);
       return keep;
     }
 
@@ -231,7 +218,9 @@ export function filterReservationsForRole(reservations, role, profile) {
                      myRecord.status === APPROVAL_RECORD_STATUS.REJECTED;
     
     if (!isPending && !hasActed) {
-      console.log(`[FILTER] "${resTitle}" → SKIP (status=${myRecord.status}, not pending/acted)`);
+      // If myRecord is waiting, but user signed an earlier step (e.g. Level 1 Dean signed, Level 3 Room Manager is waiting)
+      const userSignedEarlier = reservation.approvalRecords.some((r) => r.approvedByUid === profile.uid);
+      if (userSignedEarlier) return true;
       return false; // Still waiting, hasn't reached this role yet
     }
     
@@ -242,13 +231,10 @@ export function filterReservationsForRole(reservations, role, profile) {
         const pCol = profile.college || profile.department || profile.collegeCode || profile.departmentCode || '';
         const rCol = reservation.college || reservation.department || reservation.requestorCollege || reservation.createdByCollege || '';
 
-        const match = isCollegeMatch(pCol, rCol);
-        console.log(`[FILTER] "${resTitle}" → dean college check: pCol="${pCol}", rCol="${rCol}", match=${match}`);
-        return match;
+        return isCollegeMatch(pCol, rCol);
       }
     }
     
-    console.log(`[FILTER] "${resTitle}" → KEEP (final fallthrough)`);
     return true;
   });
 }
