@@ -406,15 +406,23 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
               setShowSettingsModal(false);
               setShowForgotPassword(false);
             }}
-            className="flex items-center gap-2 hover:bg-white/10 px-2 py-1.5 transition-colors"
+            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 border border-white/20 px-2.5 py-1.5 transition-all shadow-2xs"
             style={{ borderRadius: r }}
           >
-            <div
-              className="w-9 h-9 flex items-center justify-center text-[#2B3235] font-black text-sm"
-              style={{ background: '#FFC107', borderRadius: r }}
-            >
-              {initials}
-            </div>
+            {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
+              <img
+                src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
+                alt={displayName}
+                className="w-8 h-8 rounded-xl object-cover border border-white/40 shadow-xs flex-shrink-0"
+              />
+            ) : (
+              <div
+                className="w-8 h-8 flex items-center justify-center text-[#2B3235] font-black text-xs shadow-xs border border-white/40"
+                style={{ background: '#FFC107', borderRadius: r }}
+              >
+                {initials}
+              </div>
+            )}
             <div className="text-left hidden sm:block">
               <p className="text-white text-xs font-bold leading-tight">{displayName}</p>
               <p className="text-red-100 text-[10px] font-medium">{roleLabel}</p>
@@ -422,31 +430,48 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             <ChevronDown size={14} className="text-red-100 hidden sm:block" />
           </button>
           {showProfile && (
-            <div className="absolute right-0 top-14 w-52 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-xs font-bold" style={{ color: '#2B3235' }}>{displayName}</p>
-                <p className="text-[11px]" style={{ color: '#2B3235', opacity: 0.55 }}>{roleLabel}</p>
+            <div className="absolute right-0 top-14 w-60 bg-white shadow-2xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
+              <div className="p-4 bg-gradient-to-br from-red-50 to-amber-50/40 border-b border-gray-100 flex items-center gap-3">
+                {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
+                  <img
+                    src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
+                    alt={displayName}
+                    className="w-11 h-11 rounded-xl object-cover border-2 border-[#800000] shadow-xs flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-xl bg-[#800000] text-white font-black text-base flex items-center justify-center shadow-xs flex-shrink-0">
+                    {initials}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-extrabold text-gray-900 truncate">{displayName}</p>
+                  <p className="text-[11px] text-gray-500 truncate">{profile?.email}</p>
+                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-[#800000] text-white">
+                    {roleLabel}
+                  </span>
+                </div>
               </div>
-              <button
-                type="button"
-                className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-red-50/50 flex items-center gap-2"
-                style={{ color: '#2B3235' }}
-                onClick={() => {
-                  setShowProfile(false);
-                  navigate('/profile-settings');
-                }}
-              >
-                <Settings size={15} className="text-[#800000]" />
-                Profile & Settings
-              </button>
-              <button
-                type="button"
-                className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 border-t border-gray-100 flex items-center gap-2"
-                onClick={handleSignOut}
-              >
-                <User size={15} className="text-red-600" />
-                Sign Out
-              </button>
+              <div className="p-2 space-y-0.5">
+                <button
+                  type="button"
+                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-gray-700 hover:bg-red-50/70 hover:text-[#800000] rounded-xl flex items-center gap-2.5 transition-colors"
+                  onClick={() => {
+                    setShowProfile(false);
+                    navigate('/profile-settings');
+                  }}
+                >
+                  <Settings size={16} className="text-[#800000]" />
+                  Profile & Settings
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2.5 transition-colors"
+                  onClick={handleSignOut}
+                >
+                  <User size={16} className="text-red-600" />
+                  Sign Out
+                </button>
+              </div>
             </div>
           )}
 
@@ -460,21 +485,25 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
       {showNotif && (
         <div className="fixed inset-0 z-[60] p-4 md:p-8" onClick={() => setShowNotif(false)}>
           <div
-            className="ml-auto w-full max-w-3xl h-full max-h-[85vh] bg-white shadow-2xl border border-gray-100 overflow-hidden flex flex-col"
+            className="ml-auto w-full max-w-3xl h-full max-h-[85vh] bg-slate-50 shadow-2xl border border-gray-200 overflow-hidden flex flex-col"
             style={{ borderRadius: r }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+            {/* Header Container */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white shadow-2xs">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-black text-base" style={{ color: '#2B3235' }}>Notifications</p>
+                  <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-[#800000]">
+                    <Bell size={16} />
+                  </div>
+                  <p className="font-black text-base text-[#2B3235]">Notifications</p>
                   {unreadCount > 0 && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#800000] text-white">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-[#800000] text-white shadow-xs">
                       {unreadCount} Unread
                     </span>
                   )}
                 </div>
-                <p className="text-xs font-medium mt-0.5" style={{ color: '#2B3235', opacity: 0.65 }}>
+                <p className="text-xs font-medium mt-1 text-gray-500">
                   System alerts, scheduling access, and request updates
                 </p>
               </div>
@@ -484,25 +513,28 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                   <button
                     type="button"
                     onClick={handleMarkAllRead}
-                    className="text-xs font-extrabold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1"
+                    className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5"
                   >
                     <CheckCheck size={14} className="text-[#800000]" />
                     Mark all as read
                   </button>
                 )}
-                <button type="button" className="btn-outline-maroon text-xs py-1.5 px-3" onClick={() => setShowNotif(false)}>
+                <button type="button" className="btn-outline-maroon text-xs py-1.5 px-3 rounded-xl" onClick={() => setShowNotif(false)}>
                   Close
                 </button>
               </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+            {/* Notification List Items Wrapped in Container Cards */}
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
               {notifItems.length === 0 ? (
-                <div className="px-6 py-16 text-center">
-                  <Bell size={48} className="mx-auto mb-3 text-gray-300" />
-                  <p className="text-sm font-bold mb-1" style={{ color: '#2B3235' }}>No new notifications</p>
+                <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-gray-300">
+                  <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-slate-100 flex items-center justify-center text-gray-400">
+                    <Bell size={28} />
+                  </div>
+                  <p className="text-sm font-bold text-gray-800 mb-1">No notifications</p>
                   <p className="text-xs text-gray-500">
-                    You're all caught up! Check back later for updates.
+                    You're all caught up! Updates will appear here when available.
                   </p>
                 </div>
               ) : (
@@ -514,103 +546,104 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                   return (
                     <div 
                       key={n.id} 
-                      className={`px-6 py-4 transition-all cursor-pointer border-b border-gray-100 ${
+                      className={`p-4 transition-all cursor-pointer rounded-2xl border ${
                         isUnread
                           ? isMaintenance
-                            ? (isUrgent ? 'bg-red-100/90 hover:bg-red-200/80 border-l-4 border-l-red-600 font-semibold' : 'bg-orange-100/90 hover:bg-orange-200/80 border-l-4 border-l-orange-500 font-semibold')
-                            : 'bg-red-100/90 hover:bg-red-200/80 border-l-4 border-l-[#800000] font-semibold text-gray-900 shadow-2xs'
-                          : 'bg-white hover:bg-gray-50/80 border-l-4 border-l-transparent text-gray-600'
+                            ? (isUrgent ? 'bg-red-50/90 hover:bg-red-100/90 border-red-300 shadow-sm' : 'bg-orange-50/90 hover:bg-orange-100/90 border-orange-300 shadow-sm')
+                            : 'bg-white hover:bg-red-50/40 border-red-200 shadow-sm ring-1 ring-red-100'
+                          : 'bg-white hover:bg-slate-100/80 border-slate-200/80 text-gray-600'
                       }`}
                       onClick={() => handleViewRequest(n)}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          {isMaintenance ? (
-                            <div className={`p-2 rounded-lg flex-shrink-0 ${
-                              isUrgent ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'
-                            }`}>
-                              <AlertTriangle size={18} className={isUrgent ? 'text-red-700' : 'text-orange-700'} />
-                            </div>
-                          ) : (
-                            <div className={`p-2 rounded-lg flex-shrink-0 ${
-                              isUnread ? 'bg-red-200 text-[#800000]' : 'bg-gray-100 text-gray-500'
-                            }`}>
-                              <Bell size={18} />
+                      <div className="flex items-start gap-3.5">
+                        {isMaintenance ? (
+                          <div className={`p-2.5 rounded-xl flex-shrink-0 ${
+                            isUrgent ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'
+                          }`}>
+                            <AlertTriangle size={18} className={isUrgent ? 'text-red-700' : 'text-orange-700'} />
+                          </div>
+                        ) : (
+                          <div className={`p-2.5 rounded-xl flex-shrink-0 ${
+                            isUnread ? 'bg-red-100 text-[#800000]' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            <Bell size={18} />
+                          </div>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                            <span
+                              className="inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-md"
+                              style={{
+                                color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#800000',
+                                background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEE2E2',
+                              }}
+                            >
+                              {isMaintenance
+                                ? (isUrgent ? '⚠️ URGENT MAINTENANCE' : 'Maintenance Report')
+                                : n.notificationType === 'access_granted'
+                                  ? '📋 Course Scheduling Access'
+                                  : 'Pending Approval'}
+                            </span>
+
+                            {isUnread ? (
+                              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#800000] text-white">
+                                UNREAD
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                Read
+                              </span>
+                            )}
+                          </div>
+
+                          <p className={`text-sm ${isUnread ? 'font-black text-gray-900' : 'font-bold text-gray-800'} truncate`}>
+                            {n.title}
+                          </p>
+                          {n.message && (
+                            <p className="text-xs mt-1 text-gray-600 leading-relaxed font-medium">
+                              {n.message}
+                            </p>
+                          )}
+                          {!n.isDbNotif && (
+                            <div className="mt-2.5 p-2.5 bg-slate-50/80 border border-slate-100 rounded-xl text-xs space-y-0.5">
+                              <p className="truncate text-gray-700">
+                                <span className="font-bold">{isMaintenance ? 'Reported by:' : 'Requester:'}</span> {n.requester}
+                              </p>
+                              <p className="truncate text-gray-700">
+                                <span className="font-bold">{isMaintenance ? 'Issue:' : 'Activity:'}</span> {n.request}
+                              </p>
+                              {n.location && (
+                                <p className="truncate text-gray-700">
+                                  <span className="font-bold">Location:</span> {n.location}
+                                </p>
+                              )}
                             </div>
                           )}
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span
-                                className="inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-md"
-                                style={{
-                                  color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#800000',
-                                  background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEE2E2',
-                                }}
-                              >
-                                {isMaintenance
-                                  ? (isUrgent ? '⚠️ URGENT MAINTENANCE' : 'Maintenance Report')
-                                  : n.notificationType === 'access_granted'
-                                    ? '📋 Course Scheduling Access'
-                                    : 'Pending Approval'}
-                              </span>
+                          <div className="mt-3 flex items-center justify-between pt-2 border-t border-gray-100">
+                            <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
+                              <Clock3 size={12} /> {n.submittedAt || n.time}
+                            </span>
 
-                              {isUnread ? (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-[#800000] text-white">
-                                  UNREAD
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                                  Read
-                                </span>
-                              )}
-                            </div>
-
-                            <p className={`text-sm ${isUnread ? 'font-black text-gray-900' : 'font-semibold text-gray-700'} truncate`}>
-                              {n.title}
-                            </p>
-                            {n.message && (
-                              <p className="text-xs mt-1 text-gray-700 leading-relaxed font-medium">
-                                {n.message}
-                              </p>
-                            )}
-                            {!n.isDbNotif && (
-                              <>
-                                <p className="text-xs mt-1 truncate text-gray-700">
-                                  <span className="font-bold">{isMaintenance ? 'Reported by:' : 'Requester:'}</span> {n.requester}
-                                </p>
-                                <p className="text-xs truncate text-gray-700">
-                                  <span className="font-bold">{isMaintenance ? 'Issue:' : 'Activity:'}</span> {n.request}
-                                </p>
-                                <p className="text-xs truncate text-gray-700">
-                                  <span className="font-bold">Location:</span> {n.location}
-                                </p>
-                              </>
-                            )}
-                            <p className="text-[11px] mt-2 text-gray-400 font-medium">
-                              {n.submittedAt} · {n.time}
-                            </p>
+                            <button 
+                              type="button" 
+                              className={`text-xs py-1.5 px-3 font-bold rounded-xl transition-all ${
+                                isUnread ? 'bg-[#800000] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewRequest(n);
+                              }}
+                            >
+                              {n.notificationType === 'access_granted'
+                                ? 'Open Course Scheduling'
+                                : isMaintenance
+                                  ? 'View Maintenance Report'
+                                  : 'View Details'}
+                            </button>
                           </div>
                         </div>
-                      </div>
-
-                      <div className="mt-3 flex justify-end">
-                        <button 
-                          type="button" 
-                          className={`text-xs py-1.5 px-3 font-bold rounded-lg transition-all ${
-                            isUnread ? 'bg-[#800000] text-white hover:bg-[#600000]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewRequest(n);
-                          }}
-                        >
-                          {n.notificationType === 'access_granted'
-                            ? 'Open Course Scheduling'
-                            : isMaintenance
-                              ? 'View Maintenance Report'
-                              : 'View Details'}
-                        </button>
                       </div>
                     </div>
                   );
@@ -618,6 +651,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
               )}
             </div>
           </div>
+
         </div>
       )}
 

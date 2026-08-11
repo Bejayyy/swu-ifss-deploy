@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Bell, Check, ShieldCheck, Mail, Phone, Building2, ChevronRight, KeyRound } from 'lucide-react';
+import { User, Lock, Bell, Check, ShieldCheck, Mail, Phone, Building2, ChevronRight, KeyRound, Camera, Upload, Trash2 } from 'lucide-react';
 import { updatePassword } from 'firebase/auth';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,7 @@ export default function ProfileSettings() {
     department: profile?.department || profile?.college || '',
     role: profile?.role || 'User',
   });
+  const [photoURL, setPhotoURL] = useState(profile?.photoURL || profile?.avatarUrl || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
@@ -33,8 +34,45 @@ export default function ProfileSettings() {
         department: profile.department || profile.college || '',
         role: profile.role || 'User',
       });
+      if (profile.photoURL || profile.avatarUrl) {
+        setPhotoURL(profile.photoURL || profile.avatarUrl);
+      }
     }
   }, [profile]);
+
+  // Handle Photo Upload
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showNotification({
+        type: 'error',
+        title: 'Invalid File',
+        message: 'Please select an image file (PNG, JPG, JPEG, WEBP).',
+      });
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      showNotification({
+        type: 'warning',
+        title: 'File Too Large',
+        message: 'Profile photo must be less than 3MB in size.',
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotoURL(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoURL('');
+  };
 
   // Security Form state
   const [passwordForm, setPasswordForm] = useState({
@@ -61,11 +99,13 @@ export default function ProfileSettings() {
         name: profileForm.name,
         phone: profileForm.phone,
         department: profileForm.department,
+        photoURL: photoURL,
+        avatarUrl: photoURL,
       });
       showNotification({
         type: 'success',
         title: 'Profile Saved',
-        message: 'Your profile details have been updated successfully in the database.',
+        message: 'Your profile details and picture have been updated successfully in the database.',
       });
     } catch (err) {
       showNotification({
@@ -77,6 +117,7 @@ export default function ProfileSettings() {
       setIsUpdatingProfile(false);
     }
   };
+
 
   // Handle Password Change
   const handleUpdatePassword = async (e) => {
@@ -129,9 +170,17 @@ export default function ProfileSettings() {
           {/* Top Profile Card Summary */}
           <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs space-y-3">
             <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-[#800000] text-white text-xl font-black flex items-center justify-center shadow-xs flex-shrink-0">
-                {profile?.initials || 'U'}
-              </div>
+              {photoURL ? (
+                <img
+                  src={photoURL}
+                  alt="Profile Avatar"
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-[#800000] shadow-xs flex-shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-[#800000] text-white text-xl font-black flex items-center justify-center shadow-xs flex-shrink-0">
+                  {profile?.initials || 'U'}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <h3 className="font-extrabold text-sm text-gray-900 truncate">{profileForm.name || 'User'}</h3>
                 <p className="text-[11px] text-gray-500 truncate">{profileForm.email}</p>
@@ -208,11 +257,75 @@ export default function ProfileSettings() {
                   <User size={22} className="text-[#800000]" /> Profile Information
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  Update your display name, contact phone, department, and account information.
+                  Update your display name, profile photo, contact phone, department, and account details.
                 </p>
               </div>
 
-              <form onSubmit={handleUpdateProfile} className="space-y-5">
+              <form onSubmit={handleUpdateProfile} className="space-y-6">
+                {/* Profile Photo Uploader Section */}
+                <div className="flex flex-col sm:flex-row items-center gap-6 p-5 bg-gradient-to-r from-red-50/60 to-amber-50/30 border border-red-100 rounded-2xl">
+                  <div className="relative group flex-shrink-0">
+                    {photoURL ? (
+                      <img
+                        src={photoURL}
+                        alt="Profile Avatar"
+                        className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-md ring-2 ring-red-200"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-2xl bg-[#800000] text-white text-2xl font-black flex items-center justify-center border-4 border-white shadow-md">
+                        {profile?.initials || 'U'}
+                      </div>
+                    )}
+                    <label
+                      htmlFor="profile-photo-input"
+                      className="absolute -bottom-1 -right-1 p-2 bg-[#800000] hover:bg-[#600000] text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-105"
+                      title="Upload Profile Picture"
+                    >
+                      <Camera size={14} />
+                      <input
+                        id="profile-photo-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-1.5 text-center sm:text-left">
+                    <h3 className="font-extrabold text-sm text-gray-900">Profile Picture</h3>
+                    <p className="text-xs text-gray-500">
+                      Upload a clean, professional photo (PNG, JPG, or WEBP under 3MB).
+                    </p>
+                    <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+                      <label
+                        htmlFor="profile-photo-btn"
+                        className="px-3.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                      >
+                        <Upload size={13} className="text-[#800000]" />
+                        Upload New Photo
+                        <input
+                          id="profile-photo-btn"
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      {photoURL && (
+                        <button
+                          type="button"
+                          onClick={handleRemovePhoto}
+                          className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={13} />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Full Name</label>
