@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Bell, Check, ShieldCheck, Mail, Phone, Building2, ChevronRight, KeyRound, Camera, Upload, Trash2 } from 'lucide-react';
+import {
+  User, Lock, Bell, Check, ShieldCheck, Mail, Phone, Building2, ChevronRight, KeyRound,
+  Camera, Upload, Trash2, Shield, Laptop, History, Download, Sun, Moon, Globe, Clock,
+  Award, FileText, BadgeCheck, AlertCircle, Smartphone, CheckCircle2, Laptop2
+} from 'lucide-react';
 import { updatePassword } from 'firebase/auth';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -12,7 +16,7 @@ export default function ProfileSettings() {
   const { profile, updateProfileState } = useAuth();
   const { showNotification, confirmState, notificationState } = useModal();
 
-  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'security' | 'preferences'
+  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'institutional' | 'security' | 'preferences' | 'activityLog'
 
   // Profile Form state
   const [profileForm, setProfileForm] = useState({
@@ -21,6 +25,11 @@ export default function ProfileSettings() {
     phone: profile?.phone || '',
     department: profile?.department || profile?.college || '',
     role: profile?.role || 'User',
+    employeeId: profile?.employeeId || 'SWU-2026-0412',
+    designation: profile?.designation || 'Registrar Administrator',
+    officeLocation: profile?.officeLocation || 'Main Administration Bldg, Room 204',
+    emergencyContactName: profile?.emergencyContactName || '',
+    emergencyContactPhone: profile?.emergencyContactPhone || '',
   });
   const [photoURL, setPhotoURL] = useState(profile?.photoURL || profile?.avatarUrl || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -33,6 +42,11 @@ export default function ProfileSettings() {
         phone: profile.phone || '',
         department: profile.department || profile.college || '',
         role: profile.role || 'User',
+        employeeId: profile.employeeId || 'SWU-2026-0412',
+        designation: profile.designation || 'Registrar Administrator',
+        officeLocation: profile.officeLocation || 'Main Administration Bldg, Room 204',
+        emergencyContactName: profile.emergencyContactName || '',
+        emergencyContactPhone: profile.emergencyContactPhone || '',
       });
       if (profile.photoURL || profile.avatarUrl) {
         setPhotoURL(profile.photoURL || profile.avatarUrl);
@@ -120,12 +134,18 @@ export default function ProfileSettings() {
     confirmPassword: '',
   });
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
-  // Preference Toggles state
+  // System Preferences state
   const [preferences, setPreferences] = useState({
     emailAlerts: true,
     inAppNotifs: true,
     approvalUpdates: true,
+    theme: 'light',
+    compactSidebar: false,
+    timezone: 'Asia/Manila',
+    dateFormat: 'MM/DD/YYYY',
+    timeFormat: '12h',
   });
 
   // Handle Profile Update
@@ -139,6 +159,11 @@ export default function ProfileSettings() {
         name: profileForm.name,
         phone: profileForm.phone,
         department: profileForm.department,
+        employeeId: profileForm.employeeId,
+        designation: profileForm.designation,
+        officeLocation: profileForm.officeLocation,
+        emergencyContactName: profileForm.emergencyContactName,
+        emergencyContactPhone: profileForm.emergencyContactPhone,
         photoURL: photoURL,
         avatarUrl: photoURL,
       };
@@ -161,8 +186,6 @@ export default function ProfileSettings() {
       setIsUpdatingProfile(false);
     }
   };
-
-
 
   // Handle Password Change
   const handleUpdatePassword = async (e) => {
@@ -205,8 +228,41 @@ export default function ProfileSettings() {
     }
   };
 
+  // Export Profile Data Handler
+  const handleExportUserData = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
+      userProfile: {
+        uid: profile?.uid,
+        displayName: profileForm.name,
+        email: profileForm.email,
+        phone: profileForm.phone,
+        department: profileForm.department,
+        role: profileForm.role,
+        employeeId: profileForm.employeeId,
+        designation: profileForm.designation,
+        officeLocation: profileForm.officeLocation,
+      },
+      systemPreferences: preferences,
+      exportedAt: new Date().toISOString(),
+      institution: "Southwestern University PH - IFSS",
+    }, null, 2));
+
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `Profile_Export_${profileForm.name.replace(/\s+/g, '_')}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+
+    showNotification({
+      type: 'success',
+      title: 'Data Exported',
+      message: 'Your profile configuration data JSON has been downloaded.',
+    });
+  };
+
   return (
-    <Layout title="Profile & Account Settings" subtitle="Manage your user profile details, credentials, and notification preferences">
+    <Layout title="Profile & Account Settings" subtitle="Manage user profile, institutional credentials, security, 2FA, and system preferences">
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
 
       <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6 items-start">
@@ -237,58 +293,100 @@ export default function ProfileSettings() {
           </div>
 
           {/* Navigation Menu (Matching Reference Layout) */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
-            <p className="px-3 pt-2 pb-2 text-[10px] font-black uppercase tracking-wider text-gray-400">
-              Account & Settings
-            </p>
+          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-3">
+            {/* SECTION 1: ACCOUNT & PERSONAL */}
+            <div className="space-y-1">
+              <p className="px-3 pt-1 pb-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                Personal & Faculty
+              </p>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('profile')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'profile'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <User size={16} />
-                <span>Profile Information</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'profile' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'profile'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <User size={16} />
+                  <span>Profile Information</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'profile' ? 'opacity-100' : 'opacity-40'} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('security')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'security'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Lock size={16} />
-                <span>Account Security</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'security' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('institutional')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'institutional'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <BadgeCheck size={16} />
+                  <span>Institutional Credentials</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'institutional' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('preferences')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'preferences'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Bell size={16} />
-                <span>Notification Preferences</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'preferences' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+            {/* SECTION 2: SECURITY & SYSTEM */}
+            <div className="space-y-1 pt-2 border-t border-gray-100">
+              <p className="px-3 pt-1 pb-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                Security & Preferences
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('security')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'security'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck size={16} />
+                  <span>Security & 2FA Log</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'security' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('preferences')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'preferences'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Globe size={16} />
+                  <span>Display & Preferences</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'preferences' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('activityLog')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'activityLog'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <History size={16} />
+                  <span>Activity Log & Data Export</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'activityLog' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -429,106 +527,333 @@ export default function ProfileSettings() {
             </div>
           )}
 
-          {/* TAB 2: ACCOUNT SECURITY */}
-          {activeTab === 'security' && (
+          {/* TAB 2: INSTITUTIONAL CREDENTIALS */}
+          {activeTab === 'institutional' && (
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
               <div className="border-b border-gray-100 pb-4">
                 <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
-                  <Lock size={22} className="text-[#800000]" /> Account Security & Password
+                  <BadgeCheck size={22} className="text-[#800000]" /> Institutional & Office Information
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  Change your password and manage account security preferences.
+                  Manage faculty identification numbers, official designations, and emergency contacts.
                 </p>
               </div>
 
-              <form onSubmit={handleUpdatePassword} className="space-y-5 max-w-md">
-                <div>
-                  <label className="form-label text-xs font-bold text-gray-700 mb-1 block">New Password</label>
-                  <input
-                    type="password"
-                    className="form-input text-xs font-semibold w-full"
-                    placeholder="Enter new password (min. 6 chars)"
-                    value={passwordForm.newPassword}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                    required
-                  />
+              <form onSubmit={handleUpdateProfile} className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Employee / Faculty ID</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold w-full"
+                      value={profileForm.employeeId}
+                      onChange={(e) => setProfileForm({ ...profileForm, employeeId: e.target.value })}
+                      placeholder="e.g. SWU-FAC-2026-088"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Official Designation / Title</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold w-full"
+                      value={profileForm.designation}
+                      onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })}
+                      placeholder="e.g. Senior Registrar Administrator"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Campus Office Location</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold w-full"
+                      value={profileForm.officeLocation}
+                      onChange={(e) => setProfileForm({ ...profileForm, officeLocation: e.target.value })}
+                      placeholder="e.g. Main Administration Building, Room 204"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Emergency Contact Name</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold w-full"
+                      value={profileForm.emergencyContactName}
+                      onChange={(e) => setProfileForm({ ...profileForm, emergencyContactName: e.target.value })}
+                      placeholder="e.g. Jane Doe (Spouse)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Emergency Contact Phone</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold w-full"
+                      value={profileForm.emergencyContactPhone}
+                      onChange={(e) => setProfileForm({ ...profileForm, emergencyContactPhone: e.target.value })}
+                      placeholder="e.g. +63 917 123 4567"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Confirm New Password</label>
-                  <input
-                    type="password"
-                    className="form-input text-xs font-semibold w-full"
-                    placeholder="Re-enter new password"
-                    value={passwordForm.confirmPassword}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div className="pt-2">
+                <div className="flex justify-end pt-4 border-t border-gray-100">
                   <button
                     type="submit"
-                    disabled={isUpdatingPassword}
+                    disabled={isUpdatingProfile}
                     className="btn-maroon px-6 py-2.5 text-xs font-bold rounded-xl shadow-xs"
                   >
-                    {isUpdatingPassword ? 'Updating Password...' : 'Update Password'}
+                    {isUpdatingProfile ? 'Saving...' : 'Save Institutional Info'}
                   </button>
                 </div>
               </form>
             </div>
           )}
 
-          {/* TAB 3: NOTIFICATION PREFERENCES */}
+          {/* TAB 3: ACCOUNT SECURITY & 2FA LOG */}
+          {activeTab === 'security' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
+              <div className="border-b border-gray-100 pb-4">
+                <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
+                  <ShieldCheck size={22} className="text-[#800000]" /> Security & Password Management
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Change authentication credentials, manage Two-Factor Authentication (2FA), and review active sessions.
+                </p>
+              </div>
+
+              {/* Password Change Form */}
+              <div className="p-5 border border-slate-200/90 bg-slate-50/50 rounded-2xl space-y-4">
+                <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                  <KeyRound size={16} className="text-[#800000]" /> Change Password
+                </h3>
+
+                <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-md">
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">New Password</label>
+                    <input
+                      type="password"
+                      className="form-input text-xs font-semibold w-full"
+                      placeholder="Enter new password (min. 6 chars)"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Confirm New Password</label>
+                    <input
+                      type="password"
+                      className="form-input text-xs font-semibold w-full"
+                      placeholder="Re-enter new password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isUpdatingPassword}
+                    className="btn-maroon px-5 py-2 text-xs font-bold rounded-xl shadow-xs"
+                  >
+                    {isUpdatingPassword ? 'Updating Password...' : 'Update Password'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Two-Factor Authentication (2FA) */}
+              <div className="p-5 border border-slate-200/90 bg-white rounded-2xl flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                    <Shield size={16} className="text-[#800000]" /> Two-Factor Authentication (2FA)
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Add an additional layer of security to your SWU account via authenticator app.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTwoFactorEnabled(!twoFactorEnabled);
+                    showNotification({
+                      type: 'success',
+                      title: !twoFactorEnabled ? '2FA Enabled' : '2FA Disabled',
+                      message: !twoFactorEnabled ? 'Two-Factor Authentication is now active.' : '2FA has been disabled for this account.',
+                    });
+                  }}
+                  className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all ${
+                    twoFactorEnabled
+                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {twoFactorEnabled ? '✓ 2FA Active' : 'Enable 2FA'}
+                </button>
+              </div>
+
+              {/* Active Login Sessions Log */}
+              <div className="p-5 border border-slate-200/90 bg-white rounded-2xl space-y-3">
+                <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                  <Laptop2 size={16} className="text-[#800000]" /> Active Session & Security Log
+                </h3>
+
+                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <Laptop size={20} className="text-[#800000]" />
+                    <div>
+                      <p className="font-bold text-gray-900">Windows PC · Chrome Browser</p>
+                      <p className="text-[11px] text-gray-500">Cebu City, Philippines · Current Active Session</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                    Active Now
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: DISPLAY & SYSTEM PREFERENCES */}
           {activeTab === 'preferences' && (
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
               <div className="border-b border-gray-100 pb-4">
                 <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
-                  <Bell size={22} className="text-[#800000]" /> Notification Preferences
+                  <Globe size={22} className="text-[#800000]" /> Display & System Preferences
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  Choose how and when you receive system alerts and reservation updates.
+                  Customize theme colors, timezone settings, date formats, and notification alerts.
                 </p>
               </div>
 
-              <div className="space-y-4 max-w-lg">
-                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">Email Notifications</p>
-                    <p className="text-[11px] text-slate-500">Receive email alerts for new reservation updates</p>
+              <div className="space-y-5 max-w-xl">
+                {/* Notification Settings */}
+                <div className="space-y-3">
+                  <h3 className="text-xs font-black uppercase text-gray-400 tracking-wider">Alert Notifications</h3>
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Email Notifications</p>
+                      <p className="text-[11px] text-slate-500">Receive email alerts for new room reservation requests</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.emailAlerts}
+                      onChange={(e) => setPreferences({ ...preferences, emailAlerts: e.target.checked })}
+                      className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.emailAlerts}
-                    onChange={(e) => setPreferences({ ...preferences, emailAlerts: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
-                  />
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">In-App Notifications</p>
+                      <p className="text-[11px] text-slate-500">Show bell badge alerts in system top navigation bar</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.inAppNotifs}
+                      onChange={(e) => setPreferences({ ...preferences, inAppNotifs: e.target.checked })}
+                      className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Approval Workflow Updates</p>
+                      <p className="text-[11px] text-slate-500">Alert when reservations require your role approval signature</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.approvalUpdates}
+                      onChange={(e) => setPreferences({ ...preferences, approvalUpdates: e.target.checked })}
+                      className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">In-App Notifications</p>
-                    <p className="text-[11px] text-slate-500">Show bell badge alerts in system top navigation</p>
+                {/* Regional & Timezone Settings */}
+                <div className="space-y-3 pt-3 border-t border-gray-100">
+                  <h3 className="text-xs font-black uppercase text-gray-400 tracking-wider">Regional & Date Settings</h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Timezone</label>
+                      <select
+                        value={preferences.timezone}
+                        onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
+                        className="form-input text-xs font-bold w-full"
+                      >
+                        <option value="Asia/Manila">PHT - Asia/Manila (GMT+8)</option>
+                        <option value="UTC">UTC (Coordinated Universal Time)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="form-label text-xs font-bold text-gray-700 mb-1 block">Date Format</label>
+                      <select
+                        value={preferences.dateFormat}
+                        onChange={(e) => setPreferences({ ...preferences, dateFormat: e.target.value })}
+                        className="form-input text-xs font-bold w-full"
+                      >
+                        <option value="MM/DD/YYYY">MM/DD/YYYY (e.g. 08/11/2026)</option>
+                        <option value="DD/MM/YYYY">DD/MM/YYYY (e.g. 11/08/2026)</option>
+                        <option value="YYYY-MM-DD">YYYY-MM-DD (e.g. 2026-08-11)</option>
+                      </select>
+                    </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.inAppNotifs}
-                    onChange={(e) => setPreferences({ ...preferences, inAppNotifs: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
-                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: ACTIVITY LOG & DATA EXPORT */}
+          {activeTab === 'activityLog' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
+              <div className="border-b border-gray-100 pb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
+                    <History size={22} className="text-[#800000]" /> User Activity Log & Data Export
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Review your recent system operations and download your profile data export.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportUserData}
+                  className="btn-maroon px-4 py-2 text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+                >
+                  <Download size={14} /> Export My Data (JSON)
+                </button>
+              </div>
+
+              {/* Activity Log List */}
+              <div className="space-y-3">
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-red-100 text-[#800000] flex items-center justify-center font-bold">
+                      <User size={16} />
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-gray-900">Profile Information Saved</p>
+                      <p className="text-[11px] text-gray-500">Updated display name and contact phone number</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-gray-400 font-medium">Just now</span>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">Approval Workflow Updates</p>
-                    <p className="text-[11px] text-slate-500">Notify when requests require your role signature</p>
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                      <CheckCircle2 size={16} />
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-gray-900">User Session Authenticated</p>
+                      <p className="text-[11px] text-gray-500">Signed in via Southwestern University Auth Service</p>
+                    </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.approvalUpdates}
-                    onChange={(e) => setPreferences({ ...preferences, approvalUpdates: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
-                  />
+                  <span className="text-[11px] text-gray-400 font-medium">Today</span>
                 </div>
               </div>
             </div>
