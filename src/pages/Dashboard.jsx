@@ -71,13 +71,13 @@ const AVAIL_LABELS = {
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 p-3 rounded-lg shadow-xl text-xs">
-      <p className="font-bold text-slate-200 mb-1">{label}</p>
+    <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 p-3 rounded-xl shadow-2xl text-xs">
+      <p className="font-bold text-slate-200 mb-1 border-b border-slate-800 pb-1">{label}</p>
       {payload.map((entry, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || MAROON }} />
-          <span className="text-slate-300">{entry.name || entry.dataKey}:</span>
-          <span className="font-bold text-white">{entry.value}</span>
+        <div key={i} className="flex items-center gap-2 mt-1">
+          <span className="w-2.5 h-2.5 rounded-full shadow-xs" style={{ backgroundColor: entry.color || MAROON }} />
+          <span className="text-slate-300 font-medium">{entry.name || entry.dataKey}:</span>
+          <span className="font-bold text-white ml-auto">{entry.value}</span>
         </div>
       ))}
     </div>
@@ -170,14 +170,10 @@ export default function Dashboard() {
   }
 
   const pendingTotal = requestStats.pending + requestStats.inProgress;
-  const operationalPct = roomStats.total > 0
-    ? Math.round(((roomStats.total - roomStats.maintenance) / roomStats.total) * 100)
-    : 100;
 
   return (
     <Layout title="Dashboard" subtitle="Facility Overview & Analytics">
       {/* ───── 1. Top Metric Cards (4 Cards Grid) ───── */}
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Total Facilities"
@@ -209,42 +205,61 @@ export default function Dashboard() {
         />
       </div>
 
-
       {/* ───── 2. Primary Charts Section (2 Columns) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Room Utilization Rate */}
-        <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2 border-b border-slate-100">
+        {/* Room Utilization Rate (Maroon / Theme Gradients) */}
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                   <BarChart3 size={18} />
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">Room Utilization Rate</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Facility usage intensity across buildings</CardDescription>
+                  <CardDescription className="text-xs text-slate-500">Facility usage intensity across campus buildings</CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold text-slate-600 border-slate-200">
-                <TrendingUp size={12} className="mr-1 text-emerald-500" />
+              <Badge variant="outline" className="text-xs font-semibold text-[#800000] bg-red-50/50 border-red-200">
+                <TrendingUp size={12} className="mr-1 text-[#800000]" />
                 Live Rate
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-5">
             <div className="h-64">
               {utilization.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={utilization} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="maroonBarGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#5E0606" />
+                        <stop offset="100%" stopColor="#9E0D0D" />
+                      </linearGradient>
+                      <linearGradient id="amberBarGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#B45309" />
+                        <stop offset="100%" stopColor="#F59E0B" />
+                      </linearGradient>
+                      <linearGradient id="emeraldBarGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#047857" />
+                        <stop offset="100%" stopColor="#10B981" />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 11 }} unit="%" />
-                    <YAxis dataKey="building" type="category" width={110} tick={{ fill: '#334155', fontSize: 11, fontWeight: 500 }} />
+                    <YAxis dataKey="building" type="category" width={110} tick={{ fill: '#334155', fontSize: 11, fontWeight: 600 }} />
                     <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="utilization" name="Utilization" radius={[0, 6, 6, 0]}>
+                    <Bar dataKey="utilization" name="Utilization" radius={[0, 8, 8, 0]}>
                       {utilization.map((entry, i) => (
                         <Cell
                           key={i}
-                          fill={entry.utilization > 75 ? '#800000' : entry.utilization > 50 ? '#d97706' : '#059669'}
+                          fill={
+                            entry.utilization > 75
+                              ? 'url(#maroonBarGrad)'
+                              : entry.utilization > 50
+                              ? 'url(#amberBarGrad)'
+                              : 'url(#emeraldBarGrad)'
+                          }
                         />
                       ))}
                     </Bar>
@@ -259,31 +274,32 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Peak Hourly Demand Analysis (7:00 AM - 7:00 PM) */}
-        <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2 border-b border-slate-100">
+        {/* Peak Hourly Demand Analysis (Maroon Area Gradient) */}
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                   <Clock size={18} />
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">Peak Hours Demand Analysis</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Time-slot reservation volume throughout the day</CardDescription>
+                  <CardDescription className="text-xs text-slate-500">Hourly reservation volume throughout the day</CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold text-slate-600 border-slate-200">
+              <Badge variant="outline" className="text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200">
                 7:00 AM – 7:00 PM
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-5">
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={hourlyDemand} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="demandGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#800000" stopOpacity={0.4} />
+                    <linearGradient id="maroonAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#800000" stopOpacity={0.45} />
+                      <stop offset="50%" stopColor="#7A0808" stopOpacity={0.15} />
                       <stop offset="95%" stopColor="#800000" stopOpacity={0.0} />
                     </linearGradient>
                   </defs>
@@ -291,7 +307,15 @@ export default function Dashboard() {
                   <XAxis dataKey="hour" tick={{ fill: '#64748b', fontSize: 11 }} />
                   <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="demand" name="Active Reservations" stroke="#800000" strokeWidth={2.5} fillOpacity={1} fill="url(#demandGradient)" />
+                  <Area
+                    type="monotone"
+                    dataKey="demand"
+                    name="Active Reservations"
+                    stroke="#800000"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#maroonAreaGrad)"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -301,11 +325,11 @@ export default function Dashboard() {
 
       {/* ───── 3. Secondary Analytics Section (Department Activity + Facility Types) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Department Scheduling Activity */}
-        <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+        {/* Department Scheduling Volume */}
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                 <Layers size={18} />
               </div>
               <div>
@@ -314,16 +338,22 @@ export default function Dashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-5">
             <div className="h-60">
               {deptActivity.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={deptActivity} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="deptMaroonGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#4A0404" />
+                        <stop offset="100%" stopColor="#800000" />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                    <YAxis dataKey="department" type="category" width={120} tick={{ fill: '#334155', fontSize: 10, fontWeight: 500 }} />
+                    <YAxis dataKey="department" type="category" width={120} tick={{ fill: '#334155', fontSize: 10, fontWeight: 600 }} />
                     <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="count" name="Requests" fill="#800000" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="count" name="Requests" fill="url(#deptMaroonGrad)" radius={[0, 8, 8, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -336,10 +366,10 @@ export default function Dashboard() {
         </Card>
 
         {/* Facility Type Distribution */}
-        <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                 <PieChart size={18} />
               </div>
               <div>
@@ -348,16 +378,26 @@ export default function Dashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-4">
-            <div className="space-y-3">
-              {facilityTypes.map((item) => {
+          <CardContent className="pt-5">
+            <div className="space-y-3.5">
+              {facilityTypes.map((item, idx) => {
                 const totalRooms = roomStats.total || 1;
                 const percentage = Math.round((item.value / totalRooms) * 100);
+                const GRADIENTS = [
+                  'from-[#7A0808] to-[#B91C1C]',
+                  'from-blue-600 to-indigo-500',
+                  'from-emerald-600 to-teal-400',
+                  'from-amber-500 to-yellow-400',
+                  'from-purple-600 to-indigo-400',
+                  'from-rose-600 to-pink-400',
+                ];
+                const gradStyle = GRADIENTS[idx % GRADIENTS.length];
+
                 return (
-                  <div key={item.name} className="space-y-1">
+                  <div key={item.name} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-800 flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className={`w-2.5 h-2.5 rounded-full bg-gradient-to-r ${gradStyle}`} />
                         {item.name}
                       </span>
                       <div className="flex items-center gap-2 font-mono">
@@ -367,8 +407,8 @@ export default function Dashboard() {
                     </div>
                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%`, backgroundColor: item.color }}
+                        className={`h-full rounded-full bg-gradient-to-r ${gradStyle} transition-all duration-500`}
+                        style={{ width: `${percentage}%` }}
                       />
                     </div>
                   </div>
@@ -380,11 +420,11 @@ export default function Dashboard() {
       </div>
 
       {/* ───── 4. Room Availability Grid ───── */}
-      <Card className="border-slate-200/80 shadow-xs bg-white mb-6">
+      <Card className="border-slate-200/80 shadow-2xs bg-white mb-6 rounded-2xl">
         <CardHeader className="border-b border-slate-100 pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                 <Calendar size={18} />
               </div>
               <div>
@@ -393,10 +433,10 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 text-xs">
+              <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50/50 text-xs">
                 <Filter size={13} className="text-slate-400" />
                 <select
-                  className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
+                  className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
                   value={selectedBuilding || ''}
                   onChange={(e) => setSelectedBuilding(e.target.value || null)}
                 >
@@ -410,7 +450,7 @@ export default function Dashboard() {
           </div>
 
           {/* Status Legend Pills */}
-          <div className="flex gap-4 mt-3 pt-2 flex-wrap border-t border-slate-100/80">
+          <div className="flex gap-4 mt-3 pt-3 flex-wrap border-t border-slate-100">
             {Object.entries(AVAIL_LABELS).map(([key, label]) => (
               <div key={key} className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded-xs shadow-2xs border border-black/5" style={{ background: AVAIL_COLORS[key] }} />
@@ -472,11 +512,11 @@ export default function Dashboard() {
       {/* ───── 5. Bottom Grid: Subject Assignments + Recent Activity ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Subject-to-Room Assignment Table (2 Columns) */}
-        <Card className="lg:col-span-2 border-slate-200/80 shadow-xs bg-white">
+        <Card className="lg:col-span-2 border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                   <BookOpen size={18} />
                 </div>
                 <div>
@@ -537,11 +577,11 @@ export default function Dashboard() {
         </Card>
 
         {/* Recent Activity Timeline (1 Column) */}
-        <Card className="border-slate-200/80 shadow-xs bg-white">
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                   <Activity size={18} />
                 </div>
                 <div>
@@ -563,9 +603,9 @@ export default function Dashboard() {
                 recentActivity.map((a, i) => (
                   <div
                     key={a.id || i}
-                    className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all"
+                    className="flex gap-3 items-start p-2.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all"
                   >
-                    <div className="mt-0.5 p-1.5 rounded-md bg-slate-50 border border-slate-100 flex-shrink-0">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 border border-slate-100 flex-shrink-0">
                       {ACTIVITY_ICONS[a.type] || ACTIVITY_ICONS.info}
                     </div>
                     <div className="flex-1 min-w-0">
