@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
   DoorOpen, ClipboardList, CheckCircle, XCircle, Clock,
   Building2, ArrowRight, BarChart3, Calendar,
-  BookOpen, Activity, Filter, RefreshCw, Layers, Sparkles, TrendingUp
+  BookOpen, Activity, Filter, RefreshCw, Layers, Sparkles, TrendingUp,
+  Search, Plus, GitBranch, Wrench, PieChart, ShieldAlert, Cpu
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, AreaChart, Area
 } from 'recharts';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
@@ -19,23 +20,24 @@ import {
   computeSubjectRoomAssignments,
   buildRecentActivity,
   computeRoomAvailabilityGrid,
+  computeHourlyDemand,
+  computeFacilityTypeDistribution,
   formatRelativeTime,
 } from '../services/dashboardService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 
 // ───── Design Tokens ─────
 const MAROON = '#800000';
-const DARK_MAROON = '#7A0808';
-const TEXT = '#2B3235';
 
-// ───── Status badge colors ─────
+// ───── Status Badge Color Schemes ─────
 const STATUS_COLORS = {
   Approved: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   Rejected: { bg: 'bg-rose-50 text-rose-700 border-rose-200' },
   Pending: { bg: 'bg-amber-50 text-amber-700 border-amber-200' },
   'In Progress': { bg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  Draft: { bg: 'bg-gray-50 text-gray-700 border-gray-200' },
+  Draft: { bg: 'bg-slate-50 text-slate-700 border-slate-200' },
   Postponed: { bg: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
@@ -69,13 +71,13 @@ const AVAIL_LABELS = {
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white/95 backdrop-blur-sm border border-slate-200 p-3 rounded-lg shadow-xl text-xs">
-      <p className="font-bold text-slate-800 mb-1">{label}</p>
+    <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 p-3 rounded-lg shadow-xl text-xs">
+      <p className="font-bold text-slate-200 mb-1">{label}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || MAROON }} />
-          <span className="text-slate-600">{entry.name || entry.dataKey}:</span>
-          <span className="font-bold text-slate-900">{entry.value}</span>
+          <span className="text-slate-300">{entry.name || entry.dataKey}:</span>
+          <span className="font-bold text-white">{entry.value}</span>
         </div>
       ))}
     </div>
@@ -86,14 +88,14 @@ function ChartTooltip({ active, payload, label }) {
 function StatusBadge({ status }) {
   const styleClass = STATUS_COLORS[status]?.bg || STATUS_COLORS.Draft.bg;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${styleClass}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${styleClass}`}>
       {status}
     </span>
   );
 }
 
-// ───── Modern Stat Card Component ─────
-function StatCard({ label, value, icon: Icon, accentColor, description, onClick }) {
+// ───── Modern Stat Metric Card ─────
+function StatCard({ label, value, icon: Icon, accentColor, description, trend, onClick }) {
   return (
     <Card
       onClick={onClick}
@@ -140,6 +142,8 @@ export default function Dashboard() {
   const requestStats = useMemo(() => computeRequestStats(requests), [requests]);
   const utilization = useMemo(() => computeRoomUtilization(buildingList, requests), [buildingList, requests]);
   const deptActivity = useMemo(() => computeDepartmentActivity(requests), [requests]);
+  const hourlyDemand = useMemo(() => computeHourlyDemand(requests), [requests]);
+  const facilityTypes = useMemo(() => computeFacilityTypeDistribution(buildingList), [buildingList]);
   const subjectAssignments = useMemo(() => computeSubjectRoomAssignments(buildingList, requests), [buildingList, requests]);
   const recentActivity = useMemo(() => buildRecentActivity(requests, 10), [requests]);
   const availabilityGrid = useMemo(
@@ -167,9 +171,57 @@ export default function Dashboard() {
   }
 
   const pendingTotal = requestStats.pending + requestStats.inProgress;
+  const operationalPct = roomStats.total > 0
+    ? Math.round(((roomStats.total - roomStats.maintenance) / roomStats.total) * 100)
+    : 100;
 
   return (
     <Layout title="Dashboard" subtitle="Facility Overview & Analytics">
+      {/* ───── Quick Actions Toolbar ───── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-[#800000]" />
+          <span className="text-xs font-bold text-slate-800">Quick Operations</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/room-finder')}
+            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
+          >
+            <Search size={14} className="text-[#800000]" />
+            Find Available Room
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/approvals')}
+            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
+          >
+            <ClipboardList size={14} className="text-[#800000]" />
+            View Approvals
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/course-scheduling')}
+            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
+          >
+            <Calendar size={14} className="text-[#800000]" />
+            Course Schedules
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => navigate('/building-management')}
+            className="text-xs gap-1.5 bg-[#800000] hover:bg-[#5E0606] text-white font-semibold shadow-xs"
+          >
+            <Building2 size={14} />
+            Facility Management
+          </Button>
+        </div>
+      </div>
+
       {/* ───── 1. Top Metric Cards (4 Cards Grid) ───── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
@@ -177,7 +229,7 @@ export default function Dashboard() {
           value={roomStats.total}
           icon={DoorOpen}
           accentColor="bg-[#800000]"
-          description="Across all campus buildings"
+          description={`${operationalPct}% operational capacity`}
           onClick={() => navigate('/building-management')}
         />
         <StatCard
@@ -185,7 +237,7 @@ export default function Dashboard() {
           value={roomStats.available}
           icon={CheckCircle}
           accentColor="bg-emerald-600"
-          description="Ready for instant allocation"
+          description="Ready for immediate allocation"
           onClick={() => navigate('/room-finder')}
         />
         <StatCard
@@ -193,7 +245,7 @@ export default function Dashboard() {
           value={roomStats.occupied}
           icon={Building2}
           accentColor="bg-rose-600"
-          description="Currently in active use"
+          description="In active class/reservation use"
           onClick={() => navigate('/building-management')}
         />
         <StatCard
@@ -206,11 +258,11 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ───── 2. Main Analytics Charts Grid ───── */}
+      {/* ───── 2. Primary Charts Section (2 Columns) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Room Utilization Chart */}
+        {/* Room Utilization Rate */}
         <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
@@ -218,7 +270,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">Room Utilization Rate</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Usage intensity percentage per building</CardDescription>
+                  <CardDescription className="text-xs text-slate-500">Facility usage intensity across buildings</CardDescription>
                 </div>
               </div>
               <Badge variant="outline" className="text-xs font-semibold text-slate-600 border-slate-200">
@@ -255,23 +307,63 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Department Scheduling Activity */}
+        {/* Peak Hourly Demand Analysis (7:00 AM - 7:00 PM) */}
         <Card className="border-slate-200/80 shadow-xs bg-white">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
-                  <Layers size={18} />
+                  <Clock size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Department Scheduling Activity</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Distribution of room requests by college</CardDescription>
+                  <CardTitle className="text-base font-bold text-slate-900">Peak Hours Demand Analysis</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Time-slot reservation volume throughout the day</CardDescription>
                 </div>
               </div>
+              <Badge variant="outline" className="text-xs font-semibold text-slate-600 border-slate-200">
+                7:00 AM – 7:00 PM
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="pt-4">
             <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hourlyDemand} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="demandGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#800000" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#800000" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="hour" tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area type="monotone" dataKey="demand" name="Active Reservations" stroke="#800000" strokeWidth={2.5} fillOpacity={1} fill="url(#demandGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ───── 3. Secondary Analytics Section (Department Activity + Facility Types) ───── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Department Scheduling Activity */}
+        <Card className="border-slate-200/80 shadow-xs bg-white">
+          <CardHeader className="pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+                <Layers size={18} />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-slate-900">Department Scheduling Volume</CardTitle>
+                <CardDescription className="text-xs text-slate-500">Total room allocations requested per college</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="h-60">
               {deptActivity.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={deptActivity} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
@@ -290,9 +382,52 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Facility Type Distribution */}
+        <Card className="border-slate-200/80 shadow-xs bg-white">
+          <CardHeader className="pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-red-50 text-[#800000]">
+                <PieChart size={18} />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-slate-900">Facility Type Distribution</CardTitle>
+                <CardDescription className="text-xs text-slate-500">Breakdown of campus facilities by room category</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-3">
+              {facilityTypes.map((item) => {
+                const totalRooms = roomStats.total || 1;
+                const percentage = Math.round((item.value / totalRooms) * 100);
+                return (
+                  <div key={item.name} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-800 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                        {item.name}
+                      </span>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="font-bold text-slate-900">{item.value} rooms</span>
+                        <span className="text-slate-400 text-[10px]">({percentage}%)</span>
+                      </div>
+                    </div>
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%`, backgroundColor: item.color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* ───── 3. Room Availability Grid ───── */}
+      {/* ───── 4. Room Availability Grid ───── */}
       <Card className="border-slate-200/80 shadow-xs bg-white mb-6">
         <CardHeader className="border-b border-slate-100 pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -382,7 +517,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* ───── 4. Bottom Grid: Subject Assignments + Recent Activity ───── */}
+      {/* ───── 5. Bottom Grid: Subject Assignments + Recent Activity ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Subject-to-Room Assignment Table (2 Columns) */}
         <Card className="lg:col-span-2 border-slate-200/80 shadow-xs bg-white">

@@ -498,3 +498,65 @@ export function formatRelativeTime(timestamp) {
   if (minutes > 0) return `${minutes}m ago`;
   return 'Just now';
 }
+
+// ──────────────────────────────────────────────
+// Hourly Demand Analysis (7 AM - 7 PM)
+// ──────────────────────────────────────────────
+export function computeHourlyDemand(requests = []) {
+  const hours = [];
+  const hourCounts = {};
+
+  for (let h = 7; h <= 19; h++) {
+    const label = h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+    hours.push(label);
+    hourCounts[label] = 0;
+  }
+
+  for (const r of requests) {
+    if (r.status === 'Approved' || r.status === 'In Progress' || r.status === 'Pending') {
+      const startHour = parseTimeToHour(r.timeStart);
+      const endHour = parseTimeToHour(r.timeEnd);
+
+      if (startHour !== null && endHour !== null) {
+        for (let h = startHour; h < endHour && h <= 19; h++) {
+          if (h >= 7) {
+            const label = h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+            if (hourCounts[label] !== undefined) {
+              hourCounts[label]++;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return hours.map((hour) => ({
+    hour,
+    demand: hourCounts[hour] || 0,
+  }));
+}
+
+// ──────────────────────────────────────────────
+// Facility Type Distribution
+// ──────────────────────────────────────────────
+export function computeFacilityTypeDistribution(buildingList = []) {
+  const typeMap = {};
+
+  for (const building of buildingList) {
+    for (const floor of building.floorData || []) {
+      for (const room of floor.rooms || []) {
+        const type = room.type || 'Standard Room';
+        typeMap[type] = (typeMap[type] || 0) + 1;
+      }
+    }
+  }
+
+  const colors = ['#800000', '#2563EB', '#059669', '#D97706', '#7C3AED', '#DB2777'];
+
+  return Object.entries(typeMap).map(([name, value], idx) => ({
+    name,
+    value,
+    color: colors[idx % colors.length],
+  }));
+}
+
