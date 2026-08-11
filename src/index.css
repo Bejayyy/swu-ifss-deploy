@@ -24,7 +24,16 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 0 87.5% 25.1%;
     --radius: 0.5rem;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-primary: 0 87.5% 25.1%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 0 87.5% 25.1%;
     --maroon: #7A0808;
+
     --maroon-light: #FFF0F0;
     --dark: #2B3235;
   }
