@@ -490,10 +490,10 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
           className="flex items-center gap-2 text-xs font-bold transition-colors"
           style={{ color: '#2B3235' }}
         >
-          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] transition-colors">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] hover:text-[#800000] transition-colors">
             <ArrowLeft size={15} />
+            <span className="font-bold">Back</span>
           </div>
-          Back
         </button>
 
         <div className="flex items-center gap-2">

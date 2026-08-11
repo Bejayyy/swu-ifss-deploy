@@ -83,10 +83,10 @@ export default function BuildingDetails() {
           className="flex items-center gap-2 text-sm font-bold"
           style={{ color: '#2B3235' }}
         >
-          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] transition-colors">
-            <ArrowLeft size={16} />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] hover:text-[#800000] transition-colors">
+            <ArrowLeft size={15} />
+            <span className="text-xs font-bold">Back</span>
           </div>
-          Back
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
           {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
