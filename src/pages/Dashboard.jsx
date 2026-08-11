@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
   DoorOpen, ClipboardList, CheckCircle, XCircle, Clock,
   Building2, ArrowRight, BarChart3, Calendar,
-  BookOpen, Activity, Filter, RefreshCw, Layers, Sparkles, TrendingUp,
-  Search, Plus, GitBranch, Wrench, PieChart, ShieldAlert, Cpu
+  BookOpen, Activity, Filter, RefreshCw, Layers, TrendingUp,
+  Search, Plus, PieChart, ShieldAlert, Check, AlertCircle, Wrench
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, AreaChart, Area
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend
 } from 'recharts';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
@@ -19,17 +19,19 @@ import {
   computeDepartmentActivity,
   computeSubjectRoomAssignments,
   buildRecentActivity,
-  computeRoomAvailabilityGrid,
-  computeHourlyDemand,
+  computeWeeklyDemandByDay,
+  computeStructuredRoomAvailability,
   computeFacilityTypeDistribution,
   formatRelativeTime,
 } from '../services/dashboardService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
 
-// ───── Design Tokens ─────
+// ───── Design Tokens (Solid Colors — No Gradients) ─────
 const MAROON = '#800000';
+const AMBER = '#D97706';
+const EMERALD = '#059669';
+const BLUE = '#2563EB';
 
 // ───── Status Badge Color Schemes ─────
 const STATUS_COLORS = {
@@ -43,39 +45,24 @@ const STATUS_COLORS = {
 
 // ───── Activity Icons ─────
 const ACTIVITY_ICONS = {
-  approved: <CheckCircle size={15} className="text-emerald-500" />,
-  rejected: <XCircle size={15} className="text-rose-500" />,
-  pending: <Clock size={15} className="text-amber-500" />,
-  'in-progress': <RefreshCw size={15} className="text-blue-500" />,
+  approved: <CheckCircle size={15} className="text-emerald-600" />,
+  rejected: <XCircle size={15} className="text-rose-600" />,
+  pending: <Clock size={15} className="text-amber-600" />,
+  'in-progress': <RefreshCw size={15} className="text-blue-600" />,
   draft: <ClipboardList size={15} className="text-slate-400" />,
-  postponed: <Clock size={15} className="text-purple-500" />,
+  postponed: <Clock size={15} className="text-purple-600" />,
   info: <Activity size={15} className="text-slate-400" />,
 };
 
-// ───── Availability Grid Colors ─────
-const AVAIL_COLORS = {
-  available: '#D1FAE5',
-  occupied: '#FECACA',
-  reserved: '#FDE68A',
-  maintenance: '#E5E7EB',
-};
-
-const AVAIL_LABELS = {
-  available: 'Available',
-  occupied: 'Occupied',
-  reserved: 'Reserved',
-  maintenance: 'Maintenance',
-};
-
-// ───── Custom Recharts Tooltip ─────
+// ───── Custom Clean Tooltip ─────
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 p-3 rounded-xl shadow-2xl text-xs">
-      <p className="font-bold text-slate-200 mb-1 border-b border-slate-800 pb-1">{label}</p>
+    <div className="bg-slate-900 text-white border border-slate-800 p-3 rounded-lg shadow-lg text-xs">
+      <p className="font-bold text-slate-200 mb-1 pb-1 border-b border-slate-800">{label}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center gap-2 mt-1">
-          <span className="w-2.5 h-2.5 rounded-full shadow-xs" style={{ backgroundColor: entry.color || MAROON }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color || MAROON }} />
           <span className="text-slate-300 font-medium">{entry.name || entry.dataKey}:</span>
           <span className="font-bold text-white ml-auto">{entry.value}</span>
         </div>
@@ -94,7 +81,7 @@ function StatusBadge({ status }) {
   );
 }
 
-// ───── Modern Stat Card Component ─────
+// ───── Modern Uniform Stat Card Component ─────
 function StatCard({ label, value, icon: Icon, color = 'blue', onClick }) {
   const COLOR_MAP = {
     blue: 'bg-blue-100/70 text-blue-600',
@@ -132,6 +119,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { buildingList, requests, buildingsLoading, requestsLoading } = useApp();
   const [selectedBuilding, setSelectedBuilding] = useState(null);
+  const [activeDay, setActiveDay] = useState('Mon');
   const [assignmentSort, setAssignmentSort] = useState('subject');
 
   const isLoading = buildingsLoading || requestsLoading;
@@ -141,13 +129,14 @@ export default function Dashboard() {
   const requestStats = useMemo(() => computeRequestStats(requests), [requests]);
   const utilization = useMemo(() => computeRoomUtilization(buildingList, requests), [buildingList, requests]);
   const deptActivity = useMemo(() => computeDepartmentActivity(requests), [requests]);
-  const hourlyDemand = useMemo(() => computeHourlyDemand(requests), [requests]);
+  const weeklyDemand = useMemo(() => computeWeeklyDemandByDay(requests), [requests]);
   const facilityTypes = useMemo(() => computeFacilityTypeDistribution(buildingList), [buildingList]);
   const subjectAssignments = useMemo(() => computeSubjectRoomAssignments(buildingList, requests), [buildingList, requests]);
   const recentActivity = useMemo(() => buildRecentActivity(requests, 10), [requests]);
-  const availabilityGrid = useMemo(
-    () => computeRoomAvailabilityGrid(buildingList, requests, selectedBuilding),
-    [buildingList, requests, selectedBuilding]
+  
+  const { timeBlocks, roomCards } = useMemo(
+    () => computeStructuredRoomAvailability(buildingList, requests, selectedBuilding, activeDay),
+    [buildingList, requests, selectedBuilding, activeDay]
   );
 
   // Sort assignments
@@ -205,9 +194,9 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ───── 2. Primary Charts Section (2 Columns) ───── */}
+      {/* ───── 2. Primary Analytics Charts (Solid Colors — No Gradients) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Room Utilization Rate (Maroon / Theme Gradients) */}
+        {/* Room Utilization Rate by Building */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
@@ -217,11 +206,10 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">Room Utilization Rate</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Facility usage intensity across campus buildings</CardDescription>
+                  <CardDescription className="text-xs text-slate-500">Facility usage intensity per building</CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold text-[#800000] bg-red-50/50 border-red-200">
-                <TrendingUp size={12} className="mr-1 text-[#800000]" />
+              <Badge variant="outline" className="text-xs font-semibold text-[#800000] bg-red-50/60 border-red-200">
                 Live Rate
               </Badge>
             </div>
@@ -231,35 +219,15 @@ export default function Dashboard() {
               {utilization.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={utilization} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="maroonBarGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#5E0606" />
-                        <stop offset="100%" stopColor="#9E0D0D" />
-                      </linearGradient>
-                      <linearGradient id="amberBarGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#B45309" />
-                        <stop offset="100%" stopColor="#F59E0B" />
-                      </linearGradient>
-                      <linearGradient id="emeraldBarGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#047857" />
-                        <stop offset="100%" stopColor="#10B981" />
-                      </linearGradient>
-                    </defs>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 11 }} unit="%" />
                     <YAxis dataKey="building" type="category" width={110} tick={{ fill: '#334155', fontSize: 11, fontWeight: 600 }} />
                     <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="utilization" name="Utilization" radius={[0, 8, 8, 0]}>
+                    <Bar dataKey="utilization" name="Utilization" radius={[0, 6, 6, 0]}>
                       {utilization.map((entry, i) => (
                         <Cell
                           key={i}
-                          fill={
-                            entry.utilization > 75
-                              ? 'url(#maroonBarGrad)'
-                              : entry.utilization > 50
-                              ? 'url(#amberBarGrad)'
-                              : 'url(#emeraldBarGrad)'
-                          }
+                          fill={entry.utilization > 75 ? MAROON : entry.utilization > 50 ? AMBER : EMERALD}
                         />
                       ))}
                     </Bar>
@@ -274,49 +242,36 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Peak Hourly Demand Analysis (Maroon Area Gradient) */}
+        {/* Weekly Campus Room Demand (Mon - Sat Report) */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
-                  <Clock size={18} />
+                  <Calendar size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Peak Hours Demand Analysis</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Hourly reservation volume throughout the day</CardDescription>
+                  <CardTitle className="text-base font-bold text-slate-900">Weekly Room Demand & Booking Volume</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Day-by-day reservation requests (Mon – Sat)</CardDescription>
                 </div>
               </div>
               <Badge variant="outline" className="text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200">
-                7:00 AM – 7:00 PM
+                Mon – Sat Report
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="pt-5">
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={hourlyDemand} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="maroonAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#800000" stopOpacity={0.45} />
-                      <stop offset="50%" stopColor="#7A0808" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#800000" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
+                <BarChart data={weeklyDemand} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="hour" tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
                   <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Area
-                    type="monotone"
-                    dataKey="demand"
-                    name="Active Reservations"
-                    stroke="#800000"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#maroonAreaGrad)"
-                  />
-                </AreaChart>
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                  <Bar dataKey="Approved" fill={MAROON} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Pending" fill={AMBER} radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
@@ -343,17 +298,11 @@ export default function Dashboard() {
               {deptActivity.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={deptActivity} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="deptMaroonGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#4A0404" />
-                        <stop offset="100%" stopColor="#800000" />
-                      </linearGradient>
-                    </defs>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
                     <YAxis dataKey="department" type="category" width={120} tick={{ fill: '#334155', fontSize: 10, fontWeight: 600 }} />
                     <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="count" name="Requests" fill="url(#deptMaroonGrad)" radius={[0, 8, 8, 0]} />
+                    <Bar dataKey="count" name="Requests" fill={MAROON} radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -380,24 +329,14 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="pt-5">
             <div className="space-y-3.5">
-              {facilityTypes.map((item, idx) => {
+              {facilityTypes.map((item) => {
                 const totalRooms = roomStats.total || 1;
                 const percentage = Math.round((item.value / totalRooms) * 100);
-                const GRADIENTS = [
-                  'from-[#7A0808] to-[#B91C1C]',
-                  'from-blue-600 to-indigo-500',
-                  'from-emerald-600 to-teal-400',
-                  'from-amber-500 to-yellow-400',
-                  'from-purple-600 to-indigo-400',
-                  'from-rose-600 to-pink-400',
-                ];
-                const gradStyle = GRADIENTS[idx % GRADIENTS.length];
-
                 return (
                   <div key={item.name} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-800 flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full bg-gradient-to-r ${gradStyle}`} />
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                         {item.name}
                       </span>
                       <div className="flex items-center gap-2 font-mono">
@@ -407,8 +346,8 @@ export default function Dashboard() {
                     </div>
                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full bg-gradient-to-r ${gradStyle} transition-all duration-500`}
-                        style={{ width: `${percentage}%` }}
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%`, backgroundColor: item.color }}
                       />
                     </div>
                   </div>
@@ -419,20 +358,39 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ───── 4. Room Availability Grid ───── */}
+      {/* ───── 4. REDESIGNED ROOM AVAILABILITY BOARD (Clean, Intuitive Cards) ───── */}
       <Card className="border-slate-200/80 shadow-2xs bg-white mb-6 rounded-2xl">
         <CardHeader className="border-b border-slate-100 pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
-                <Calendar size={18} />
+                <DoorOpen size={18} />
               </div>
               <div>
-                <CardTitle className="text-base font-bold text-slate-900">Room Availability Matrix</CardTitle>
-                <CardDescription className="text-xs text-slate-500">Weekly room schedule and occupancy status</CardDescription>
+                <CardTitle className="text-base font-bold text-slate-900">Room Availability & Schedule Board</CardTitle>
+                <CardDescription className="text-xs text-slate-500">Real-time room occupancy and hourly schedule status</CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Day Filter Tabs */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <button
+                    key={day}
+                    onClick={() => setActiveDay(day)}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                      activeDay === day
+                        ? 'bg-[#800000] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+
+              {/* Building Filter */}
               <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50/50 text-xs">
                 <Filter size={13} className="text-slate-400" />
                 <select
@@ -440,7 +398,7 @@ export default function Dashboard() {
                   value={selectedBuilding || ''}
                   onChange={(e) => setSelectedBuilding(e.target.value || null)}
                 >
-                  <option value="">All Campus Buildings</option>
+                  <option value="">All Buildings</option>
                   {buildingList.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
@@ -449,69 +407,95 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Status Legend Pills */}
-          <div className="flex gap-4 mt-3 pt-3 flex-wrap border-t border-slate-100">
-            {Object.entries(AVAIL_LABELS).map(([key, label]) => (
-              <div key={key} className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-xs shadow-2xs border border-black/5" style={{ background: AVAIL_COLORS[key] }} />
-                <span className="text-xs font-semibold text-slate-600">{label}</span>
-              </div>
-            ))}
+          {/* Quick Legend Pills */}
+          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 text-xs">
+            <span className="font-semibold text-slate-500">Time Block Status:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="font-medium text-slate-700">Available</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#800000]" />
+              <span className="font-medium text-slate-700">Occupied / Reserved</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+              <span className="font-medium text-slate-700">Under Maintenance</span>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse min-w-[700px]">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-700">
-                  <th className="text-left py-2.5 px-3 font-bold sticky left-0 bg-slate-50 z-10 min-w-[100px]">Room</th>
-                  {availabilityGrid.days.map((day) => (
-                    <th key={day} colSpan={availabilityGrid.timeSlots.length} className="text-center py-2 px-1 font-bold border-l border-slate-200/60">
-                      {day}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {availabilityGrid.grid.length > 0 ? (
-                  availabilityGrid.grid.map(({ room, slots }, idx) => (
-                    <tr key={room.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                      <td className="py-2 px-3 font-bold sticky left-0 bg-white z-10 whitespace-nowrap text-slate-800 shadow-xs border-r border-slate-100">
-                        {room.id}
-                      </td>
-                      {availabilityGrid.days.map((day) =>
-                        availabilityGrid.timeSlots.map((slot) => {
-                          const key = `${day}-${slot.hour}`;
-                          const status = slots[key] || 'available';
-                          return (
-                            <td key={key} className="p-0">
-                              <div
-                                className="w-full h-6 border-r border-slate-100/60 transition-opacity hover:opacity-80 cursor-pointer"
-                                style={{ background: AVAIL_COLORS[status] || AVAIL_COLORS.available }}
-                                title={`${room.id} · ${day} ${slot.label} — ${AVAIL_LABELS[status]}`}
-                              />
-                            </td>
-                          );
-                        })
-                      )}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={1 + availabilityGrid.days.length * availabilityGrid.timeSlots.length} className="text-center py-10 text-slate-400 text-xs">
-                      No rooms found for selected building
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+
+        <CardContent className="p-5">
+          {roomCards.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {roomCards.map((room) => (
+                <div
+                  key={room.id}
+                  className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-4 transition-all hover:bg-white hover:shadow-xs hover:border-slate-300"
+                >
+                  {/* Room Card Header */}
+                  <div className="flex items-start justify-between mb-3 pb-2.5 border-b border-slate-200/70">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{room.name}</h4>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {room.buildingName} · {room.type} ({room.capacity} seats)
+                      </p>
+                    </div>
+                    {room.maintenanceStatus === 'under-maintenance' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        <Wrench size={12} /> Maintenance
+                      </span>
+                    ) : room.status === 'Occupied' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <AlertCircle size={12} /> Occupied
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <Check size={12} /> Available
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Hourly Schedule Pills Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {timeBlocks.map((tb) => {
+                      const slotStatus = room.slots[tb.id] || 'available';
+                      const isFree = slotStatus === 'available';
+                      const isMaint = slotStatus === 'maintenance';
+
+                      return (
+                        <div
+                          key={tb.id}
+                          className={`p-1.5 rounded-lg border text-center transition-all ${
+                            isMaint
+                              ? 'bg-slate-100 text-slate-500 border-slate-200'
+                              : isFree
+                              ? 'bg-emerald-50/70 text-emerald-800 border-emerald-200/80 font-semibold'
+                              : 'bg-red-50 text-[#800000] border-red-200 font-bold'
+                          }`}
+                        >
+                          <p className="text-[10px] font-semibold text-slate-500 leading-none mb-0.5">{tb.label}</p>
+                          <p className="text-[11px] font-bold capitalize">
+                            {isMaint ? 'Maint.' : isFree ? 'Free' : 'Booked'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-slate-400 text-xs font-medium">
+              No rooms found matching selected criteria.
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* ───── 5. Bottom Grid: Subject Assignments + Recent Activity ───── */}
+      {/* ───── 5. Bottom Section: Subject Assignments & Activity ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Subject-to-Room Assignment Table (2 Columns) */}
+        {/* Subject Room Assignments */}
         <Card className="lg:col-span-2 border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -576,7 +560,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity Timeline (1 Column) */}
+        {/* Recent Activity */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
