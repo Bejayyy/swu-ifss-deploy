@@ -205,7 +205,7 @@ export default function CobraChatbot() {
                     ) : msg.error ? (
                       <AlertCircle size={13} />
                     ) : (
-                      <MessageCircle size={13} />
+                      <img src={chatbotFace} alt="Cobra bot" className="w-full h-full object-cover rounded-full" />
                     )}
                   </div>
                   <div 
