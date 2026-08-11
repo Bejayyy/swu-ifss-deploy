@@ -88,6 +88,23 @@
   color: #800000 !important;
 }
 
+/* Shared table row hover — subtle gray, smooth */
+.table-row-hover {
+  transition: background-color 0.15s ease;
+  cursor: default;
+}
+.table-row-hover:hover {
+  background-color: #F9FAFB;
+}
+
+/* Global tr hover in standard tables */
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+tbody tr:hover {
+  background-color: #F9FAFB !important;
+}
+
 .badge-green {
   background: #EAF9F1;
   color: #0E8345;

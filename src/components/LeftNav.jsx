@@ -209,11 +209,11 @@ export default function LeftNav({
                 </span>
                 <Building2
                   size={14}
-                  className={`flex-shrink-0 transition-colors ${buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235]'}`}
+                  className={`flex-shrink-0 transition-colors ${buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235] group-hover:text-[#7A0808]'}`}
                 />
                 <span
                   className={`flex-1 text-[12px] font-semibold truncate transition-colors ${
-                    buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235]'
+                    buildingActive ? 'text-[#7A0808]' : 'text-[#2B3235] group-hover:text-[#7A0808]'
                   }`}
                 >
                   {building.name}

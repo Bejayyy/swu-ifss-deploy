@@ -247,7 +247,7 @@ export default function BuildingManagement() {
                         setSelectedFloor('all');
                         toggleBuildingExpand(b.id);
                       }}
-                      className={`w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all ${
+                      className={`w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all group ${
                         isSelected
                           ? 'font-bold text-[#7A0808] border border-red-100 shadow-2xs'
                           : 'text-[#2B3235] hover:text-[#7A0808] font-medium'
@@ -263,8 +263,8 @@ export default function BuildingManagement() {
                       >
                         {isExpanded ? <ChevronDown size={14} className="text-[#7A0808]" /> : <ChevronRight size={14} />}
                       </button>
-                      <Building2 size={15} className={`flex-shrink-0 ${isSelected ? 'text-[#7A0808]' : 'text-gray-500'}`} />
-                      <span className="text-xs truncate flex-1">{b.name}</span>
+                      <Building2 size={15} className={`flex-shrink-0 transition-colors ${isSelected ? 'text-[#7A0808]' : 'text-gray-500 group-hover:text-[#7A0808]'}`} />
+                      <span className={`text-xs truncate flex-1 transition-colors ${isSelected ? '' : 'group-hover:text-[#7A0808]'}`}>{b.name}</span>
                     </div>
 
                     {/* Expanded Floors List */}
@@ -281,7 +281,7 @@ export default function BuildingManagement() {
                               setSelectedBuilding(b);
                               setSelectedFloor(floorObj.floor);
                             }}
-                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-xs font-semibold transition-colors ${
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-xs font-semibold transition-colors group ${
                               isFloorSelected
                                 ? 'text-[#7A0808] font-bold border border-red-100'
                                 : 'text-gray-600 hover:text-[#7A0808]'
@@ -290,7 +290,7 @@ export default function BuildingManagement() {
                             onMouseEnter={(e) => { if (!isFloorSelected) e.currentTarget.style.background = '#F3F4F6'; }}
                             onMouseLeave={(e) => { if (!isFloorSelected) e.currentTarget.style.background = ''; }}
                           >
-                            <Layers size={12} className={isFloorSelected ? 'text-[#7A0808]' : 'text-gray-400'} />
+                            <Layers size={12} className={`transition-colors ${isFloorSelected ? 'text-[#7A0808]' : 'text-gray-400 group-hover:text-[#7A0808]'}`} />
                             <span className="flex-1 truncate">{floorObj.label || `Floor ${floorObj.floor}`}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isFloorSelected ? 'bg-[#7A0808] text-white' : 'text-gray-400 bg-gray-100'}`}>
                               {floorObj.rooms?.length || 0}
