@@ -433,7 +433,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                 style={{ color: '#2B3235' }}
                 onClick={() => {
                   setShowProfile(false);
-                  navigate('/system-settings');
+                  navigate('/profile-settings');
                 }}
               >
                 <Settings size={15} className="text-[#800000]" />
