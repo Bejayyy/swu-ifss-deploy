@@ -197,7 +197,7 @@ export default function LeftNav({
                   buildingActive ? 'font-bold' : ''
                 }`}
                 style={buildingActive ? { background: '#FFF0F0' } : undefined}
-                onMouseEnter={(e) => { if (!buildingActive) e.currentTarget.style.background = '#FFF0F0'; }}
+                onMouseEnter={(e) => { if (!buildingActive) e.currentTarget.style.background = '#F3F4F6'; }}
                 onMouseLeave={(e) => { if (!buildingActive) e.currentTarget.style.background = ''; }}
                 onClick={() => {
                   toggleBuilding(building.id);
@@ -228,7 +228,7 @@ export default function LeftNav({
                     <div
                       className="flex items-center gap-1.5 py-1 pl-8 pr-2 rounded-lg cursor-pointer group transition-colors"
                       style={{ }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                       onClick={() => toggleFloor(floorKey)}
                     >
@@ -253,7 +253,7 @@ export default function LeftNav({
                             isUnderMaintenance ? 'opacity-50' : ''
                           }`}
                           style={roomActive ? { background: '#FFF0F0' } : undefined}
-                          onMouseEnter={(e) => { if (!roomActive) e.currentTarget.style.background = '#FFF0F0'; }}
+                          onMouseEnter={(e) => { if (!roomActive) e.currentTarget.style.background = '#F3F4F6'; }}
                           onMouseLeave={(e) => { if (!roomActive) e.currentTarget.style.background = ''; }}
                           onClick={() =>
                             navigate(`/room/${room.id}`, {

@@ -146,7 +146,7 @@ export default function RescheduleReservation() {
           className="flex items-center gap-2 text-xs font-bold transition-colors"
           style={{ color: '#2B3235' }}
         >
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] hover:text-[#800000] transition-colors">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors">
             <ArrowLeft size={15} />
             <span className="font-bold">Back</span>
           </div>

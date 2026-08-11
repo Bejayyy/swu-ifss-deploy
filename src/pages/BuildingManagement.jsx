@@ -225,7 +225,7 @@ export default function BuildingManagement() {
                 <button
                   type="button"
                   onClick={() => setShowAddBuilding(true)}
-                  className="p-1 rounded-lg hover:bg-[#FFF0F0] text-[#2B3235] hover:text-[#7A0808] transition-colors"
+                  className="p-1 rounded-lg hover:bg-gray-100 text-[#2B3235] hover:text-[#7A0808] transition-colors"
                   title="Add Building"
                 >
                   <Plus size={16} />
@@ -253,7 +253,7 @@ export default function BuildingManagement() {
                           : 'text-[#2B3235] hover:text-[#7A0808] font-medium'
                       }`}
                       style={isSelected ? { background: '#FFF0F0' } : undefined}
-                      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#F3F4F6'; }}
                       onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = ''; }}
                     >
                       <button
@@ -287,7 +287,7 @@ export default function BuildingManagement() {
                                 : 'text-gray-600 hover:text-[#7A0808]'
                             }`}
                             style={isFloorSelected ? { background: '#FFF0F0' } : undefined}
-                            onMouseEnter={(e) => { if (!isFloorSelected) e.currentTarget.style.background = '#FFF0F0'; }}
+                            onMouseEnter={(e) => { if (!isFloorSelected) e.currentTarget.style.background = '#F3F4F6'; }}
                             onMouseLeave={(e) => { if (!isFloorSelected) e.currentTarget.style.background = ''; }}
                           >
                             <Layers size={12} className={isFloorSelected ? 'text-[#7A0808]' : 'text-gray-400'} />
@@ -336,7 +336,7 @@ export default function BuildingManagement() {
                             ? '#FFF0F0'
                             : '#FAFAFA',
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
                       onMouseLeave={(e) => {
                         const isActiveItem = selectedBuilding?.id === item.buildingId && (selectedFloor === item.floor || selectedFloor === 'all');
                         e.currentTarget.style.background = isActiveItem ? '#FFF0F0' : '#FAFAFA';
