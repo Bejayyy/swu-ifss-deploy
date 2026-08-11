@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import systemLogo from '../assets/logo.png';
+import loginBg from '../assets/login-bg.jpg';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
@@ -52,13 +53,13 @@ export default function Login() {
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `url('https://images.unsplash.com/photo-1562774053-701939374585?w=1400&q=80')`,
+          backgroundImage: `url(${loginBg})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          opacity: 0.22,
-          filter: 'blur(2px)',
+          opacity: 0.35,
         }}
       />
+
 
       <div
         className="relative bg-white rounded-3xl shadow-2xl w-full px-10 py-10"
