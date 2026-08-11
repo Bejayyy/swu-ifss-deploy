@@ -76,11 +76,11 @@
 }
 
 .nav-item:hover {
-  background: #F3F4F6;
+  background: #FFF0F0;
 }
 
 .nav-item.active {
-  background: #F3F4F6;
+  background: #FFF0F0;
 }
 
 .nav-item.active .nav-icon,

@@ -31,8 +31,8 @@ export function StatCardItem({ label, value, icon: Icon, color = 'blue', onClick
         <div className={`w-11 h-11 rounded-[12px] flex items-center justify-center ${colorStyle.bg} ${colorStyle.text}`}>
           {Icon && <Icon size={20} strokeWidth={2} />}
         </div>
-        <span className="text-2xl sm:text-3xl font-extrabold text-slate-800 tabular-nums">
-          {typeof value === 'number' ? value : value}
+        <span className={`font-extrabold text-slate-800 tabular-nums ${typeof value === 'string' && value.length > 8 ? 'text-lg sm:text-xl' : 'text-2xl sm:text-3xl'}`}>
+          {value}
         </span>
       </div>
       <p className="text-[13px] font-bold text-slate-700 leading-tight">{label}</p>

@@ -16,6 +16,7 @@ import { subscribeAllPlotEntriesForRoom } from '../services/plotScheduleService'
 import ScheduleMaintenanceModal from '../components/modals/ScheduleMaintenanceModal';
 import ReportMaintenanceModal from '../components/modals/ReportMaintenanceModal';
 import { useModal } from '../hooks/useModal';
+import ProgressStatCards from '../components/ProgressStatCards';
 
 const sampleSchedules = [];
 
@@ -649,39 +650,40 @@ export default function RoomDetails() {
       )}
 
       {/* Room info cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6 print:hidden">
-        <div className="stat-card">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Room Type</p>
-            <span className="text-xs font-black px-2 py-1 rounded" style={{ background: '#FFF0F0', color: '#7A0808' }}>
-              {displayRoom.type || 'Lecture Room'}
-            </span>
-          </div>
-          <div className="stat-icon-box"><MapPin size={18} /></div>
-        </div>
-        <div className="stat-card">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Status</p>
-            <span className={statusBadge}>{displayRoom.status}</span>
-          </div>
-          <div className="stat-icon-box"><Clock size={18} /></div>
-        </div>
-        <div className="stat-card">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Capacity</p>
-            <p className="text-2xl font-black" style={{ color: '#2B3235' }}>{displayRoom.capacity}</p>
-            <p className="text-xs text-gray-400">People</p>
-          </div>
-          <div className="stat-icon-box"><Users size={18} /></div>
-        </div>
-        <div className="stat-card">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Equipments</p>
-            <p className="text-2xl font-black" style={{ color: '#2B3235' }}>{displayRoom.equipment?.length || 0}</p>
-            <p className="text-xs text-gray-400">Items</p>
-          </div>
-          <div className="stat-icon-box"><Wrench size={18} /></div>
-        </div>
+      <div className="mb-6 print:hidden">
+        <ProgressStatCards
+          items={[
+            {
+              label: 'Room Type',
+              value: displayRoom.type || 'Lecture Room',
+              icon: MapPin,
+              color: 'maroon',
+            },
+            {
+              label: 'Status',
+              value: displayRoom.status || 'Available',
+              icon: Clock,
+              color:
+                displayRoom.status === 'Available'
+                  ? 'emerald'
+                  : displayRoom.status === 'Occupied'
+                  ? 'red'
+                  : 'amber',
+            },
+            {
+              label: 'Capacity (People)',
+              value: displayRoom.capacity || 0,
+              icon: Users,
+              color: 'blue',
+            },
+            {
+              label: 'Equipments (Items)',
+              value: displayRoom.equipment?.length || 0,
+              icon: Wrench,
+              color: 'amber',
+            },
+          ]}
+        />
       </div>
 
       {/* Equipment */}

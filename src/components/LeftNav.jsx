@@ -194,8 +194,11 @@ export default function LeftNav({
             <div key={building.id}>
               <div
                 className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group ${
-                  buildingActive ? 'bg-red-50/60 font-bold' : 'hover:bg-gray-100'
+                  buildingActive ? 'font-bold' : ''
                 }`}
+                style={buildingActive ? { background: '#FFF0F0' } : undefined}
+                onMouseEnter={(e) => { if (!buildingActive) e.currentTarget.style.background = '#FFF0F0'; }}
+                onMouseLeave={(e) => { if (!buildingActive) e.currentTarget.style.background = ''; }}
                 onClick={() => {
                   toggleBuilding(building.id);
                   navigate(`/building/${building.id}`);
@@ -223,7 +226,10 @@ export default function LeftNav({
                 return (
                   <div key={floorKey}>
                     <div
-                      className="flex items-center gap-1.5 py-1 pl-8 pr-2 rounded-lg cursor-pointer hover:bg-gray-100 group"
+                      className="flex items-center gap-1.5 py-1 pl-8 pr-2 rounded-lg cursor-pointer group transition-colors"
+                      style={{ }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                       onClick={() => toggleFloor(floorKey)}
                     >
                       {isFloorExpanded ? (
@@ -243,9 +249,12 @@ export default function LeftNav({
                       return (
                         <div
                           key={room.id}
-                          className={`flex items-center gap-1.5 py-1 pl-12 pr-2 rounded-lg cursor-pointer group ${
-                            roomActive ? 'bg-gray-100' : 'hover:bg-gray-100'
-                          } ${isUnderMaintenance ? 'opacity-50' : ''}`}
+                          className={`flex items-center gap-1.5 py-1 pl-12 pr-2 rounded-lg cursor-pointer group transition-colors ${
+                            isUnderMaintenance ? 'opacity-50' : ''
+                          }`}
+                          style={roomActive ? { background: '#FFF0F0' } : undefined}
+                          onMouseEnter={(e) => { if (!roomActive) e.currentTarget.style.background = '#FFF0F0'; }}
+                          onMouseLeave={(e) => { if (!roomActive) e.currentTarget.style.background = ''; }}
                           onClick={() =>
                             navigate(`/room/${room.id}`, {
                               state: {

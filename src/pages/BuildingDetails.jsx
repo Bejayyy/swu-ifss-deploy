@@ -11,6 +11,7 @@ import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
 import { buildingSchedulesById } from '../data/mockSchedules';
+import ProgressStatCards from '../components/ProgressStatCards';
 
 const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', Maintenance: 'badge-maintenance' };
 
@@ -94,21 +95,15 @@ export default function BuildingDetails() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: 'Total Floors', value: building.floors, icon: Building2 },
-          { label: 'Total Rooms', value: building.totalRooms || allRooms.length, icon: DoorOpen },
-          { label: 'Total Capacity', value: allRooms.reduce((a, r) => a + (r.capacity || 0), 0), icon: Users },
-          { label: 'Available Now', value: availableNow, icon: CheckSquare },
-        ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="stat-card">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: '#2B3235', opacity: 0.55 }}>{label}</p>
-              <p className="text-3xl font-black" style={{ color: '#2B3235' }}>{value}</p>
-            </div>
-            <div className="stat-icon-box"><Icon size={18} /></div>
-          </div>
-        ))}
+      <div className="mb-6">
+        <ProgressStatCards
+          items={[
+            { label: 'Total Floors', value: building.floors, icon: Building2, color: 'maroon' },
+            { label: 'Total Rooms', value: building.totalRooms || allRooms.length, icon: DoorOpen, color: 'blue' },
+            { label: 'Total Capacity', value: allRooms.reduce((a, r) => a + (r.capacity || 0), 0), icon: Users, color: 'amber' },
+            { label: 'Available Now', value: availableNow, icon: CheckSquare, color: 'emerald' },
+          ]}
+        />
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
