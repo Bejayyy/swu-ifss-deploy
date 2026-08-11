@@ -358,28 +358,28 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ───── 4. REDESIGNED ROOM AVAILABILITY BOARD (Clean, Intuitive Cards) ───── */}
+      {/* ───── 4. COMPACT ROOM AVAILABILITY QUICK MATRIX ───── */}
       <Card className="border-slate-200/80 shadow-2xs bg-white mb-6 rounded-2xl">
-        <CardHeader className="border-b border-slate-100 pb-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <CardHeader className="border-b border-slate-100 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
                 <DoorOpen size={18} />
               </div>
               <div>
-                <CardTitle className="text-base font-bold text-slate-900">Room Availability & Schedule Board</CardTitle>
-                <CardDescription className="text-xs text-slate-500">Real-time room occupancy and hourly schedule status</CardDescription>
+                <CardTitle className="text-base font-bold text-slate-900">Room Availability Matrix</CardTitle>
+                <CardDescription className="text-xs text-slate-500">Quick schedule overview & time slot availability</CardDescription>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               {/* Day Filter Tabs */}
               <div className="flex items-center bg-slate-100 p-1 rounded-xl">
                 {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
                   <button
                     key={day}
                     onClick={() => setActiveDay(day)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
                       activeDay === day
                         ? 'bg-[#800000] text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
@@ -391,10 +391,10 @@ export default function Dashboard() {
               </div>
 
               {/* Building Filter */}
-              <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50/50 text-xs">
-                <Filter size={13} className="text-slate-400" />
+              <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-2.5 py-1 bg-slate-50/50 text-xs">
+                <Filter size={12} className="text-slate-400" />
                 <select
-                  className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
+                  className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer text-xs"
                   value={selectedBuilding || ''}
                   onChange={(e) => setSelectedBuilding(e.target.value || null)}
                 >
@@ -406,92 +406,80 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-
-          {/* Quick Legend Pills */}
-          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 text-xs">
-            <span className="font-semibold text-slate-500">Time Block Status:</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="font-medium text-slate-700">Available</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#800000]" />
-              <span className="font-medium text-slate-700">Occupied / Reserved</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-              <span className="font-medium text-slate-700">Under Maintenance</span>
-            </div>
-          </div>
         </CardHeader>
 
-        <CardContent className="p-5">
-          {roomCards.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {roomCards.map((room) => (
-                <div
-                  key={room.id}
-                  className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-4 transition-all hover:bg-white hover:shadow-xs hover:border-slate-300"
-                >
-                  {/* Room Card Header */}
-                  <div className="flex items-start justify-between mb-3 pb-2.5 border-b border-slate-200/70">
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm">{room.name}</h4>
-                      <p className="text-xs text-slate-500 font-medium">
-                        {room.buildingName} · {room.type} ({room.capacity} seats)
-                      </p>
-                    </div>
-                    {room.maintenanceStatus === 'under-maintenance' ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                        <Wrench size={12} /> Maintenance
-                      </span>
-                    ) : room.status === 'Occupied' ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        <AlertCircle size={12} /> Occupied
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <Check size={12} /> Available
-                      </span>
-                    )}
-                  </div>
+        <CardContent className="p-0">
+          <div className="max-h-72 overflow-y-auto">
+            {roomCards.length > 0 ? (
+              <table className="w-full text-xs border-collapse min-w-[700px]">
+                <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200/80">
+                  <tr className="text-slate-600 font-bold text-left">
+                    <th className="py-2.5 px-4 min-w-[140px]">Room & Building</th>
+                    <th className="py-2.5 px-3 w-[110px]">Current Status</th>
+                    <th className="py-2.5 px-3">Time Slots ({activeDay})</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {roomCards.map((room) => (
+                    <tr key={room.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 px-4">
+                        <p className="font-extrabold text-slate-900 leading-tight">{room.name}</p>
+                        <p className="text-[11px] text-slate-400 font-medium">{room.buildingName} · {room.type}</p>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {room.maintenanceStatus === 'under-maintenance' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            <Wrench size={10} /> Maint.
+                          </span>
+                        ) : room.status === 'Occupied' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            <AlertCircle size={10} /> Occupied
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <Check size={10} /> Free
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1.5 overflow-x-auto">
+                          {timeBlocks.map((tb) => {
+                            const slotStatus = room.slots[tb.id] || 'available';
+                            const isFree = slotStatus === 'available';
+                            const isMaint = slotStatus === 'maintenance';
 
-                  {/* Hourly Schedule Pills Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {timeBlocks.map((tb) => {
-                      const slotStatus = room.slots[tb.id] || 'available';
-                      const isFree = slotStatus === 'available';
-                      const isMaint = slotStatus === 'maintenance';
-
-                      return (
-                        <div
-                          key={tb.id}
-                          className={`p-1.5 rounded-lg border text-center transition-all ${
-                            isMaint
-                              ? 'bg-slate-100 text-slate-500 border-slate-200'
-                              : isFree
-                              ? 'bg-emerald-50/70 text-emerald-800 border-emerald-200/80 font-semibold'
-                              : 'bg-red-50 text-[#800000] border-red-200 font-bold'
-                          }`}
-                        >
-                          <p className="text-[10px] font-semibold text-slate-500 leading-none mb-0.5">{tb.label}</p>
-                          <p className="text-[11px] font-bold capitalize">
-                            {isMaint ? 'Maint.' : isFree ? 'Free' : 'Booked'}
-                          </p>
+                            return (
+                              <div
+                                key={tb.id}
+                                className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1 border whitespace-nowrap ${
+                                  isMaint
+                                    ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                    : isFree
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-red-50 text-[#800000] border-red-200'
+                                }`}
+                                title={`${tb.label}: ${isMaint ? 'Under Maintenance' : isFree ? 'Available' : 'Booked'}`}
+                              >
+                                <span className="font-semibold text-slate-400">{tb.id}:</span>
+                                <span>{isMaint ? 'Maint' : isFree ? 'Free' : 'Booked'}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-slate-400 text-xs font-medium">
-              No rooms found matching selected criteria.
-            </div>
-          )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-center py-10 text-slate-400 text-xs font-medium">
+                No rooms found matching selected criteria.
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
+
 
       {/* ───── 5. Bottom Section: Subject Assignments & Activity ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
