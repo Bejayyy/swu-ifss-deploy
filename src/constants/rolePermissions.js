@@ -74,7 +74,7 @@ export const ROUTE_PERMISSIONS = {
   '/assigned-rooms': null,
   '/academic-calendar': PERMISSIONS.ACADEMIC_CALENDAR_VIEW,
   '/system-settings': null,
-  '/reports': PERMISSIONS.REPORTS_VIEW,
+
   '/college-inventory': PERMISSIONS.SYSTEM_ADMIN,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
   '/approval-workflow': PERMISSIONS.APPROVAL_WORKFLOW_MANAGE,
@@ -94,7 +94,7 @@ export const NAV_ITEMS = {
   collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: PERMISSIONS.SYSTEM_ADMIN },
   approvalWorkflow: { label: 'Approval Workflow', path: '/approval-workflow', permission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
   approvals: { label: 'Request Management', path: '/approvals', permission: null },
-  reports: { label: 'Reports & Analytics', path: '/reports', permission: PERMISSIONS.REPORTS_VIEW },
+
   maintenanceDashboard: { label: 'Maintenance Dashboard', path: '/maintenance-dashboard', permission: PERMISSIONS.ROOMS_MAINTENANCE_MANAGE },
 };
 
@@ -110,7 +110,7 @@ const ROLE_NAV_KEYS = {
     'collegeInventory',
     'approvalWorkflow',
     'approvals',
-    'reports',
+
   ],
   [ROLES.DEAN]: [
     'dashboard',

@@ -1,34 +1,134 @@
-import React, { useMemo, useState } from 'react';
-import { MessageCircle, Send, Sparkles, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MessageCircle, Send, Sparkles, X, Loader2, AlertCircle } from 'lucide-react';
 import chatbotFace from '../assets/chatbot.png';
+import { queryGeminiWithRAG, generateQuickPrompts, preloadSystemData } from '../services/ragChatbotService_fetch';
 
 const BOT_NAME = 'COBRA Assistant';
-
-const quickPrompts = [
-  'Find an available room for 40 students',
-  'Show room schedules this week',
-  'Help me create a non-academic request',
-];
 
 export default function CobraChatbot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dataPreloaded, setDataPreloaded] = useState(false);
+  const [quickPrompts, setQuickPrompts] = useState([
+    'Find an available room for 40 students',
+    'Show room schedules this week',
+    'Which rooms have projectors?',
+  ]);
 
-  const messages = useMemo(
-    () => [
+  // Initialize chatbot with welcome message
+  useEffect(() => {
+    const initMessages = [
       {
         id: 'intro',
         role: 'bot',
-        text: `Hi! I am ${BOT_NAME}, your SWU-IFSS chatbot. Ask me about rooms, schedules, and requests.`,
+        text: `Hi! I am ${BOT_NAME}, your SWU-IFSS intelligent assistant. Ask me about rooms, schedules, availability, equipment, and facility performance.`,
       },
       {
-        id: 'ui-note',
+        id: 'capabilities',
         role: 'bot',
-        text: 'This is UI preview mode only. No database or backend is connected yet.',
+        text: 'I can help you:\n• Find rooms by capacity and requirements\n• Check room availability and schedules\n• View room equipment and facilities\n• Get information about maintenance status\n• Analyze room performance data',
       },
-    ],
-    []
-  );
+    ];
+    setMessages(initMessages);
+
+    // Load dynamic quick prompts
+    generateQuickPrompts().then(prompts => {
+      if (prompts && prompts.length > 0) {
+        setQuickPrompts(prompts);
+      }
+    }).catch(err => {
+      console.error('Error loading quick prompts:', err);
+    });
+  }, []);
+
+  // Preload data when chat window opens
+  useEffect(() => {
+    if (open && !dataPreloaded) {
+      console.log('🚀 Pre-loading system data for faster responses...');
+      preloadSystemData()
+        .then(() => {
+          console.log('✅ System data pre-loaded and cached!');
+          setDataPreloaded(true);
+        })
+        .catch(err => {
+          console.warn('⚠️ Pre-load failed, will load on demand:', err);
+        });
+    }
+  }, [open, dataPreloaded]);
+
+  // Handle sending a message with streaming
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: input.trim(),
+    };
+
+    // Add user message to chat
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
+
+    // Create placeholder for bot response
+    const botMessageId = `bot-${Date.now()}`;
+    const botMessage = {
+      id: botMessageId,
+      role: 'bot',
+      text: '',
+    };
+    setMessages(prev => [...prev, botMessage]);
+
+    try {
+      // Get minimal conversation history (last 4 messages = 2 turns)
+      const conversationHistory = messages.slice(-4);
+
+      // Stream response chunks
+      let fullResponse = '';
+      for await (const chunk of queryGeminiWithRAG(userMessage.text, conversationHistory)) {
+        fullResponse += chunk;
+        // Update bot message with accumulated text
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === botMessageId 
+              ? { ...msg, text: fullResponse }
+              : msg
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === botMessageId 
+            ? { 
+                ...msg, 
+                text: 'Sorry, I encountered an error. Please check your Gemini API key configuration.',
+                error: true 
+              }
+            : msg
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Enter key press
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // Handle quick prompt click
+  const handleQuickPrompt = (prompt) => {
+    setInput(prompt);
+  };
 
   return (
     <>
@@ -79,58 +179,110 @@ export default function CobraChatbot() {
             <div className="px-4 py-4 bg-[#FFF8F8] border-b border-[#f0dede]">
               <div className="inline-flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white border border-[#f0dede] text-[#7A0808]">
                 <Sparkles size={12} />
-                AI Preview Interface
+                {dataPreloaded ? 'AI Ready - Instant Responses' : 'AI Loading Data...'}
               </div>
+              <p className="text-[10px] text-gray-600 mt-1.5">
+                {dataPreloaded 
+                  ? 'Data cached • Ready for instant answers' 
+                  : 'Pre-loading system data for faster responses...'}
+              </p>
             </div>
 
-            <div className="h-[320px] overflow-y-auto p-4 space-y-3 bg-[#FCFCFD]">
+            <div className="h-[380px] overflow-y-auto p-4 space-y-3 bg-[#FCFCFD]">
               {messages.map((msg) => (
-                <div key={msg.id} className="flex items-start gap-2.5">
+                <div key={msg.id} className={`flex items-start gap-2.5 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ background: '#FFEFEF', color: '#7A0808' }}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      msg.role === 'user' 
+                        ? 'bg-gray-200 text-gray-700' 
+                        : msg.error 
+                        ? 'bg-red-100 text-red-600'
+                        : 'bg-[#FFEFEF] text-[#7A0808]'
+                    }`}
                   >
-                    <MessageCircle size={13} />
+                    {msg.role === 'user' ? (
+                      <span className="text-xs font-bold">U</span>
+                    ) : msg.error ? (
+                      <AlertCircle size={13} />
+                    ) : (
+                      <MessageCircle size={13} />
+                    )}
                   </div>
-                  <div className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed border border-gray-200 bg-white text-[#2B3235]">
+                  <div 
+                    className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed border ${
+                      msg.role === 'user'
+                        ? 'bg-[#800000] text-white border-[#800000]'
+                        : msg.error
+                        ? 'bg-red-50 border-red-200 text-red-900'
+                        : 'bg-white border-gray-200 text-[#2B3235]'
+                    }`}
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  >
                     {msg.text}
                   </div>
                 </div>
               ))}
 
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">Quick Prompts</p>
-                <div className="flex flex-wrap gap-2">
-                  {quickPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      className="text-[11px] px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-[#2B3235] hover:border-[#800000] hover:text-[#800000]"
-                      onClick={() => setInput(prompt)}
-                    >
-                      {prompt}
-                    </button>
-                  ))}
+              {loading && (
+                <div className="flex items-start gap-2.5">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-[#FFEFEF] text-[#7A0808]">
+                    <Loader2 size={13} className="animate-spin" />
+                  </div>
+                  <div className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed border border-gray-200 bg-white text-[#2B3235]">
+                    <div className="flex items-center gap-2">
+                      <span>Analyzing system data</span>
+                      <span className="flex gap-1">
+                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {!loading && messages.length > 2 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">Suggested Questions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {quickPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        className="text-[11px] px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-[#2B3235] hover:border-[#800000] hover:text-[#800000] transition-colors"
+                        onClick={() => handleQuickPrompt(prompt)}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-3 border-t border-gray-100 bg-white">
               <div className="flex items-center gap-2">
                 <input
-                  className="form-input text-sm"
-                  placeholder="Type your message..."
+                  className="form-input text-sm flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000] focus:border-transparent"
+                  placeholder="Ask about rooms, schedules, equipment..."
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  disabled={loading}
                 />
                 <button
                   type="button"
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                   style={{ background: '#800000' }}
+                  onClick={handleSend}
+                  disabled={loading || !input.trim()}
                 >
-                  <Send size={15} />
+                  {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 </button>
               </div>
+              <p className="text-[10px] text-gray-500 mt-1.5 text-center">
+                Powered by Google Gemini AI • Real-time data from Firestore
+              </p>
             </div>
           </div>
         </div>

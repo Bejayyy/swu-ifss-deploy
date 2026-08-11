@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, BookOpen,
-  Search, Clock, Building2, GraduationCap, BarChart2,
+  Search, Clock, Building2, GraduationCap,
   Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch, Users, Wrench,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -28,7 +28,7 @@ const NAV_ICONS = {
   '/college-inventory': GraduationCap,
   '/approval-workflow': GitBranch,
   '/approvals': CheckSquare,
-  '/reports': BarChart2,
+
   '/maintenance-dashboard': Wrench,
 };
 

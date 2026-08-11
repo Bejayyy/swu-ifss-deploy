@@ -23,7 +23,7 @@ import RoomFinder from './pages/RoomFinder';
 import ScheduleHistory from './pages/ScheduleHistory';
 import AcademicCalendar from './pages/AcademicCalendar';
 import SystemSettings from './pages/SystemSettings';
-import Reports from './pages/Reports';
+
 import SystemAdministration from './pages/SystemAdministration';
 import ApprovalWorkflowManagement from './pages/ApprovalWorkflowManagement';
 import MaintenanceDashboard from './pages/MaintenanceDashboard';
@@ -87,7 +87,7 @@ export default function App() {
             <Route path="/assigned-rooms" element={<RegistrarPage><AssignedRoomsManagement /></RegistrarPage>} />
             <Route path="/academic-calendar" element={<RegistrarPage><AcademicCalendar /></RegistrarPage>} />
             <Route path="/system-settings" element={<RegistrarPage><SystemSettings /></RegistrarPage>} />
-            <Route path="/reports" element={<RegistrarPage><Reports /></RegistrarPage>} />
+
             <Route path="/system-administration" element={<RegistrarPage><SystemAdministration /></RegistrarPage>} />
             <Route path="/college-inventory" element={<RegistrarPage><CollegeInventory /></RegistrarPage>} />
             <Route path="/teachers" element={<RegistrarPage><TeachersDirectory /></RegistrarPage>} />
