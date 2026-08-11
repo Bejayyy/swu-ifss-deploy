@@ -176,52 +176,8 @@ export default function Dashboard() {
 
   return (
     <Layout title="Dashboard" subtitle="Facility Overview & Analytics">
-      {/* ───── Quick Actions Toolbar ───── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-[#800000]" />
-          <span className="text-xs font-bold text-slate-800">Quick Operations</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate('/room-finder')}
-            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
-          >
-            <Search size={14} className="text-[#800000]" />
-            Find Available Room
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate('/approvals')}
-            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
-          >
-            <ClipboardList size={14} className="text-[#800000]" />
-            View Approvals
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate('/course-scheduling')}
-            className="text-xs gap-1.5 border-slate-200 hover:bg-slate-50 font-semibold"
-          >
-            <Calendar size={14} className="text-[#800000]" />
-            Course Schedules
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => navigate('/building-management')}
-            className="text-xs gap-1.5 bg-[#800000] hover:bg-[#5E0606] text-white font-semibold shadow-xs"
-          >
-            <Building2 size={14} />
-            Facility Management
-          </Button>
-        </div>
-      </div>
-
       {/* ───── 1. Top Metric Cards (4 Cards Grid) ───── */}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Total Facilities"
