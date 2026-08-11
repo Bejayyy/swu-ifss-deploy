@@ -94,35 +94,34 @@ function StatusBadge({ status }) {
   );
 }
 
-// ───── Modern Stat Metric Card ─────
-function StatCard({ label, value, icon: Icon, accentColor, description, trend, onClick }) {
+// ───── Modern Stat Card Component ─────
+function StatCard({ label, value, icon: Icon, color = 'blue', onClick }) {
+  const COLOR_MAP = {
+    blue: 'bg-blue-100/70 text-blue-600',
+    green: 'bg-emerald-100/70 text-emerald-600',
+    emerald: 'bg-emerald-100/70 text-emerald-600',
+    rose: 'bg-rose-100/70 text-rose-600',
+    amber: 'bg-amber-100/70 text-amber-600',
+    maroon: 'bg-red-100/70 text-[#800000]',
+    slate: 'bg-slate-100 text-slate-500',
+  };
+  const colorStyle = COLOR_MAP[color] || COLOR_MAP.blue;
+
   return (
-    <Card
+    <div
       onClick={onClick}
-      className="relative overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer border-slate-200/80 bg-white"
+      className="bg-white rounded-[16px] border border-slate-200/70 p-5 shadow-2xs flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
     >
-      <div className={`absolute top-0 left-0 right-0 h-1 ${accentColor}`} />
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              {label}
-            </p>
-            <h3 className="text-2xl font-extrabold text-slate-900 tabular-nums tracking-tight">
-              {typeof value === 'number' ? String(value).padStart(2, '0') : value}
-            </h3>
-            {description && (
-              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1 font-medium">
-                {description}
-              </p>
-            )}
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 text-slate-700 border border-slate-100 flex items-center justify-center flex-shrink-0">
-            {Icon && <Icon size={22} className="text-[#800000]" strokeWidth={2} />}
-          </div>
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-11 h-11 rounded-[12px] flex items-center justify-center ${colorStyle}`}>
+          {Icon && <Icon size={20} strokeWidth={2} />}
         </div>
-      </CardContent>
-    </Card>
+        <span className="text-2xl sm:text-3xl font-extrabold text-slate-800 tabular-nums">
+          {typeof value === 'number' ? value : value}
+        </span>
+      </div>
+      <p className="text-[13px] font-bold text-slate-700 leading-tight">{label}</p>
+    </div>
   );
 }
 
@@ -228,35 +227,32 @@ export default function Dashboard() {
           label="Total Facilities"
           value={roomStats.total}
           icon={DoorOpen}
-          accentColor="bg-[#800000]"
-          description={`${operationalPct}% operational capacity`}
+          color="maroon"
           onClick={() => navigate('/building-management')}
         />
         <StatCard
           label="Available Rooms"
           value={roomStats.available}
           icon={CheckCircle}
-          accentColor="bg-emerald-600"
-          description="Ready for immediate allocation"
+          color="green"
           onClick={() => navigate('/room-finder')}
         />
         <StatCard
           label="Occupied Rooms"
           value={roomStats.occupied}
           icon={Building2}
-          accentColor="bg-rose-600"
-          description="In active class/reservation use"
+          color="rose"
           onClick={() => navigate('/building-management')}
         />
         <StatCard
           label="Pending Requests"
           value={pendingTotal}
           icon={ClipboardList}
-          accentColor="bg-amber-500"
-          description="Awaiting workflow review"
+          color="amber"
           onClick={() => navigate('/approvals')}
         />
       </div>
+
 
       {/* ───── 2. Primary Charts Section (2 Columns) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

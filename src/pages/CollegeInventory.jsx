@@ -14,7 +14,9 @@ import {
   UserCheck,
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import { StatCardItem } from '../components/ProgressStatCards';
 import LoadingModal from '../components/modals/LoadingModal';
+
 import NotificationModal from '../components/modals/NotificationModal';
 import ConfirmModal from '../components/modals/ConfirmModal';
 import AddCollegeModal from '../components/modals/AddCollegeModal';
@@ -283,12 +285,23 @@ export default function CollegeInventory() {
   const courseStartIdx = (courseCurrentPage - 1) * courseItemsPerPage + 1;
   const courseEndIdx = Math.min(courseCurrentPage * courseItemsPerPage, filteredCourses.length);
 
+  const totalPrograms = colleges.reduce((sum, c) => sum + (c.programs?.length || 0), 0);
+  const deansCount = colleges.filter((c) => c.deanEmail).length;
+
   return (
     <Layout
       title="College Inventory"
       subtitle="Manage colleges, assigned deans, degree programs, and course catalogues"
     >
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCardItem label="Total Colleges" value={colleges.length} icon={Building2} color="blue" />
+        <StatCardItem label="Active Deans" value={deansCount} icon={UserCheck} color="emerald" />
+        <StatCardItem label="Academic Programs" value={totalPrograms} icon={GraduationCap} color="amber" />
+        <StatCardItem label="Total Courses" value={courses.length} icon={BookOpen} color="maroon" />
+      </div>
+
       {!viewingCollegeCourses ? (
+
         /* COLLEGES TABLE VIEW */
         <div className="space-y-4">
           {/* Header & Controls Bar */}

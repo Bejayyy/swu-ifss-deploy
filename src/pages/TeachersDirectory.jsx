@@ -18,7 +18,9 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import { StatCardItem } from '../components/ProgressStatCards';
 import LoadingModal from '../components/modals/LoadingModal';
+
 import NotificationModal from '../components/modals/NotificationModal';
 import TeacherScheduleModal from '../components/modals/TeacherScheduleModal';
 import { useAuth } from '../context/AuthContext';
@@ -290,24 +292,13 @@ export default function TeachersDirectory() {
       });
     } catch (err) {
       console.error('Error unassigning course:', err);
-      setNotification({
-        type: 'error',
-        title: 'Failed to Unassign Course',
-        message: err.message || 'An error occurred.',
-      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const stats = [
-    { label: 'Total Teachers', value: teachers.length, icon: Users, accent: 'total' },
-    { label: 'Active Teachers', value: teachers.filter((t) => t.status === 'Active' || !t.status).length, icon: GraduationCap, accent: 'approved' },
-    { label: 'Inactive Teachers', value: teachers.filter((t) => t.status === 'Inactive').length, icon: Users, accent: 'neutral' },
-    { label: isDean ? 'Your Department' : 'Colleges Covered', value: departmentList.length, icon: Building2, accent: 'pending' },
-  ];
-
   const startIdx = (currentPage - 1) * itemsPerPage + 1;
+
   const endIdx = Math.min(currentPage * itemsPerPage, filteredTeachers.length);
   const availableCoursesList = getAvailableCourses();
   const allFilteredSelected =
@@ -321,41 +312,13 @@ export default function TeachersDirectory() {
     >
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  stat.accent === 'total'
-                    ? 'bg-blue-100'
-                    : stat.accent === 'approved'
-                    ? 'bg-green-100'
-                    : stat.accent === 'pending'
-                    ? 'bg-yellow-100'
-                    : 'bg-gray-100'
-                }`}
-              >
-                <stat.icon
-                  size={20}
-                  className={
-                    stat.accent === 'total'
-                      ? 'text-blue-600'
-                      : stat.accent === 'approved'
-                      ? 'text-green-600'
-                      : stat.accent === 'pending'
-                      ? 'text-yellow-600'
-                      : 'text-gray-600'
-                  }
-                />
-              </div>
-              <span className="text-2xl font-black" style={{ color: '#2B3235' }}>
-                {stat.value}
-              </span>
-            </div>
-            <p className="text-xs font-bold text-gray-500">{stat.label}</p>
-          </div>
-        ))}
+        <StatCardItem label="Total Teachers" value={teachers.length} icon={Users} color="blue" />
+        <StatCardItem label="Active Teachers" value={teachers.filter((t) => t.status === 'Active' || !t.status).length} icon={GraduationCap} color="emerald" />
+        <StatCardItem label="Inactive Teachers" value={teachers.filter((t) => t.status === 'Inactive').length} icon={Users} color="slate" />
+        <StatCardItem label={isDean ? 'Your Department' : 'Colleges Covered'} value={departmentList.length} icon={Building2} color="amber" />
       </div>
+
+
 
       {/* Header & Controls Bar */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-4 space-y-4">
