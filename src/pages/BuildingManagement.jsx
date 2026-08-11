@@ -225,7 +225,7 @@ export default function BuildingManagement() {
                 <button
                   type="button"
                   onClick={() => setShowAddBuilding(true)}
-                  className="p-1 rounded-lg hover:bg-gray-100 text-[#2B3235] hover:text-[#7A0808] transition-colors"
+                  className="p-1 rounded-lg hover:bg-[#FFF0F0] text-[#2B3235] hover:text-[#7A0808] transition-colors"
                   title="Add Building"
                 >
                   <Plus size={16} />
@@ -247,11 +247,14 @@ export default function BuildingManagement() {
                         setSelectedFloor('all');
                         toggleBuildingExpand(b.id);
                       }}
-                      className={`w-full flex items-center gap-1.5 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
+                      className={`w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all ${
                         isSelected
-                          ? 'bg-red-50/80 text-[#7A0808] font-bold border border-red-100 shadow-2xs'
-                          : 'text-[#2B3235] hover:bg-gray-50 font-medium'
+                          ? 'font-bold text-[#7A0808] border border-red-100 shadow-2xs'
+                          : 'text-[#2B3235] hover:text-[#7A0808] font-medium'
                       }`}
+                      style={isSelected ? { background: '#FFF0F0' } : undefined}
+                      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = ''; }}
                     >
                       <button
                         type="button"
@@ -280,9 +283,12 @@ export default function BuildingManagement() {
                             }}
                             className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-xs font-semibold transition-colors ${
                               isFloorSelected
-                                ? 'bg-red-50 text-[#7A0808] font-bold'
-                                : 'text-gray-600 hover:bg-gray-100/70 hover:text-[#7A0808]'
+                                ? 'text-[#7A0808] font-bold border border-red-100'
+                                : 'text-gray-600 hover:text-[#7A0808]'
                             }`}
+                            style={isFloorSelected ? { background: '#FFF0F0' } : undefined}
+                            onMouseEnter={(e) => { if (!isFloorSelected) e.currentTarget.style.background = '#FFF0F0'; }}
+                            onMouseLeave={(e) => { if (!isFloorSelected) e.currentTarget.style.background = ''; }}
                           >
                             <Layers size={12} className={isFloorSelected ? 'text-[#7A0808]' : 'text-gray-400'} />
                             <span className="flex-1 truncate">{floorObj.label || `Floor ${floorObj.floor}`}</span>
@@ -319,11 +325,22 @@ export default function BuildingManagement() {
                           setExpandedBuildings((prev) => ({ ...prev, [b.id]: true }));
                         }
                       }}
-                      className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer text-xs font-bold transition-all ${
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer text-xs font-bold transition-all border ${
                         selectedBuilding?.id === item.buildingId && (selectedFloor === item.floor || selectedFloor === 'all')
-                          ? 'bg-red-50 text-[#7A0808] border border-red-200 shadow-2xs'
-                          : 'bg-gray-50/80 text-gray-700 hover:bg-gray-100'
+                          ? 'text-[#7A0808] border-red-200 shadow-2xs'
+                          : 'text-gray-700 border-transparent'
                       }`}
+                      style={{
+                        background:
+                          selectedBuilding?.id === item.buildingId && (selectedFloor === item.floor || selectedFloor === 'all')
+                            ? '#FFF0F0'
+                            : '#FAFAFA',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#FFF0F0'; }}
+                      onMouseLeave={(e) => {
+                        const isActiveItem = selectedBuilding?.id === item.buildingId && (selectedFloor === item.floor || selectedFloor === 'all');
+                        e.currentTarget.style.background = isActiveItem ? '#FFF0F0' : '#FAFAFA';
+                      }}
                     >
                       <DoorOpen size={14} className="text-[#7A0808] flex-shrink-0" />
                       <div className="truncate flex-1">
