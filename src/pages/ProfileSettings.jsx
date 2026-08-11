@@ -9,7 +9,7 @@ import { auth } from '../firebase/firebase';
 import { upsertUserProfile } from '../services/userService';
 
 export default function ProfileSettings() {
-  const { profile } = useAuth();
+  const { profile, updateProfileState } = useAuth();
   const { showNotification, confirmState, notificationState } = useModal();
 
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'security' | 'preferences'
@@ -40,8 +40,47 @@ export default function ProfileSettings() {
     }
   }, [profile]);
 
-  // Handle Photo Upload
-  const handlePhotoUpload = (e) => {
+  // Helper function to compress avatar image to ~15KB data URL
+  const compressImage = (file, maxWidth = 300, maxHeight = 300, quality = 0.85) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  // Handle Photo Upload with compression
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -54,20 +93,21 @@ export default function ProfileSettings() {
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
+    try {
+      const compressedBase64 = await compressImage(file, 300, 300, 0.85);
+      setPhotoURL(compressedBase64);
       showNotification({
-        type: 'warning',
-        title: 'File Too Large',
-        message: 'Profile photo must be less than 3MB in size.',
+        type: 'success',
+        title: 'Photo Processed',
+        message: 'Image processed cleanly. Click "Save Profile Changes" to save to the database.',
       });
-      return;
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Processing Error',
+        message: 'Failed to process image file. Please try another picture.',
+      });
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhotoURL(reader.result);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleRemovePhoto = () => {
@@ -94,14 +134,18 @@ export default function ProfileSettings() {
     if (!profile?.uid) return;
     setIsUpdatingProfile(true);
     try {
-      await upsertUserProfile(profile.uid, {
+      const profileData = {
         displayName: profileForm.name,
         name: profileForm.name,
         phone: profileForm.phone,
         department: profileForm.department,
         photoURL: photoURL,
         avatarUrl: photoURL,
-      });
+      };
+      await upsertUserProfile(profile.uid, profileData);
+      if (updateProfileState) {
+        updateProfileState(profileData);
+      }
       showNotification({
         type: 'success',
         title: 'Profile Saved',
@@ -117,6 +161,7 @@ export default function ProfileSettings() {
       setIsUpdatingProfile(false);
     }
   };
+
 
 
   // Handle Password Change

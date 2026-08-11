@@ -309,6 +309,8 @@ export function AuthProvider({ children }) {
       completePasswordSetup,
       logout,
       setAuthError,
+      setProfile,
+      updateProfileState: (updates) => setProfile((prev) => (prev ? { ...prev, ...updates } : prev)),
     }),
     [
       firebaseUser,
@@ -322,6 +324,7 @@ export function AuthProvider({ children }) {
       logout,
     ],
   );
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
