@@ -54,6 +54,15 @@
 
 * { box-sizing: border-box; }
 
+/* Global maroon accent for all checkboxes */
+input[type="checkbox"] {
+  accent-color: #800000;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
 
 .nav-item {
   display: flex;
