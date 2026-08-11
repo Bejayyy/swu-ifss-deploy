@@ -422,42 +422,34 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             <ChevronDown size={14} className="text-red-100 hidden sm:block" />
           </button>
           {showProfile && (
-            <div className="absolute right-0 top-14 w-48 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
+            <div className="absolute right-0 top-14 w-52 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
               <div className="px-4 py-3 border-b border-gray-100">
                 <p className="text-xs font-bold" style={{ color: '#2B3235' }}>{displayName}</p>
                 <p className="text-[11px]" style={{ color: '#2B3235', opacity: 0.55 }}>{roleLabel}</p>
               </div>
               <button
                 type="button"
-                className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50"
+                className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-red-50/50 flex items-center gap-2"
                 style={{ color: '#2B3235' }}
                 onClick={() => {
                   setShowProfile(false);
-                  setShowProfileModal(true);
+                  navigate('/system-settings');
                 }}
               >
-                My Profile
+                <Settings size={15} className="text-[#800000]" />
+                Profile & Settings
               </button>
               <button
                 type="button"
-                className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50"
-                style={{ color: '#2B3235' }}
-                onClick={() => {
-                  setShowProfile(false);
-                  setShowSettingsModal(true);
-                }}
-              >
-                Settings
-              </button>
-              <button
-                type="button"
-                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 border-t border-gray-100"
+                className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 border-t border-gray-100 flex items-center gap-2"
                 onClick={handleSignOut}
               >
+                <User size={15} className="text-red-600" />
                 Sign Out
               </button>
             </div>
           )}
+
         </div>
       </div>
 

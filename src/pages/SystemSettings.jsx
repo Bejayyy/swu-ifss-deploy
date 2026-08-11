@@ -3,13 +3,17 @@ import {
   Sliders, Clock, FileUp, Download, Trash2, Check,
   FileText, ChevronRight, ChevronLeft, Plus, BookOpen, X, Eye, ChevronDown, Award, Edit,
   FileSpreadsheet, Upload, Search, User, RefreshCw, AlertCircle, CheckCircle2, Building2,
-  CalendarOff, AlertTriangle, Calendar
+  CalendarOff, AlertTriangle, Calendar, Lock
 } from 'lucide-react';
+import { updatePassword } from 'firebase/auth';
+import { auth } from '../firebase/firebase';
+import { upsertUserProfile } from '../services/userService';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useModal } from '../hooks/useModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
+
 import {
   buildSchoolYearId,
   saveSchoolYearConfig,
@@ -50,9 +54,106 @@ export default function SystemSettings() {
   } = useAcademicCalendar();
 
   // Navigation tab state
-  const [activeTab, setActiveTab] = useState('schoolYear'); // 'schoolYear' | 'examPeriods' | 'calendarPdf' | 'activities'
+  const [activeTab, setActiveTab] = useState('schoolYear'); // 'profile' | 'security' | 'schoolYear' | 'examPeriods' | 'calendarPdf' | 'activities' | 'noClassDays'
+
+  // Profile editing state
+  const [profileForm, setProfileForm] = useState({
+    name: profile?.displayName || profile?.name || '',
+    email: profile?.email || '',
+    phone: profile?.phone || '',
+    department: profile?.department || profile?.college || '',
+    role: profile?.role || 'User',
+  });
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setProfileForm({
+        name: profile.displayName || profile.name || '',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        department: profile.department || profile.college || '',
+        role: profile.role || 'User',
+      });
+    }
+  }, [profile]);
+
+  // Security password state
+  const [passwordForm, setPasswordForm] = useState({
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    if (!profile?.uid) return;
+    setIsUpdatingProfile(true);
+    try {
+      await upsertUserProfile(profile.uid, {
+        displayName: profileForm.name,
+        name: profileForm.name,
+        phone: profileForm.phone,
+        department: profileForm.department,
+      });
+      showNotification({
+        type: 'success',
+        title: 'Profile Updated',
+        message: 'Your user profile details have been saved to the database.',
+      });
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Failed to update profile.',
+      });
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showNotification({
+        type: 'error',
+        title: 'Password Mismatch',
+        message: 'New password and confirm password do not match.',
+      });
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      showNotification({
+        type: 'warning',
+        title: 'Weak Password',
+        message: 'Password must be at least 6 characters long.',
+      });
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      if (auth.currentUser) {
+        await updatePassword(auth.currentUser, passwordForm.newPassword);
+        showNotification({
+          type: 'success',
+          title: 'Password Changed',
+          message: 'Your account password has been updated successfully.',
+        });
+        setPasswordForm({ newPassword: '', confirmPassword: '' });
+      }
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Password Update Failed',
+        message: err.message || 'Requires recent sign in. Please log out and sign in again.',
+      });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   // School Year & Semester state
+
   const [syForm, setSyForm] = useState({
     label: '',
     semester1Start: '',
@@ -733,91 +834,134 @@ export default function SystemSettings() {
           </div>
 
           {/* Vertical Navigation Menu */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
-            <p className="px-3 pt-2 pb-2 text-[10px] font-black uppercase tracking-wider text-gray-400">
-              System Configuration
-            </p>
+          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-3">
+            {/* PROFILE & SECURITY */}
+            <div className="space-y-1">
+              <p className="px-3 pt-1 pb-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                Profile & Security
+              </p>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('schoolYear')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'schoolYear'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Sliders size={16} />
-                <span>School Year Configuration</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'schoolYear' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'profile'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <User size={16} />
+                  <span>Profile Information</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'profile' ? 'opacity-100' : 'opacity-40'} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('examPeriods')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'examPeriods'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Clock size={16} />
-                <span>Exam Period Range</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'examPeriods' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('security')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'security'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Lock size={16} />
+                  <span>Account Security</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'security' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('calendarPdf')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'calendarPdf'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <BookOpen size={16} />
-                <span>School Calendar (PDF)</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'calendarPdf' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+            {/* SYSTEM CONFIGURATION */}
+            <div className="space-y-1 pt-2 border-t border-gray-100">
+              <p className="px-3 pt-1 pb-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                System Configuration
+              </p>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('activities')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'activities'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Award size={16} />
-                <span>Activities</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'activities' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('schoolYear')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'schoolYear'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Sliders size={16} />
+                  <span>School Year Configuration</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'schoolYear' ? 'opacity-100' : 'opacity-40'} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('noClassDay')}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'noClassDay'
-                  ? 'bg-[#800000] text-white shadow-2xs'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <CalendarOff size={16} />
-                <span>No Class Day Declaration</span>
-              </div>
-              <ChevronRight size={14} className={activeTab === 'noClassDay' ? 'opacity-100' : 'opacity-40'} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('examPeriods')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'examPeriods'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Clock size={16} />
+                  <span>Exam Period Range</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'examPeriods' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('calendarPdf')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'calendarPdf'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <BookOpen size={16} />
+                  <span>School Calendar (PDF)</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'calendarPdf' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('activities')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'activities'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Award size={16} />
+                  <span>Activities</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'activities' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('noClassDays')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'noClassDays'
+                    ? 'bg-[#800000] text-white shadow-2xs'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <CalendarOff size={16} />
+                  <span>No Class Day Declaration</span>
+                </div>
+                <ChevronRight size={14} className={activeTab === 'noClassDays' ? 'opacity-100' : 'opacity-40'} />
+              </button>
+            </div>
           </div>
+
 
           {/* College Filter Card (Displayed only when Activities tab is active) */}
           {activeTab === 'activities' && (
@@ -899,8 +1043,143 @@ export default function SystemSettings() {
 
         {/* Tab Contents */}
         <div className="space-y-6">
+          {/* TAB: PROFILE INFORMATION */}
+          {activeTab === 'profile' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
+              <div className="border-b border-gray-100 pb-4">
+                <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
+                  <User size={22} className="text-[#800000]" /> User Profile Information
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Manage your personal account details, role permissions, and department contact info.
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdateProfile} className="space-y-5">
+                <div className="flex items-center gap-4 p-4 bg-red-50/50 border border-red-100 rounded-2xl">
+                  <div className="w-16 h-16 rounded-2xl bg-[#800000] text-white text-xl font-black flex items-center justify-center shadow-sm">
+                    {profile?.initials || 'U'}
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-gray-900">{profileForm.name || 'User'}</h3>
+                    <p className="text-xs text-gray-500">{profileForm.email}</p>
+                    <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#800000] text-white">
+                      {profileForm.role}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700">Full Name</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold"
+                      value={profileForm.name}
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700">Email Address (Read-only)</label>
+                    <input
+                      type="email"
+                      className="form-input text-xs font-semibold bg-gray-100 cursor-not-allowed"
+                      value={profileForm.email}
+                      disabled
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700">Phone / Contact Number</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold"
+                      placeholder="e.g. +63 912 345 6789"
+                      value={profileForm.phone}
+                      onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label text-xs font-bold text-gray-700">Department / College</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs font-semibold"
+                      placeholder="e.g. College of Information Technology"
+                      value={profileForm.department}
+                      onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t border-gray-100">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingProfile}
+                    className="btn-maroon px-6 py-2.5 text-xs font-bold rounded-xl shadow-xs"
+                  >
+                    {isUpdatingProfile ? 'Saving Changes...' : 'Save Profile Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB: ACCOUNT SECURITY */}
+          {activeTab === 'security' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
+              <div className="border-b border-gray-100 pb-4">
+                <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
+                  <Lock size={22} className="text-[#800000]" /> Account Security & Password
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Update your authentication credentials and account security preferences.
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdatePassword} className="space-y-5 max-w-md">
+                <div>
+                  <label className="form-label text-xs font-bold text-gray-700">New Password</label>
+                  <input
+                    type="password"
+                    className="form-input text-xs font-semibold"
+                    placeholder="Enter new password (min. 6 chars)"
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label text-xs font-bold text-gray-700">Confirm New Password</label>
+                  <input
+                    type="password"
+                    className="form-input text-xs font-semibold"
+                    placeholder="Re-enter new password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingPassword}
+                    className="btn-maroon px-6 py-2.5 text-xs font-bold rounded-xl shadow-xs"
+                  >
+                    {isUpdatingPassword ? 'Updating Password...' : 'Update Password'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* TAB 1: School Year & Semester Configuration */}
           {activeTab === 'schoolYear' && (
+
             <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs space-y-6">
               <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
