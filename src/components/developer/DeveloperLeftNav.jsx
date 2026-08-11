@@ -5,6 +5,7 @@ import { NAV_WIDTH_PX } from '../../constants/layout';
 import { DEVELOPER_ROUTE_PREFIX } from '../../firebase/constants';
 import systemLogo from '../../assets/logo.png';
 import {
+  SidebarProvider,
   Sidebar,
   SidebarHeader,
   SidebarContent,
@@ -26,7 +27,7 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   return (
-    <>
+    <SidebarProvider defaultOpen={true}>
       {!isDesktop && isOpen && (
         <button
           type="button"
@@ -95,6 +96,7 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
           </p>
         </SidebarFooter>
       </Sidebar>
-    </>
+    </SidebarProvider>
   );
 }
+
