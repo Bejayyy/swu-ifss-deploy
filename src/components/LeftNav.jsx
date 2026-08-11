@@ -12,7 +12,6 @@ import { isReservationActionable } from '../constants/approvalWorkflow';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import systemLogo from '../assets/logo.png';
 import {
-  SidebarProvider,
   Sidebar,
   SidebarHeader,
   SidebarContent,
@@ -117,7 +116,7 @@ export default function LeftNav({
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   return (
-    <SidebarProvider defaultOpen={true}>
+    <>
       {!isDesktop && isOpen && (
         <button
           type="button"
@@ -126,7 +125,6 @@ export default function LeftNav({
           onClick={onClose}
         />
       )}
-
 
       <Sidebar
         collapsible="none"
@@ -347,7 +345,6 @@ export default function LeftNav({
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
-    </SidebarProvider>
+    </>
   );
 }
-
