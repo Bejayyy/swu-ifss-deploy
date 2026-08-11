@@ -83,7 +83,7 @@ export default function BuildingDetails() {
           className="flex items-center gap-2 text-sm font-bold"
           style={{ color: '#2B3235' }}
         >
-          <div className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 hover:bg-gray-100 transition-colors">
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] transition-colors">
             <ArrowLeft size={16} />
           </div>
           Back

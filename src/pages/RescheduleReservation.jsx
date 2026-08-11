@@ -143,9 +143,13 @@ export default function RescheduleReservation() {
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-gray-900 transition-colors"
+          className="flex items-center gap-2 text-xs font-bold transition-colors"
+          style={{ color: '#2B3235' }}
         >
-          <ArrowLeft size={16} /> Back
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-[#FFF0F0] transition-colors">
+            <ArrowLeft size={16} />
+          </div>
+          Back
         </button>
 
         {/* Postponement Notice Banner */}
