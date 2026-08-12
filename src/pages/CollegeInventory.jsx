@@ -269,15 +269,6 @@ export default function CollegeInventory() {
     });
   };
 
-  if (!isRegistrar) {
-    return (
-      <Layout title="Access Denied">
-        <div className="text-center py-12">
-          <p className="text-gray-500">You do not have permission to access this page.</p>
-        </div>
-      </Layout>
-    );
-  }
 
   const collegeStartIdx = (currentPage - 1) * itemsPerPage + 1;
   const collegeEndIdx = Math.min(currentPage * itemsPerPage, filteredColleges.length);
