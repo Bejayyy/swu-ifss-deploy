@@ -75,7 +75,7 @@ export const ROUTE_PERMISSIONS = {
   '/academic-calendar': PERMISSIONS.ACADEMIC_CALENDAR_VIEW,
   '/system-settings': null,
 
-  '/college-inventory': PERMISSIONS.SYSTEM_ADMIN,
+  '/college-inventory': null,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
   '/approval-workflow': PERMISSIONS.APPROVAL_WORKFLOW_MANAGE,
   '/maintenance-dashboard': PERMISSIONS.ROOMS_MAINTENANCE_MANAGE,
@@ -87,7 +87,7 @@ export const NAV_ITEMS = {
   buildings: { label: 'Buildings', path: '/building-management', permission: null },
   assignedRooms: { label: 'Assigned Rooms', path: '/assigned-rooms', permission: PERMISSIONS.ROOMS_MANAGE_ASSIGNED },
   teachers: { label: 'Teachers', path: '/teachers', permission: null },
-  collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: PERMISSIONS.SYSTEM_ADMIN },
+  collegeInventory: { label: 'College Inventory', path: '/college-inventory', permission: null },
   courseScheduling: { label: 'Course Scheduling', path: '/course-scheduling', permission: PERMISSIONS.SCHEDULING_SUBMIT },
   approvalWorkflow: { label: 'Approval Workflow', path: '/approval-workflow', permission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
   roomFinder: { label: 'Room Finder', path: '/room-finder', permission: null },
@@ -115,6 +115,7 @@ const ROLE_NAV_KEYS = {
     'buildings',
     'assignedRooms',
     'teachers',
+    'collegeInventory',
     'courseScheduling',
     'approvalWorkflow',
     'roomFinder',
@@ -124,6 +125,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.GSD]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -132,6 +134,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.STUDENT_LIFE]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -139,6 +142,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.TEACHER]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -146,6 +150,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.ORGANIZATION_HEAD]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',

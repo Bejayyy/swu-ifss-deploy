@@ -269,16 +269,6 @@ export default function CollegeInventory() {
     });
   };
 
-  if (!isRegistrar) {
-    return (
-      <Layout title="Access Denied">
-        <div className="text-center py-12">
-          <p className="text-gray-500">You do not have permission to access this page.</p>
-        </div>
-      </Layout>
-    );
-  }
-
   const collegeStartIdx = (currentPage - 1) * itemsPerPage + 1;
   const collegeEndIdx = Math.min(currentPage * itemsPerPage, filteredColleges.length);
 
@@ -297,7 +287,7 @@ export default function CollegeInventory() {
         <StatCardItem label="Total Colleges" value={colleges.length} icon={Building2} color="blue" />
         <StatCardItem label="Active Deans" value={deansCount} icon={UserCheck} color="emerald" />
         <StatCardItem label="Academic Programs" value={totalPrograms} icon={GraduationCap} color="amber" />
-        <StatCardItem label="Total Courses" value={courses.length} icon={BookOpen} color="maroon" />
+        <StatCardItem label="Total Courses" value={viewingCollegeCourses ? collegeCourses.length : 0} icon={BookOpen} color="maroon" />
       </div>
 
       {!viewingCollegeCourses ? (
