@@ -75,7 +75,6 @@ export const ROUTE_PERMISSIONS = {
   '/academic-calendar': PERMISSIONS.ACADEMIC_CALENDAR_VIEW,
   '/system-settings': null,
 
-  '/college-inventory': null,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
   '/approval-workflow': PERMISSIONS.APPROVAL_WORKFLOW_MANAGE,
   '/maintenance-dashboard': PERMISSIONS.ROOMS_MAINTENANCE_MANAGE,
@@ -115,6 +114,7 @@ const ROLE_NAV_KEYS = {
     'buildings',
     'assignedRooms',
     'teachers',
+    'collegeInventory',
     'courseScheduling',
     'approvalWorkflow',
     'roomFinder',
@@ -124,6 +124,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.GSD]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -132,6 +133,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.STUDENT_LIFE]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -139,6 +141,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.TEACHER]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
@@ -146,6 +149,7 @@ const ROLE_NAV_KEYS = {
   [ROLES.ORGANIZATION_HEAD]: [
     'dashboard',
     'buildings',
+    'collegeInventory',
     'roomFinder',
     'academicCalendar',
     'approvals',
