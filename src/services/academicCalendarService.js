@@ -96,17 +96,35 @@ export async function saveSchoolYearConfig(schoolYearId, {
   semester1End,
   semester2Start,
   semester2End,
+  semesters,
 }) {
   const displayLabel = label.startsWith('SY ') ? label : `SY ${label}`;
+  
+  // Normalize semesters array
+  const formattedSemesters = Array.isArray(semesters)
+    ? semesters.map((s, idx) => ({
+        id: s.id || `sem_${idx + 1}`,
+        name: (s.name || '').trim() || `Semester ${idx + 1}`,
+        start: s.start || '',
+        end: s.end || '',
+      }))
+    : [];
+
+  const sem1Start = formattedSemesters[0]?.start ?? semester1Start ?? '';
+  const sem1End = formattedSemesters[0]?.end ?? semester1End ?? '';
+  const sem2Start = formattedSemesters[1]?.start ?? semester2Start ?? '';
+  const sem2End = formattedSemesters[1]?.end ?? semester2End ?? '';
+
   await setDoc(
     schoolYearRef(schoolYearId),
     {
       label,
       displayLabel,
-      semester1Start,
-      semester1End,
-      semester2Start,
-      semester2End,
+      semester1Start: sem1Start,
+      semester1End: sem1End,
+      semester2Start: sem2Start,
+      semester2End: sem2End,
+      semesters: formattedSemesters,
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },

@@ -117,9 +117,26 @@ export default function CourseSchedulingNew() {
   const [selectedStudentCategory, setSelectedStudentCategory] = useState('freshmen'); // 'freshmen' or 'upperclassmen'
   const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
 
-  const semesterStartStr = semester === '1'
-    ? calendarData?.config?.semester1Start
-    : calendarData?.config?.semester2Start;
+  const semesterOptions = useMemo(() => {
+    if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
+      return calendarData.config.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start,
+        end: s.end,
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1', start: calendarData?.config?.semester1Start, end: calendarData?.config?.semester1End },
+      { value: '2', label: 'Semester 2', start: calendarData?.config?.semester2Start, end: calendarData?.config?.semester2End },
+    ];
+  }, [calendarData?.config]);
+
+  const selectedSemesterObj = useMemo(() => {
+    return semesterOptions.find((s) => s.value === semester) || semesterOptions[0];
+  }, [semesterOptions, semester]);
+
+  const semesterStartStr = selectedSemesterObj?.start || null;
 
   const currentWeekNum = useMemo(() => {
     return getSemesterWeekNumber(weekStartDate, semesterStartStr);
@@ -735,10 +752,7 @@ export default function CourseSchedulingNew() {
               <CustomSelect
                 value={semester}
                 onChange={(e) => setSemester(e.target.value)}
-                options={[
-                  { value: '1', label: 'Semester 1' },
-                  { value: '2', label: 'Semester 2' },
-                ]}
+                options={semesterOptions}
                 placeholder="Select semester"
               />
             </div>
@@ -1301,6 +1315,7 @@ export default function CourseSchedulingNew() {
                 onSchoolYearChange={undefined} // Disabled - controlled from top
                 semester={semester}
                 onSemesterChange={setSemester} // Re-enabled for quick switching
+                semesterOptions={semesterOptions}
                 lockSemester={false} // Allow semester switching in grid
                 scheduleTab={scheduleTab}
                 onScheduleTabChange={setScheduleTab}
@@ -1498,6 +1513,7 @@ export default function CourseSchedulingNew() {
           onClose={() => setShowGrantAccessModal(false)}
           schoolYearId={activeSchoolYearId}
           semester={semester}
+          semesterLabel={selectedSemesterObj?.label}
           initialCollegeCodes={scheduleAccess?.approvedColleges || []}
           initialStartDate={scheduleAccess?.startDate || scheduleAccess?.firstCollege?.startDate || ''}
           initialEndDate={scheduleAccess?.endDate || scheduleAccess?.firstCollege?.endDate || ''}
@@ -1568,6 +1584,7 @@ export default function CourseSchedulingNew() {
           }}
           deanUsers={staffUsers.filter(u => u.roleValue === 'dean')}
           semester={semester}
+          semesterLabel={selectedSemesterObj?.label}
           schoolYear={schoolYearLabel}
         />
       )}

@@ -31,6 +31,22 @@ export default function AcademicCalendar() {
   const { config } = calendarData;
   const examPeriods = useMemo(() => normalizeExamPeriods(config?.examPeriods), [config?.examPeriods]);
 
+  const configuredSemesters = useMemo(() => {
+    if (Array.isArray(config?.semesters) && config.semesters.length > 0) {
+      return config.semesters.map((s, idx) => ({
+        key: String(idx + 1),
+        id: s.id,
+        name: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start || '',
+        end: s.end || '',
+      }));
+    }
+    return [
+      { key: '1', id: 'sem_1', name: 'Semester 1', start: config?.semester1Start || '', end: config?.semester1End || '' },
+      { key: '2', id: 'sem_2', name: 'Semester 2', start: config?.semester2Start || '', end: config?.semester2End || '' },
+    ];
+  }, [config]);
+
   const activeSchoolYear = schoolYears.find((sy) => sy.id === activeSchoolYearId);
   const displaySchoolYear = activeSchoolYear?.displayLabel || (config?.label ? `SY ${config.label}` : 'Active School Year');
 
@@ -89,47 +105,58 @@ export default function AcademicCalendar() {
                   )}
 
                   {/* Semester Switcher Tabs (beside Switch S.Y. to the very right) */}
-                  <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                    {['1', '2'].map((sem) => (
+                  <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 gap-1 flex-wrap">
+                    {configuredSemesters.map((sem) => (
                       <button
-                        key={sem}
+                        key={sem.key}
                         type="button"
-                        onClick={() => setExamSemTab(sem)}
+                        onClick={() => setExamSemTab(sem.key)}
                         className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          examSemTab === sem
+                          examSemTab === sem.key
                             ? 'bg-[#7A0808] text-white shadow-2xs'
                             : 'text-gray-600 hover:text-gray-900'
                         }`}
                       >
-                        Semester {sem}
+                        {sem.name}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Semester 1 Dates */}
-                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '1' ? 'border-[#7A0808] bg-amber-50/30 ring-1 ring-[#7A0808]/20' : 'border-gray-200 bg-gray-50/50'}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-black text-gray-900">Semester 1</span>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">Term 1</span>
-                  </div>
-                  <p className="text-xs font-bold text-gray-700">
-                    {config?.semester1Start ? formatDisplayDate(config.semester1Start) : 'Not set'} — {config?.semester1End ? formatDisplayDate(config.semester1End) : 'Not set'}
-                  </p>
-                </div>
-
-                {/* Semester 2 Dates */}
-                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '2' ? 'border-[#7A0808] bg-blue-50/30 ring-1 ring-[#7A0808]/20' : 'border-gray-200 bg-gray-50/50'}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-black text-gray-900">Semester 2</span>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">Term 2</span>
-                  </div>
-                  <p className="text-xs font-bold text-gray-700">
-                    {config?.semester2Start ? formatDisplayDate(config.semester2Start) : 'Not set'} — {config?.semester2End ? formatDisplayDate(config.semester2End) : 'Not set'}
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {configuredSemesters.map((sem, index) => {
+                  const isSelected = examSemTab === sem.key;
+                  const isSummer = (sem.name || '').toLowerCase().includes('summer');
+                  return (
+                    <div
+                      key={sem.key}
+                      className={`p-4 rounded-xl border transition-all space-y-1 ${
+                        isSelected
+                          ? 'border-[#7A0808] bg-red-50/20 ring-1 ring-[#7A0808]/20'
+                          : 'border-gray-200 bg-gray-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-gray-900">{sem.name}</span>
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                          isSummer
+                            ? 'bg-amber-100 text-amber-800'
+                            : index === 0
+                            ? 'bg-red-100 text-red-800'
+                            : index === 1
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {isSummer ? 'Summer' : `Term ${index + 1}`}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-gray-700">
+                        {sem.start ? formatDisplayDate(sem.start) : 'Not set'} — {sem.end ? formatDisplayDate(sem.end) : 'Not set'}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -142,7 +169,10 @@ export default function AcademicCalendar() {
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-gray-900">
-                      Exam Period Ranges <span className="text-xs font-extrabold text-[#7A0808]">(Semester {examSemTab})</span>
+                      Exam Period Ranges{' '}
+                      <span className="text-xs font-extrabold text-[#7A0808]">
+                        ({configuredSemesters.find((s) => s.key === examSemTab)?.name || `Semester ${examSemTab}`})
+                      </span>
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
                       Scheduled dates for Freshmen and Upperclassmen

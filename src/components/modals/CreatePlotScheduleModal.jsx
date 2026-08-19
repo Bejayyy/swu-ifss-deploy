@@ -61,6 +61,23 @@ export default function CreatePlotScheduleModal({
   const deanUsers = useMemo(() => getActiveDeans(staffUsers), [staffUsers]);
   const departmentOptions = useMemo(() => getDeanDepartmentOptions(staffUsers), [staffUsers]);
 
+  const selectedSchoolYear = useMemo(() => {
+    return (schoolYears || []).find((sy) => sy.id === form.schoolYearId);
+  }, [schoolYears, form.schoolYearId]);
+
+  const semesterOptions = useMemo(() => {
+    if (Array.isArray(selectedSchoolYear?.semesters) && selectedSchoolYear.semesters.length > 0) {
+      return selectedSchoolYear.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1' },
+      { value: '2', label: 'Semester 2' },
+    ];
+  }, [selectedSchoolYear]);
+
   const roomOptions = useMemo(() => {
     const opts = [];
     buildingList.forEach((b) => {
@@ -376,8 +393,11 @@ export default function CreatePlotScheduleModal({
                   value={form.semester}
                   onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value }))}
                 >
-                  <option value="1">Semester 1</option>
-                  <option value="2">Semester 2</option>
+                  {semesterOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

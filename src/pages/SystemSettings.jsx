@@ -3,13 +3,14 @@ import {
   Sliders, Clock, FileUp, Download, Trash2, Check,
   FileText, ChevronRight, ChevronLeft, Plus, BookOpen, X, Eye, ChevronDown, Award, Edit,
   FileSpreadsheet, Upload, Search, User, RefreshCw, AlertCircle, CheckCircle2, Building2,
-  CalendarOff, AlertTriangle, Calendar
+  CalendarOff, AlertTriangle, Calendar, Printer
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useModal } from '../hooks/useModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
+import PrintRoomScheduleTab from '../components/settings/PrintRoomScheduleTab';
 import {
   buildSchoolYearId,
   saveSchoolYearConfig,
@@ -21,6 +22,7 @@ import {
 import {
   formatExamRange,
   normalizeExamPeriods,
+  formatDisplayDate,
 } from '../utils/academicCalendarUtils';
 import {
   downloadBulkActivityTemplate,
@@ -56,17 +58,17 @@ export default function SystemSettings() {
   // School Year & Semester state
   const [syForm, setSyForm] = useState({
     label: '',
-    semester1Start: '',
-    semester1End: '',
-    semester2Start: '',
-    semester2End: '',
+    semesters: [
+      { id: 'sem_1', name: 'Semester 1', start: '', end: '' },
+      { id: 'sem_2', name: 'Semester 2', start: '', end: '' },
+    ],
   });
   const [isSavingSy, setIsSavingSy] = useState(false);
   const [isCreatingSy, setIsCreatingSy] = useState(false);
   const [newSyLabel, setNewSyLabel] = useState('');
 
   // Exam Period Range state
-  const [examSemTab, setExamSemTab] = useState('1'); // '1' | '2'
+  const [examSemTab, setExamSemTab] = useState('1');
   const [examEdit, setExamEdit] = useState(null); // { periodKey, level }
   const [examDraft, setExamDraft] = useState({ start: '', end: '' });
   const [isSavingExam, setIsSavingExam] = useState(false);
@@ -173,14 +175,53 @@ export default function SystemSettings() {
   // Load School Year config into form
   useEffect(() => {
     if (config) {
+      let loadedSemesters = [];
+      if (Array.isArray(config.semesters) && config.semesters.length > 0) {
+        loadedSemesters = config.semesters.map((s, idx) => ({
+          id: s.id || `sem_${idx + 1}_${Date.now()}`,
+          name: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+          start: s.start || '',
+          end: s.end || '',
+        }));
+      } else {
+        loadedSemesters = [
+          {
+            id: 'sem_1',
+            name: 'Semester 1',
+            start: config.semester1Start || '',
+            end: config.semester1End || '',
+          },
+          {
+            id: 'sem_2',
+            name: 'Semester 2',
+            start: config.semester2Start || '',
+            end: config.semester2End || '',
+          },
+        ];
+      }
+
       setSyForm({
         label: config.label || '',
-        semester1Start: config.semester1Start || '',
-        semester1End: config.semester1End || '',
-        semester2Start: config.semester2Start || '',
-        semester2End: config.semester2End || '',
+        semesters: loadedSemesters,
       });
     }
+  }, [config]);
+
+  // Dynamic configured semesters for Exam Periods tab & views
+  const configuredSemesters = useMemo(() => {
+    if (Array.isArray(config?.semesters) && config.semesters.length > 0) {
+      return config.semesters.map((s, idx) => ({
+        key: String(idx + 1),
+        id: s.id,
+        name: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start || '',
+        end: s.end || '',
+      }));
+    }
+    return [
+      { key: '1', id: 'sem_1', name: 'Semester 1', start: config?.semester1Start || '', end: config?.semester1End || '' },
+      { key: '2', id: 'sem_2', name: 'Semester 2', start: config?.semester2Start || '', end: config?.semester2End || '' },
+    ];
   }, [config]);
 
   // Subscribe to PDF School Calendar
@@ -457,6 +498,60 @@ export default function SystemSettings() {
   };
 
 
+  // Add a new Semester card
+  const handleAddSemester = () => {
+    const currentCount = syForm.semesters?.length || 0;
+    const nextNum = currentCount + 1;
+    const suggestedName = nextNum === 3 ? 'Summer' : `Semester ${nextNum}`;
+    const newSem = {
+      id: `sem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: suggestedName,
+      start: '',
+      end: '',
+    };
+    setSyForm((prev) => ({
+      ...prev,
+      semesters: [...(prev.semesters || []), newSem],
+    }));
+  };
+
+  // Modify semester name, start date, or end date
+  const handleSemesterChange = (id, field, value) => {
+    setSyForm((prev) => ({
+      ...prev,
+      semesters: (prev.semesters || []).map((s) =>
+        s.id === id ? { ...s, [field]: value } : s
+      ),
+    }));
+  };
+
+  // Remove a semester card
+  const handleRemoveSemester = async (id, semName) => {
+    if ((syForm.semesters || []).length <= 1) {
+      showNotification({
+        type: 'warning',
+        title: 'Cannot Remove',
+        message: 'A School Year must have at least one semester or term.',
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm({
+      title: `Remove ${semName || 'Semester'}?`,
+      message: `Are you sure you want to remove "${semName || 'this semester'}" from the configuration?`,
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    setSyForm((prev) => ({
+      ...prev,
+      semesters: (prev.semesters || []).filter((s) => s.id !== id),
+    }));
+  };
+
   // Save SY & Semester Config
   const handleSaveSyConfig = async () => {
     if (!syForm.label.trim()) {
@@ -468,21 +563,33 @@ export default function SystemSettings() {
       return;
     }
 
+    if (!syForm.semesters || syForm.semesters.length === 0) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing Semesters',
+        message: 'Please configure at least one semester or term.',
+      });
+      return;
+    }
+
+    // Clean names and validate
+    const cleanedSemesters = syForm.semesters.map((s, idx) => ({
+      ...s,
+      name: (s.name || '').trim() || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+    }));
+
     setIsSavingSy(true);
     try {
       const syId = activeSchoolYearId || buildSchoolYearId(syForm.label);
       await saveSchoolYearConfig(syId, {
         label: syForm.label.trim(),
-        semester1Start: syForm.semester1Start,
-        semester1End: syForm.semester1End,
-        semester2Start: syForm.semester2Start,
-        semester2End: syForm.semester2End,
+        semesters: cleanedSemesters,
       });
 
       showNotification({
         type: 'success',
         title: 'Configuration Saved',
-        message: `School Year ${syForm.label} and semester settings updated successfully.`,
+        message: `School Year ${syForm.label} and ${cleanedSemesters.length} semester terms saved successfully.`,
       });
     } catch (err) {
       showNotification({
@@ -500,12 +607,13 @@ export default function SystemSettings() {
     if (!newSyLabel.trim()) return;
     try {
       const syId = buildSchoolYearId(newSyLabel.trim());
+      const initialSemesters = [
+        { id: `sem_1_${Date.now()}`, name: 'Semester 1', start: '', end: '' },
+        { id: `sem_2_${Date.now()}`, name: 'Semester 2', start: '', end: '' },
+      ];
       await saveSchoolYearConfig(syId, {
         label: newSyLabel.trim(),
-        semester1Start: '',
-        semester1End: '',
-        semester2Start: '',
-        semester2End: '',
+        semesters: initialSemesters,
       });
       setActiveSchoolYearId(syId);
       setNewSyLabel('');
@@ -818,6 +926,22 @@ export default function SystemSettings() {
               </div>
               <ChevronRight size={14} className={activeTab === 'noClassDay' ? 'opacity-100' : 'opacity-40'} />
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('printRoomSchedule')}
+              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'printRoomSchedule'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Printer size={16} />
+                <span>Print Room Schedule</span>
+              </div>
+              <ChevronRight size={14} className={activeTab === 'printRoomSchedule' ? 'opacity-100' : 'opacity-40'} />
+            </button>
           </div>
 
           {/* College Filter Card (Displayed only when Activities tab is active) */}
@@ -903,68 +1027,124 @@ export default function SystemSettings() {
           {/* TAB 1: School Year & Semester Configuration */}
           {activeTab === 'schoolYear' && (
             <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs space-y-6">
-              <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="pb-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
                     <Sliders size={18} className="text-[#7A0808]" />
                     School Year & Semester Configuration
                   </h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    Manage active school year, semester terms, and operational date ranges.
+                    Manage active school year, add any number of semesters or terms (e.g. Summer), and set operational date ranges.
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleAddSemester}
+                  className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-[#7A0808] font-bold text-xs transition-all flex items-center gap-1.5 self-start sm:self-auto border border-red-200 shadow-2xs"
+                >
+                  <Plus size={15} />
+                  Add Semester
+                </button>
               </div>
 
-              {/* Semester Dates Config */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
-                {/* Semester 1 */}
-                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
-                  <h4 className="font-bold text-xs text-gray-900 flex items-center justify-between">
-                    <span>Semester 1</span>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                      Term 1
-                    </span>
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-600 mb-1">Start Date</label>
-                      <DatePicker value={syForm.semester1Start} onChange={(val) => setSyForm({ ...syForm, semester1Start: val })} />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-600 mb-1">End Date</label>
-                      <DatePicker value={syForm.semester1End} onChange={(val) => setSyForm({ ...syForm, semester1End: val })} />
-                    </div>
-                  </div>
-                </div>
+              {/* Semester Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-2">
+                {(syForm.semesters || []).map((sem, index) => {
+                  const isSummer = (sem.name || '').toLowerCase().includes('summer');
+                  const badgeColor = isSummer
+                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                    : index === 0
+                    ? 'bg-red-100 text-red-900 border-red-200'
+                    : index === 1
+                    ? 'bg-blue-100 text-blue-900 border-blue-200'
+                    : 'bg-emerald-100 text-emerald-900 border-emerald-200';
 
-                {/* Semester 2 */}
-                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
-                  <h4 className="font-bold text-xs text-gray-900 flex items-center justify-between">
-                    <span>Semester 2</span>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                      Term 2
-                    </span>
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-600 mb-1">Start Date</label>
-                      <DatePicker value={syForm.semester2Start} onChange={(val) => setSyForm({ ...syForm, semester2Start: val })} />
+                  return (
+                    <div
+                      key={sem.id || index}
+                      className="p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50/90 transition-all space-y-3.5 relative flex flex-col justify-between"
+                    >
+                      {/* Card Header: Badge & Delete */}
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${badgeColor}`}>
+                          {isSummer ? 'Summer Term' : `Term ${index + 1}`}
+                        </span>
+                        {(syForm.semesters || []).length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSemester(sem.id, sem.name)}
+                            title="Remove Semester"
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100/60 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Editable Semester Name */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-700 mb-1">
+                          Semester / Term Name
+                        </label>
+                        <input
+                          type="text"
+                          value={sem.name}
+                          onChange={(e) => handleSemesterChange(sem.id, 'name', e.target.value)}
+                          placeholder={`e.g. Semester ${index + 1} or Summer`}
+                          className="w-full px-3 py-1.5 bg-white border border-gray-300 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] rounded-xl text-xs font-bold text-gray-900 outline-none transition-all placeholder:text-gray-400 placeholder:font-normal"
+                        />
+                      </div>
+
+                      {/* Dates */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1">Start Date</label>
+                          <DatePicker
+                            value={sem.start}
+                            onChange={(val) => handleSemesterChange(sem.id, 'start', val)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1">End Date</label>
+                          <DatePicker
+                            value={sem.end}
+                            onChange={(val) => handleSemesterChange(sem.id, 'end', val)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Date Range Summary Preview */}
+                      <div className="pt-2 border-t border-gray-200/60">
+                        {sem.start && sem.end ? (
+                          <div className="text-[10px] font-semibold text-gray-600 flex items-center gap-1.5 truncate">
+                            <Calendar size={12} className="text-[#7A0808] flex-shrink-0" />
+                            <span className="truncate">{formatDisplayDate(sem.start)} — {formatDisplayDate(sem.end)}</span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-gray-400 italic">Dates not fully configured</div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-600 mb-1">End Date</label>
-                      <DatePicker value={syForm.semester2End} onChange={(val) => setSyForm({ ...syForm, semester2End: val })} />
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
 
               {/* Submit Save Button */}
-              <div className="pt-3 border-t border-gray-100 flex justify-end">
+              <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleAddSemester}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl border border-dashed border-gray-300 hover:border-[#7A0808] hover:bg-red-50/40 text-[#7A0808] font-bold text-xs transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus size={15} />
+                  Add Another Semester / Term
+                </button>
+
                 <button
                   type="button"
                   onClick={handleSaveSyConfig}
                   disabled={isSavingSy}
-                  className="px-6 py-2.5 rounded-xl bg-[#7A0808] text-white font-bold text-xs hover:bg-[#600000] shadow-2xs transition-all flex items-center gap-2"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#7A0808] text-white font-bold text-xs hover:bg-[#600000] shadow-2xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSavingSy ? 'Saving...' : 'Save Settings'}
                 </button>
@@ -987,17 +1167,17 @@ export default function SystemSettings() {
                 </div>
 
                 {/* Semester Switcher */}
-                <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                  {['1', '2'].map((t) => (
+                <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 gap-1 flex-wrap">
+                  {configuredSemesters.map((s) => (
                     <button
-                      key={t}
+                      key={s.key}
                       type="button"
-                      onClick={() => setExamSemTab(t)}
+                      onClick={() => setExamSemTab(s.key)}
                       className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        examSemTab === t ? 'bg-[#7A0808] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                        examSemTab === s.key ? 'bg-[#7A0808] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
-                      Semester {t}
+                      {s.name}
                     </button>
                   ))}
                 </div>
@@ -1612,6 +1792,16 @@ export default function SystemSettings() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* TAB 6: Print Room Schedule */}
+              {activeTab === 'printRoomSchedule' && (
+                <PrintRoomScheduleTab
+                  calendarData={calendarData}
+                  activeSchoolYearId={activeSchoolYearId}
+                  schoolYears={schoolYears}
+                  showNotification={showNotification}
+                />
               )}
             </div>
           </div>

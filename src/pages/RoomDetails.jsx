@@ -5,14 +5,23 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle, ChevronDown } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../firebase/constants';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
+import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnhanced';
 import { subscribeApprovedReservationsForRoom } from '../services/reservationService';
+import { RESERVATION_STATUS } from '../constants/approvalWorkflow';
 import { getRoomMaintenanceSchedule, subscribeMaintenanceSchedules } from '../services/maintenanceService';
-import { subscribeAllPlotEntriesForRoom } from '../services/plotScheduleService';
+import {
+  subscribeAllPlotEntriesForRoom,
+  addPlotEntryForSection,
+  createDeanSection,
+  subscribeDeanSections,
+} from '../services/plotScheduleService';
 import ScheduleMaintenanceModal from '../components/modals/ScheduleMaintenanceModal';
 import ReportMaintenanceModal from '../components/modals/ReportMaintenanceModal';
 import { useModal } from '../hooks/useModal';
@@ -25,8 +34,44 @@ export default function RoomDetails() {
   const navigate = useNavigate();
   const { state } = useLocation();
   const { id } = useParams();
-  const { buildingList } = useApp();
+  const { buildingList, requests = [] } = useApp();
   const { calendarData } = useAcademicCalendar();
+
+  let room = state?.room;
+  let buildingId = state?.buildingId;
+  let buildingName = state?.buildingName || '';
+  let floor = state?.floor || 1;
+  let floorId = state?.floorId;
+
+  if (!room) {
+    for (const b of buildingList) {
+      for (const f of b.floorData) {
+        const found = f.rooms.find((r) => r.id === id || r.roomCode === id);
+        if (found) {
+          room = found;
+          buildingId = b.id;
+          buildingName = b.name;
+          floor = f.floor;
+          floorId = f.floorId;
+          break;
+        }
+      }
+      if (room) break;
+    }
+  }
+
+  const liveRoom = useMemo(() => {
+    if (!buildingId || !floorId) return room;
+    const building = buildingList.find((b) => String(b.id) === String(buildingId));
+    const floorEntry = building?.floorData?.find((f) => f.floorId === floorId);
+    const docId = room?.docId;
+    if (docId && floorEntry) {
+      return floorEntry.rooms.find((r) => r.docId === docId) || room;
+    }
+    return floorEntry?.rooms?.find((r) => r.id === id) || room;
+  }, [buildingList, buildingId, floorId, room, id]);
+
+  const displayRoom = liveRoom || room;
 
   const { canEditRoom, canSubmitCourseSchedule, canSubmitReservation, isRegistrar, canManageRoomMaintenance, isGsd } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
@@ -38,10 +83,75 @@ export default function RoomDetails() {
   const [approvedReservations, setApprovedReservations] = useState([]);
   const [courseSchedules, setCourseSchedules] = useState([]); // Course schedules from all deans
   const [maintenanceSchedules, setMaintenanceSchedules] = useState([]);
+  const { profile } = useAuth();
+  const isDean = profile?.role === ROLES.DEAN || profile?.role === 'dean';
+  const [showAddScheduleModal, setShowAddScheduleModal] = useState(false);
+  const [deanSections, setDeanSections] = useState([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showScheduleMaintenance, setShowScheduleMaintenance] = useState(false);
   const [showReportMaintenance, setShowReportMaintenance] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
+
+  // Subscribe to Dean's sections if dean is logged in
+  useEffect(() => {
+    if (!profile?.uid) return;
+    return subscribeDeanSections(
+      profile.uid,
+      (secs) => setDeanSections(secs),
+      (err) => console.error('Error loading dean sections in RoomDetails:', err)
+    );
+  }, [profile?.uid]);
+
+  const currentBuildingObj = useMemo(() => {
+    return (
+      buildingList.find(
+        (b) => b.id === buildingId || b.name === buildingName || b.docId === buildingId
+      ) || null
+    );
+  }, [buildingList, buildingId, buildingName]);
+
+  const handleSaveScheduleFromRoom = async (entryData) => {
+    const targetDeanUid = entryData.deanUid || profile?.uid;
+    const targetSection = entryData.section || deanSections[0]?.name || 'Section 1';
+
+    // Auto-create section document if needed
+    if (deanSections.length === 0 && targetDeanUid) {
+      try {
+        await createDeanSection(targetDeanUid, targetSection, entryData.yearLevel || '1st Year', 'regular');
+      } catch (e) {
+        console.warn('Auto create section note:', e);
+      }
+    }
+
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    let computedDay = entryData.day;
+    if (computedDay === undefined || computedDay === null || computedDay < 0) {
+      if (entryData.date) {
+        const foundIdx = dayNames.findIndex(d => d.toLowerCase() === String(entryData.date).toLowerCase());
+        if (foundIdx >= 0) computedDay = foundIdx;
+      }
+    }
+
+    await addPlotEntryForSection(targetDeanUid, targetSection, {
+      ...entryData,
+      day: computedDay !== undefined && computedDay !== null && computedDay >= 0 ? computedDay : 0,
+      semester: semesterTab,
+      scheduleMode: scheduleTab,
+      section: targetSection,
+      roomCode: displayRoom.id || displayRoom.roomCode || displayRoom.name,
+      buildingId: buildingId,
+      buildingName: buildingName,
+      floor: floor,
+    });
+
+    setShowAddScheduleModal(false);
+    showNotification({
+      type: 'success',
+      title: 'Schedule Added',
+      message: `Schedule block for ${entryData.title || entryData.courseCode} has been added to ${displayRoom.name || displayRoom.id || displayRoom.roomCode}.`,
+      autoCloseMs: 3000,
+    });
+  };
 
   const handleMaintenanceScheduled = () => {
     showNotification({
@@ -81,54 +191,71 @@ export default function RoomDetails() {
     return `${year}-${month}-${day}`;
   };
 
-  let room = state?.room;
-  let buildingId = state?.buildingId;
-  let buildingName = state?.buildingName || '';
-  let floor = state?.floor || 1;
-  let floorId = state?.floorId;
-
-  if (!room) {
-    for (const b of buildingList) {
-      for (const f of b.floorData) {
-        const found = f.rooms.find((r) => r.id === id || r.roomCode === id);
-        if (found) {
-          room = found;
-          buildingId = b.id;
-          buildingName = b.name;
-          floor = f.floor;
-          floorId = f.floorId;
-          break;
-        }
-      }
-      if (room) break;
-    }
-  }
-
-  const liveRoom = useMemo(() => {
-    if (!buildingId || !floorId) return room;
-    const building = buildingList.find((b) => String(b.id) === String(buildingId));
-    const floorEntry = building?.floorData?.find((f) => f.floorId === floorId);
-    const docId = room?.docId;
-    if (docId && floorEntry) {
-      return floorEntry.rooms.find((r) => r.docId === docId) || room;
-    }
-    return floorEntry?.rooms?.find((r) => r.id === id) || room;
-  }, [buildingList, buildingId, floorId, room, id]);
-
-  const displayRoom = liveRoom || room;
-
   // Subscribe to approved reservations for this room
   useEffect(() => {
-    if (!displayRoom?.docId) return;
+    const targetRoomId = displayRoom?.docId || displayRoom?.id;
+    const targetRoomCode = displayRoom?.roomCode || displayRoom?.id || displayRoom?.name;
+    if (!targetRoomId && !targetRoomCode) return;
     
     const unsubscribe = subscribeApprovedReservationsForRoom(
-      displayRoom.docId,
-      (reservations) => setApprovedReservations(reservations),
-      (error) => console.error('Error loading reservations:', error)
+      targetRoomId,
+      (reservations) => {
+        console.log('[RoomDetails] Received approved reservations:', reservations);
+        if (Array.isArray(reservations) && reservations.length > 0) {
+          setApprovedReservations(reservations);
+        }
+      },
+      (error) => {
+        console.warn('[RoomDetails] Note on reservations listener:', error?.message || error);
+      },
+      targetRoomCode
     );
 
     return () => unsubscribe();
-  }, [displayRoom?.docId]);
+  }, [displayRoom?.docId, displayRoom?.id, displayRoom?.roomCode, displayRoom?.name]);
+
+  // Aggregate approved reservations from direct listener and global requests in useApp()
+  const effectiveApprovedReservations = useMemo(() => {
+    const candidates = [];
+    const seenIds = new Set();
+
+    if (Array.isArray(approvedReservations) && approvedReservations.length > 0) {
+      approvedReservations.forEach((r) => {
+        if (r?.id && !seenIds.has(r.id)) {
+          seenIds.add(r.id);
+          candidates.push(r);
+        }
+      });
+    }
+
+    if (Array.isArray(requests) && requests.length > 0) {
+      requests.forEach((r) => {
+        if (r?.id && !seenIds.has(r.id)) {
+          const isApproved = r.status === 'Approved' || r.status === 'approved' || r.status === RESERVATION_STATUS.APPROVED;
+          if (isApproved) {
+            seenIds.add(r.id);
+            candidates.push(r);
+          }
+        }
+      });
+    }
+
+    const targetRoomId = String(displayRoom?.docId || displayRoom?.id || '').trim().toLowerCase();
+    const targetRoomCode = String(displayRoom?.roomCode || displayRoom?.id || displayRoom?.name || '').trim().toLowerCase();
+
+    return candidates.filter((res) => {
+      const isApproved = res.status === 'Approved' || res.status === 'approved' || res.status === RESERVATION_STATUS.APPROVED;
+      if (!isApproved) return false;
+
+      const rRoomId = String(res.roomId || res.roomDocId || '').trim().toLowerCase();
+      const rRoom = String(res.room || '').trim().toLowerCase();
+      const rVenue = String(res.designatedVenue || res.venue || '').trim().toLowerCase();
+
+      const matchId = targetRoomId && (rRoomId === targetRoomId || rRoom === targetRoomId);
+      const matchCode = targetRoomCode && (rRoom === targetRoomCode || rRoomId === targetRoomCode || rVenue.includes(targetRoomCode));
+      return matchId || matchCode;
+    });
+  }, [approvedReservations, requests, displayRoom]);
 
   // Subscribe to course schedules for this room (from ALL deans)
   useEffect(() => {
@@ -176,12 +303,31 @@ export default function RoomDetails() {
     return () => unsubscribe();
   }, [displayRoom?.docId]);
 
+  const configuredSemesters = useMemo(() => {
+    if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
+      return calendarData.config.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start,
+        end: s.end,
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1', start: calendarData?.config?.semester1Start, end: calendarData?.config?.semester1End },
+      { value: '2', label: 'Semester 2', start: calendarData?.config?.semester2Start, end: calendarData?.config?.semester2End },
+    ];
+  }, [calendarData?.config]);
+
+  const activeSemesterObj = useMemo(() => {
+    return configuredSemesters.find((s) => s.value === semesterTab) || configuredSemesters[0];
+  }, [configuredSemesters, semesterTab]);
+
+  const schoolYearLabel = calendarData?.config?.displayLabel || (calendarData?.config?.label ? `SY ${calendarData.config.label}` : 'Active School Year');
+
   // Convert reservations, course schedules, and maintenance schedules to schedule blocks for the current week
   const scheduleBlocks = useMemo(() => {
     // Determine semester start date
-    const semesterStartStr = semesterTab === '1'
-      ? calendarData?.config?.semester1Start
-      : calendarData?.config?.semester2Start;
+    const semesterStartStr = activeSemesterObj?.start || null;
     const currentWeekNum = getSemesterWeekNumber(weekStartDate, semesterStartStr);
 
     // Use timezone-safe date formatting to avoid off-by-one errors
@@ -200,7 +346,7 @@ export default function RoomDetails() {
     console.log('[RoomDetails] Week start date:', weekStartDate, 'Day of week:', weekStartDate.getDay(), 'Week num:', currentWeekNum);
     console.log('[RoomDetails] Building schedule blocks for week:', weekDates);
     console.log('[RoomDetails] Course schedules:', courseSchedules);
-    console.log('[RoomDetails] Approved reservations:', approvedReservations);
+    console.log('[RoomDetails] Approved reservations:', effectiveApprovedReservations);
 
     const blocks = [];
 
@@ -209,15 +355,26 @@ export default function RoomDetails() {
       // Check modality (regular, odd-weeks, even-weeks, custom-ojt)
       const modality = schedule.modality || schedule.sectionModality || 'regular';
       const customOjtWeeks = schedule.customOjtWeeks || [];
-      if (!isScheduleActiveOnWeek(modality, currentWeekNum, customOjtWeeks)) {
+      if (modality !== 'regular' && !isScheduleActiveOnWeek(modality, currentWeekNum, customOjtWeeks)) {
         console.log(`[RoomDetails] Schedule ${schedule.title} hidden on week ${currentWeekNum} due to OJT modality (${modality})`);
         return; // Temporarily hide schedule on OJT week!
       }
 
       // schedule.day is 0-6 for Monday-Sunday (from WEEKDAYS array in CourseSchedulingNew)
-      const dayIndex = schedule.day;
+      const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      let dayIndex = schedule.day;
+      if (dayIndex === undefined || dayIndex === null || dayIndex < 0 || dayIndex >= 7) {
+        if (schedule.date) {
+          const foundIdx = dayNames.indexOf(String(schedule.date).toLowerCase().trim());
+          if (foundIdx >= 0) {
+            dayIndex = foundIdx;
+          } else if (weekDates.includes(schedule.date)) {
+            dayIndex = weekDates.indexOf(schedule.date);
+          }
+        }
+      }
       
-      if (dayIndex < 0 || dayIndex >= 7) {
+      if (dayIndex === undefined || dayIndex === null || dayIndex < 0 || dayIndex >= 7) {
         console.warn('[RoomDetails] Invalid day index for schedule:', dayIndex, schedule);
         return; // Invalid day
       }
@@ -265,38 +422,63 @@ export default function RoomDetails() {
     });
 
     // Add RESERVATION blocks (Date-specific - only show for matching date)
-    approvedReservations.forEach((reservation) => {
-      // Convert DD/MM/YYYY to YYYY-MM-DD
+    effectiveApprovedReservations.forEach((reservation) => {
       let dateStr = reservation.dateOfActivity;
-      if (dateStr && dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-          dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      if (dateStr) {
+        dateStr = String(dateStr).trim();
+        if (dateStr.includes('/')) {
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            } else {
+              dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+          }
         }
       }
 
       const dayIndex = weekDates.indexOf(dateStr);
-      if (dayIndex === -1) return; // Not in current week
+      if (dayIndex === -1) {
+        console.log(`[RoomDetails] Reservation ${reservation.activity || reservation.title} on ${dateStr} not in current week`, weekDates);
+        return; // Not in current week
+      }
 
-      // Convert time strings to hour numbers
-      const timeToHour = (timeStr) => {
+      // Convert time strings (e.g. "09:00", "01:30 PM", "9:30 AM") to hour numbers
+      const parseTimeToHour = (timeStr) => {
         if (!timeStr) return 0;
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        return hours + minutes / 60;
+        if (typeof timeStr === 'number') return timeStr;
+        let str = String(timeStr).trim();
+        const isPM = str.toLowerCase().includes('pm');
+        const isAM = str.toLowerCase().includes('am');
+        str = str.replace(/[^\d:]/g, '');
+        const [hStr, mStr] = str.split(':');
+        let h = Number(hStr) || 0;
+        const m = Number(mStr) || 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h + (isNaN(m) ? 0 : m / 60);
       };
 
-      blocks.push({
+      const start = parseTimeToHour(reservation.timeStart);
+      const end = parseTimeToHour(reservation.timeEnd);
+      if (end <= start) return;
+
+      const resBlock = {
         id: `reservation-${reservation.id}`,
         day: dayIndex,
-        title: reservation.activity || reservation.title,
-        course: reservation.nameOfOrg || reservation.department,
-        instructor: reservation.requestedBy,
-        start: timeToHour(reservation.timeStart),
-        end: timeToHour(reservation.timeEnd),
+        title: reservation.activity || reservation.title || 'Room Reservation',
+        course: reservation.nameOfOrg || reservation.department || 'Reserved',
+        instructor: reservation.requestedBy || reservation.requestor || '',
+        start,
+        end,
         type: reservation.type === 'academic' ? 'Reservation (Academic)' : 'Reservation (Non-Academic)',
         roomCode: displayRoom.id || displayRoom.roomCode,
         isReservation: true,
-      });
+      };
+
+      console.log('[RoomDetails] Adding reservation schedule block:', resBlock);
+      blocks.push(resBlock);
     });
 
     // Add maintenance blocks
@@ -316,31 +498,31 @@ export default function RoomDetails() {
       console.log('[RoomDetails] Maintenance dates:', { startDate, endDate, weekStartDate, weekDates });
 
       // Check if this week overlaps with the maintenance period
-      const maintenanceStart = new Date(startDate + 'T00:00:00');
-      const maintenanceEnd = new Date(endDate + 'T00:00:00');
-      const weekEnd = addDays(weekStartDate, 6);
-
-      if (maintenanceEnd < weekStartDate || maintenanceStart > weekEnd) {
+      const isOverlapping = weekDates.some(date => date >= startDate && date <= endDate);
+      
+      if (!isOverlapping) {
         console.log('[RoomDetails] Maintenance does not overlap with current week');
-        return; // No overlap
+        return;
       }
 
-      console.log('[RoomDetails] Maintenance overlaps with current week, adding blocks...');
-
-      // For each day in the week that overlaps with maintenance
+      // Check each day of the week
       weekDates.forEach((dateStr, dayIndex) => {
-        // Use string comparison to avoid timezone issues
-        // dateStr and startDate/endDate are all in YYYY-MM-DD format
-        const isInMaintenancePeriod = dateStr >= startDate && dateStr <= endDate;
-        
-        console.log(`[RoomDetails] Checking date ${dateStr}: startDate=${startDate}, endDate=${endDate}, inPeriod=${isInMaintenancePeriod}, dayIndex=${dayIndex}`);
-        
-        if (isInMaintenancePeriod) {
-          // Determine if this is a quick fix (hours) or multi-day
-          const isQuickFix = schedule.durationType === 'hours' && schedule.isQuickFix;
-
-          if (isQuickFix && dateStr === startDate) {
-            // Quick fix - show specific time slot on start date only
+        if (dateStr >= startDate && dateStr <= endDate) {
+          if (schedule.maintenanceType === 'general' || schedule.isFullDay) {
+            console.log(`[RoomDetails] Adding full day maintenance block for ${dateStr} at day ${dayIndex}`);
+            blocks.push({
+              id: `maintenance-${schedule.id}-${dayIndex}`,
+              day: dayIndex,
+              title: '🔧 UNDER MAINTENANCE',
+              course: schedule.reason || 'Room unavailable',
+              instructor: schedule.maintenanceType === 'general' ? 'General Maintenance' : 'Scheduled Maintenance',
+              start: 7.5, // 7:30 AM (SCHEDULE_START_HOUR)
+              end: 20, // 8:00 PM (SCHEDULE_END_HOUR)
+              type: 'Maintenance',
+              roomCode: displayRoom.id || displayRoom.roomCode,
+              isMaintenance: true,
+            });
+          } else if (schedule.maintenanceType === 'quick_fix') {
             const timeToHour = (timeStr) => {
               if (!timeStr) return 8; // Default 8 AM
               const [hours, minutes] = timeStr.split(':').map(Number);
@@ -363,22 +545,6 @@ export default function RoomDetails() {
               roomCode: displayRoom.id || displayRoom.roomCode,
               isMaintenance: true,
             });
-          } else if (!isQuickFix || dateStr === startDate) {
-            // Multi-day or regular maintenance - block entire day (7 AM to 8 PM)
-            // For multi-day quick fixes that aren't on start date, skip them
-            console.log(`[RoomDetails] Adding full-day maintenance block for ${dateStr} at day ${dayIndex}`);
-            blocks.push({
-              id: `maintenance-${schedule.id}-${dayIndex}`,
-              day: dayIndex,
-              title: '🔧 MAINTENANCE',
-              course: schedule.reason || 'Scheduled maintenance',
-              instructor: isQuickFix ? 'Same-day maintenance' : 'Multi-day maintenance',
-              start: 7, // 7 AM
-              end: 20, // 8 PM (SCHEDULE_END_HOUR)
-              type: 'Maintenance',
-              roomCode: displayRoom.id || displayRoom.roomCode,
-              isMaintenance: true,
-            });
           }
         }
       });
@@ -386,7 +552,7 @@ export default function RoomDetails() {
 
     console.log('[RoomDetails] Final schedule blocks:', blocks);
     return blocks;
-  }, [courseSchedules, approvedReservations, maintenanceSchedules, weekStartDate, displayRoom]);
+  }, [courseSchedules, effectiveApprovedReservations, maintenanceSchedules, weekStartDate, displayRoom]);
 
   if (!displayRoom) {
     return (
@@ -412,10 +578,6 @@ export default function RoomDetails() {
     const TYPE_COLORS = {
       Lecture: { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
       Laboratory: { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
-      Reservation: { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
-      'Reservation (Academic)': { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
-      'Reservation (Non-Academic)': { bg: '#E0E7FF', text: '#3730A3', border: '#A5B4FC' },
-      Maintenance: { bg: '#FFEDD5', text: '#C2410C', border: '#FDBA74' },
     };
 
     const toTitleCase = (str) => {
@@ -450,16 +612,18 @@ export default function RoomDetails() {
       slotsHtml += `</div>`;
     }
 
-    // Build blocks overlay
+    // Build blocks overlay - ONLY include course schedules (exclude reservations and maintenance)
     let blocksHtml = '';
+    const courseOnlyBlocks = scheduleBlocks.filter(
+      (b) => b.isCourseSchedule || (!b.isReservation && !b.isMaintenance)
+    );
     const blocksByDay = Array.from({ length: 7 }, (_, d) =>
-      scheduleBlocks.filter((b) => b.day === d)
+      courseOnlyBlocks.filter((b) => b.day === d)
     );
     blocksByDay.forEach((dayBlocks, dayIdx) => {
       dayBlocks.forEach((sched) => {
-        const colors = TYPE_COLORS[sched.type] ||
-          (sched.type?.startsWith?.('Reservation') ? TYPE_COLORS.Reservation : null) ||
-          TYPE_COLORS.Lecture;
+        const isLab = String(sched.type || '').toLowerCase().includes('lab');
+        const colors = isLab ? TYPE_COLORS.Laboratory : TYPE_COLORS.Lecture;
         const slotsFromStart = (sched.start - START_HOUR) * 2;
         const durationSlots = (sched.end - sched.start) * 2;
         const top = slotsFromStart * CELL_H;
@@ -486,6 +650,11 @@ export default function RoomDetails() {
     const gridH = SLOT_COUNT * CELL_H;
     const roomName = displayRoom.name || displayRoom.id;
     const roomType = displayRoom.type || 'Lecture Room';
+    const semDisplay = activeSemesterObj?.label || (
+      semesterTab === 'Summer' || semesterTab === 'summer' || semesterTab === '3'
+        ? 'Summer'
+        : `Semester ${semesterTab}`
+    );
 
     const html = `<!DOCTYPE html>
 <html><head><title>Schedule - ${roomName}</title>
@@ -515,8 +684,8 @@ export default function RoomDetails() {
     <p class="meta">ROOM TYPE: <span class="room-type">${roomType}</span> · FLOOR ${floor} · CAPACITY: ${displayRoom.capacity || 0} PAX</p>
   </div>
   <div class="right">
-    <p>SWU-IFSS Room Schedule</p>
-    <p>SY 2025-2026 · Semester ${semesterTab}</p>
+    <p>SWU-IFSS ROOM SCHEDULE</p>
+    <p>${schoolYearLabel} · ${semDisplay}</p>
   </div>
 </div>
 <div class="grid-wrap">
@@ -587,8 +756,8 @@ export default function RoomDetails() {
           {(isRegistrar || canSubmitCourseSchedule()) && (
             <button
               type="button"
-              className="btn-outline-maroon"
-              onClick={() => navigate('/course-scheduling')}
+              className="btn-outline-maroon flex items-center gap-1.5"
+              onClick={() => setShowAddScheduleModal(true)}
             >
               <Plus size={15} /> Add Schedule
             </button>
@@ -793,20 +962,20 @@ export default function RoomDetails() {
         {/* Semester and Week Navigation */}
         <div className="flex items-center gap-3 mb-3 flex-wrap">
           <span className="text-xs font-bold px-3 py-2 rounded-lg border border-gray-200" style={{ color: '#2B3235' }}>
-            SY 2025-2026
+            {schoolYearLabel}
           </span>
           
           {/* Semester Tabs */}
-          <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 10 }}>
-            {['1', '2'].map((s) => (
+          <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm flex-wrap" style={{ background: '#F9FAFB', borderRadius: 10 }}>
+            {configuredSemesters.map((s) => (
               <button
-                key={s}
+                key={s.value}
                 type="button"
-                onClick={() => setSemesterTab(s)}
+                onClick={() => setSemesterTab(s.value)}
                 className="px-4 py-1.5 text-xs font-bold transition-all"
-                style={semesterTab === s ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                style={semesterTab === s.value ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
               >
-                Semester {s}
+                {s.label}
               </button>
             ))}
           </div>
@@ -870,7 +1039,7 @@ export default function RoomDetails() {
         </div>
 
         <p className="text-xs font-semibold mb-3" style={{ color: '#2B3235', opacity: 0.75 }}>
-          Semester {semesterTab} · {scheduleTab === 'exam' ? 'Exam calendar mode' : 'Regular schedule mode'}
+          {activeSemesterObj?.label || `Semester ${semesterTab}`} · {scheduleTab === 'exam' ? 'Exam calendar mode' : 'Regular schedule mode'}
         </p>
       </div>
 
@@ -887,7 +1056,7 @@ export default function RoomDetails() {
           </div>
           <div className="text-right">
             <p className="text-xs font-black text-gray-900 uppercase tracking-wider">SWU-IFSS Room Schedule</p>
-            <p className="text-xs font-bold text-gray-600 mt-0.5">SY 2025-2026 · Semester {semesterTab}</p>
+            <p className="text-xs font-bold text-gray-600 mt-0.5">{schoolYearLabel} · {activeSemesterObj?.label || `Semester ${semesterTab}`}</p>
           </div>
         </div>
       </div>
@@ -898,7 +1067,8 @@ export default function RoomDetails() {
         onScheduleTabChange={setScheduleTab}
         semester={semesterTab}
         onSemesterChange={setSemesterTab}
-        schoolYearLabel="SY 2025-2026"
+        semesterOptions={configuredSemesters}
+        schoolYearLabel={schoolYearLabel}
         weekStartDate={weekStartDate}
         onPrevWeek={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, -7)))}
         onNextWeek={() => setWeekStartDate((d) => getMondayOfWeek(addDays(d, 7)))}
@@ -945,6 +1115,25 @@ export default function RoomDetails() {
         buildingName={buildingName}
         onSuccess={handleMaintenanceReported}
       />
+
+      {showAddScheduleModal && (
+        <AddPlotEntryModalEnhanced
+          onClose={() => setShowAddScheduleModal(false)}
+          onSave={handleSaveScheduleFromRoom}
+          scheduleMode={scheduleTab}
+          semester={semesterTab}
+          deanCollege={profile?.college || profile?.department}
+          deanUid={profile?.uid}
+          initialBuildingId={buildingId}
+          initialBuilding={currentBuildingObj}
+          initialRoomCode={displayRoom.id || displayRoom.roomCode}
+          initialRoom={displayRoom}
+          initialType={displayRoom.type && String(displayRoom.type).toLowerCase().includes('lab') ? 'Laboratory' : 'Lecture'}
+          skipTypeStep={true}
+          sections={deanSections}
+          sectionYearLevel={deanSections[0]?.yearLevel || '1st Year'}
+        />
+      )}
     </Layout>
   );
 }

@@ -34,6 +34,19 @@ export default function CreateScheduleSessionModal({
   const selectedSchoolYear = schoolYears.find((sy) => sy.id === schoolYearId);
   const schoolYearLabel = selectedSchoolYear?.displayLabel || selectedSchoolYear?.label || '';
 
+  const semesterOptions = useMemo(() => {
+    if (Array.isArray(selectedSchoolYear?.semesters) && selectedSchoolYear.semesters.length > 0) {
+      return selectedSchoolYear.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1' },
+      { value: '2', label: 'Semester 2' },
+    ];
+  }, [selectedSchoolYear]);
+
   const selectedBaseCreator = deanOptions.find((d) => d.uid === baseCreatorUid);
 
   const handleAddParticipant = (deanUid) => {
@@ -207,10 +220,7 @@ export default function CreateScheduleSessionModal({
                   <CustomSelect
                     value={semester}
                     onChange={(e) => setSemester(e.target.value)}
-                    options={[
-                      { value: '1', label: 'Semester 1' },
-                      { value: '2', label: 'Semester 2' },
-                    ]}
+                    options={semesterOptions}
                     placeholder="Select semester"
                   />
                 </div>

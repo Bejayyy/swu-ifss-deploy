@@ -70,6 +70,19 @@ function formatSingleTime(timeStr) {
   return `${formattedHours}:${minutes} ${ampm}`;
 }
 
+function formatContactDisplay(num) {
+  if (!num) return '—';
+  let str = String(num).trim();
+  if (str.startsWith('+63')) {
+    str = '0' + str.slice(3);
+  } else if (str.startsWith('63') && str.length === 12) {
+    str = '0' + str.slice(2);
+  } else if (!str.startsWith('0') && str.length === 10) {
+    str = '0' + str;
+  }
+  return str;
+}
+
 function formatReadableTimeRange(timeStart, timeEnd) {
   if (!timeStart && !timeEnd) return '—';
   if (timeStart && timeEnd) {
@@ -666,7 +679,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
                   <span className="font-bold text-gray-700 block">Requested by: <span className="font-semibold text-gray-900">{request.requestedBy || request.requestor || '—'}</span></span>
                 </div>
                 <div>
-                  <span className="font-bold text-gray-700 block">Contact Number: <span className="font-semibold text-gray-900">{request.contactNumber || '—'}</span></span>
+                  <span className="font-bold text-gray-700 block">Contact Number: <span className="font-semibold text-gray-900">{formatContactDisplay(request.contactNumber)}</span></span>
                 </div>
                 <div>
                   <span className="font-bold text-gray-700 block">Date Field: <span className="font-semibold text-gray-900">{formatReadableDate(request.dateFiled || request.createdAt)}</span></span>

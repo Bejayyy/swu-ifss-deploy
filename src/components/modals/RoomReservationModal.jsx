@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, AlertTriangle, Upload, Trash2 } from 'lucide-react';
+import { X, AlertTriangle, Upload, Trash2, Eye, Calendar, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { APPROVAL_TYPES } from '../../constants/approvalWorkflow';
 import { requiresCollege, formatCollegeName } from '../../constants/colleges';
 import { subscribeColleges } from '../../services/collegeService';
 import { fetchWorkflowLevels } from '../../services/approvalWorkflowService';
-import { checkReservationConflict } from '../../services/plotScheduleService';
+import { subscribeAllPlotEntriesForRoom } from '../../services/plotScheduleService';
+import { subscribeApprovedReservationsForRoom } from '../../services/reservationService';
+import { subscribeMaintenanceSchedules } from '../../services/maintenanceService';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 import ApprovalTimeline from '../reservations/ApprovalTimeline';
+import RoomWeeklyScheduleModal from './RoomWeeklyScheduleModal';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
@@ -55,7 +58,7 @@ function getNormalizedContactNumber(val) {
   if (!clean) return '';
   const digits = clean.startsWith('0') ? clean.slice(1) : clean;
   if (digits.length === 10) {
-    return `+63${digits}`;
+    return `0${digits}`;
   }
   return '';
 }
@@ -73,11 +76,56 @@ function getSavedSignature(profileUser) {
   return localStorage.getItem('user_saved_signature') || '';
 }
 
+const timeStringToHour = (timeStr) => {
+  if (!timeStr) return 0;
+  let str = String(timeStr).trim();
+  const isPM = str.toLowerCase().includes('pm');
+  const isAM = str.toLowerCase().includes('am');
+  str = str.replace(/[^\d:]/g, '');
+  const [hStr, mStr] = str.split(':');
+  let h = Number(hStr) || 0;
+  const m = Number(mStr) || 0;
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  return h + m / 60;
+};
+
+const formatHourDisplay = (h) => {
+  const hrs = Math.floor(h);
+  const mins = h % 1 !== 0 ? '30' : '00';
+  const ampm = hrs >= 12 ? 'PM' : 'AM';
+  const displayH = hrs % 12 || 12;
+  return `${displayH}:${mins} ${ampm}`;
+};
+
+const getDayIndexFromDate = (dateStr) => {
+  if (!dateStr) return -1;
+  let dStr = dateStr;
+  if (dateStr.includes('/')) {
+    const [d, m, y] = dateStr.split('/');
+    dStr = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const dateObj = new Date(dStr + 'T00:00:00');
+  if (isNaN(dateObj.getTime())) return -1;
+  const day = dateObj.getDay();
+  return day === 0 ? 6 : day - 1; // 0 for Monday ... 6 for Sunday
+};
+
 export default function RoomReservationModal({ onClose, eventType, prefill = {}, isOpen = true }) {
   useBodyScrollLock(Boolean(isOpen));
   const { addRequest, buildingList } = useApp();
   const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
+
+  // Minimum reservation date: block next 6 days (first available is Day 7 from today)
+  const minReservationDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
 
   const userAutoOrg = useMemo(() => {
     return profile?.college || profile?.department || profile?.nameOfOrg || profile?.orgName || profile?.roleLabel || '';
@@ -99,6 +147,12 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
     signatureUrl: initialSignature,
   });
 
+  // Pre-fetched room schedule state for instant conflict checking & schedule modal
+  const [roomCourseSchedules, setRoomCourseSchedules] = useState([]);
+  const [roomApprovedReservations, setRoomApprovedReservations] = useState([]);
+  const [roomMaintenanceSchedules, setRoomMaintenanceSchedules] = useState([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
   useEffect(() => {
     const savedSig = getSavedSignature(profile);
     if (userAutoOrg || profile || savedSig) {
@@ -111,7 +165,6 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
         signatureUrl: prev.signatureUrl || savedSig,
       }));
     }
-    // Auto-sync existing localStorage signature to Firestore user profile (one-time migration)
     if (savedSig && profile?.uid) {
       const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
       setDoc(userRef, { signatureUrl: savedSig, updatedAt: serverTimestamp() }, { merge: true })
@@ -152,7 +205,6 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
       }));
       if (profile?.uid) {
         localStorage.setItem(`user_signature_${profile.uid}`, dataUrl);
-        // Persist signature to Firestore user profile so approvers can see it
         try {
           const userRef = doc(db, COLLECTIONS.USERS, profile.uid);
           await setDoc(userRef, { signatureUrl: dataUrl, updatedAt: serverTimestamp() }, { merge: true });
@@ -180,7 +232,6 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
   const [colleges, setColleges] = useState([]);
   const [workflowPreview, setWorkflowPreview] = useState([]);
   const [scheduleConflicts, setScheduleConflicts] = useState([]);
-  const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -196,38 +247,6 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
     );
   }, []);
 
-  // Check for course schedule conflicts when date/time/room changes
-  useEffect(() => {
-    if (!form.room || !form.dateOfActivity || !form.timeStart || !form.timeEnd) {
-      setScheduleConflicts([]);
-      return;
-    }
-
-    const checkConflicts = async () => {
-      setCheckingConflicts(true);
-      try {
-        const result = await checkReservationConflict(
-          form.room,
-          form.dateOfActivity,
-          form.timeStart,
-          form.timeEnd,
-          '1' // TODO: Get actual semester from academic calendar
-        );
-        
-        setScheduleConflicts(result.conflicts || []);
-      } catch (err) {
-        console.error('Error checking conflicts:', err);
-        setScheduleConflicts([]);
-      } finally {
-        setCheckingConflicts(false);
-      }
-    };
-
-    // Debounce the conflict check
-    const timer = setTimeout(checkConflicts, 500);
-    return () => clearTimeout(timer);
-  }, [form.room, form.dateOfActivity, form.timeStart, form.timeEnd]);
-
   const selectedBuilding = useMemo(
     () => buildingList.find((b) => b.name === form.building || String(b.id) === String(prefill.buildingId)),
     [buildingList, form.building, prefill.buildingId],
@@ -235,10 +254,10 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
 
   const roomsInBuilding = useMemo(() => {
     if (prefill.room && prefill.buildingId) {
-      return [{ id: prefill.room, floor: prefill.floor, docId: prefill.roomDocId }];
+      return [{ id: prefill.room, floor: prefill.floor, docId: prefill.roomDocId, capacity: prefill.capacity || 0, type: prefill.roomType || 'Classroom' }];
     }
     if (!selectedBuilding) return [];
-    return selectedBuilding.floorData.flatMap((f) => f.rooms.map((r) => ({ id: r.id, floor: f.floor, floorId: f.floorId, docId: r.docId, managedBy: r.managedBy, managedByName: r.managedByName })));
+    return selectedBuilding.floorData.flatMap((f) => f.rooms.map((r) => ({ id: r.id, name: r.name, floor: f.floor, floorId: f.floorId, docId: r.docId, capacity: r.capacity || 0, type: r.type || 'Classroom', managedBy: r.managedBy, managedByName: r.managedByName })));
   }, [selectedBuilding, prefill]);
 
   // Resolve target building, floor, and room from buildingList for dynamic workflow preview & submit
@@ -258,6 +277,189 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
     }
     return { building: targetBuilding, floor: null, room: null };
   }, [selectedBuilding, buildingList, form.building, form.room, prefill.roomDocId]);
+
+  const targetRoomCode = form.room || prefill.room || '';
+  const targetRoomDocId = resolvedTarget.room?.docId || prefill.roomDocId || form.room || '';
+
+  // 1. Pre-fetch Course Schedules for the selected room
+  useEffect(() => {
+    if (!targetRoomCode) {
+      setRoomCourseSchedules([]);
+      return;
+    }
+    const unsub = subscribeAllPlotEntriesForRoom(
+      targetRoomCode,
+      '1',
+      'regular',
+      (scheds) => setRoomCourseSchedules(scheds || []),
+      (err) => console.error('[RoomReservationModal] Error loading course schedules:', err)
+    );
+    return () => unsub();
+  }, [targetRoomCode]);
+
+  // 2. Pre-fetch Approved Reservations for the selected room
+  useEffect(() => {
+    if (!targetRoomDocId && !targetRoomCode) {
+      setRoomApprovedReservations([]);
+      return;
+    }
+    const unsub = subscribeApprovedReservationsForRoom(
+      targetRoomDocId,
+      (resList) => setRoomApprovedReservations(resList || []),
+      (err) => {
+        console.warn('[RoomReservationModal] Note on reservations listener:', err?.message || err);
+        setRoomApprovedReservations([]);
+      },
+      targetRoomCode
+    );
+    return () => unsub();
+  }, [targetRoomDocId, targetRoomCode]);
+
+  // 3. Pre-fetch Maintenance Schedules for the selected room
+  useEffect(() => {
+    if (!targetRoomDocId) {
+      setRoomMaintenanceSchedules([]);
+      return;
+    }
+    const unsub = subscribeMaintenanceSchedules(
+      (mList) => setRoomMaintenanceSchedules(mList || []),
+      (err) => console.error('[RoomReservationModal] Error loading maintenance:', err),
+      { roomId: targetRoomDocId }
+    );
+    return () => unsub();
+  }, [targetRoomDocId]);
+
+  // Real-time instant in-memory conflict detection
+  useEffect(() => {
+    if (!form.room || !form.dateOfActivity || !form.timeStart || !form.timeEnd) {
+      setScheduleConflicts([]);
+      return;
+    }
+
+    const reqDayIndex = getDayIndexFromDate(form.dateOfActivity);
+    const reqStart = timeStringToHour(form.timeStart);
+    const reqEnd = timeStringToHour(form.timeEnd);
+
+    if (reqStart >= reqEnd || reqDayIndex === -1) {
+      setScheduleConflicts([]);
+      return;
+    }
+
+    const conflicts = [];
+
+    // Check Course Schedules
+    roomCourseSchedules.forEach((schedule) => {
+      const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      let dayIndex = schedule.day;
+      if (dayIndex === undefined || dayIndex === null || dayIndex < 0 || dayIndex >= 7) {
+        if (schedule.date) {
+          const foundIdx = dayNames.indexOf(String(schedule.date).toLowerCase().trim());
+          if (foundIdx >= 0) dayIndex = foundIdx;
+        }
+      }
+      if (dayIndex !== reqDayIndex) return;
+
+      let cStart = 0;
+      let cEnd = 0;
+      if (typeof schedule.startHour === 'number' && typeof schedule.endHour === 'number') {
+        cStart = schedule.startHour;
+        cEnd = schedule.endHour;
+      } else if (schedule.startTime && schedule.endTime) {
+        cStart = timeStringToHour(schedule.startTime);
+        cEnd = timeStringToHour(schedule.endTime);
+      }
+      if (cEnd <= cStart) return;
+
+      if (cStart < reqEnd && reqStart < cEnd) {
+        conflicts.push({
+          type: 'Course Schedule',
+          title: schedule.title || schedule.courseCode || 'Class Schedule',
+          courseCode: schedule.courseCode || '',
+          instructor: schedule.instructor || schedule.deanName || 'Faculty',
+          section: schedule.sectionName || schedule.section || '',
+          college: schedule.college || '',
+          timeStart: formatHourDisplay(cStart),
+          timeEnd: formatHourDisplay(cEnd),
+          dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][reqDayIndex],
+        });
+      }
+    });
+
+    // Check Approved Reservations
+    let formDateNorm = form.dateOfActivity;
+    if (formDateNorm.includes('/')) {
+      const [d, m, y] = formDateNorm.split('/');
+      formDateNorm = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+
+    roomApprovedReservations.forEach((res) => {
+      let resDateNorm = res.dateOfActivity;
+      if (resDateNorm && resDateNorm.includes('/')) {
+        const [d, m, y] = resDateNorm.split('/');
+        resDateNorm = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      }
+      if (resDateNorm !== formDateNorm) return;
+
+      const rStart = timeStringToHour(res.timeStart);
+      const rEnd = timeStringToHour(res.timeEnd);
+      if (rEnd <= rStart) return;
+
+      if (rStart < reqEnd && reqStart < rEnd) {
+        conflicts.push({
+          type: 'Approved Reservation',
+          title: res.activity || res.title || 'Room Reservation',
+          courseCode: res.nameOfOrg || res.department || 'Reserved',
+          instructor: res.requestedBy || 'Requestor',
+          section: res.type === 'academic' ? 'Academic Event' : 'Non-Academic Event',
+          college: res.college || '',
+          timeStart: formatHourDisplay(rStart),
+          timeEnd: formatHourDisplay(rEnd),
+          dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][reqDayIndex],
+        });
+      }
+    });
+
+    // Check Maintenance Schedules
+    roomMaintenanceSchedules.forEach((m) => {
+      if (m.status === 'cancelled' || m.status === 'completed') return;
+      if (!m.startDate || !m.endDate) return;
+
+      if (formDateNorm >= m.startDate && formDateNorm <= m.endDate) {
+        const isQuickFix = m.durationType === 'hours' && m.isQuickFix;
+        if (isQuickFix && formDateNorm === m.startDate) {
+          const mStart = timeStringToHour(m.startTime) || 8;
+          const mEnd = timeStringToHour(m.endTime) || (mStart + (m.estimatedDurationHours || 2));
+          if (mStart < reqEnd && reqStart < mEnd) {
+            conflicts.push({
+              type: 'Maintenance',
+              title: `Maintenance: ${m.title || m.issueType || 'Facility Repair'}`,
+              courseCode: m.assignedTechnicianName || 'Facility Maintenance',
+              instructor: m.priority ? `Priority: ${m.priority}` : '',
+              section: 'Facility Maintenance',
+              college: '',
+              timeStart: formatHourDisplay(mStart),
+              timeEnd: formatHourDisplay(mEnd),
+              dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][reqDayIndex],
+            });
+          }
+        } else {
+          conflicts.push({
+            type: 'Maintenance',
+            title: `Maintenance: ${m.title || m.issueType || 'Facility Repair'} (Whole Day)`,
+            courseCode: m.assignedTechnicianName || 'Facility Maintenance',
+            instructor: `Priority: ${m.priority || 'Normal'}`,
+            section: 'Facility Maintenance',
+            college: '',
+            timeStart: '6:00 AM',
+            timeEnd: '8:00 PM',
+            dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][reqDayIndex],
+          });
+        }
+      }
+    });
+
+    setScheduleConflicts(conflicts);
+  }, [form.room, form.dateOfActivity, form.timeStart, form.timeEnd, roomCourseSchedules, roomApprovedReservations, roomMaintenanceSchedules]);
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +567,9 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
 
   const isPrefilledRoom = Boolean(prefill.room && prefill.buildingId);
 
+  const roomCapacity = Number(resolvedTarget.room?.capacity || prefill.capacity || 0);
+  const isOverCapacity = roomCapacity > 0 && Number(form.participants || 0) > roomCapacity;
+
   const submit = async (draft = false) => {
     const isDraft = draft === true;
     
@@ -382,6 +587,35 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
         title: 'Missing information',
         message: 'Please provide activity name and date of activity.',
         autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    // Check minimum 7 days advance notice (blocking next 6 days)
+    let actDate = form.dateOfActivity;
+    if (actDate.includes('/')) {
+      const [d, m, y] = actDate.split('/');
+      actDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    if (!isDraft && actDate < minReservationDate) {
+      setError('Reservations must be submitted at least 7 days in advance.');
+      showNotification({
+        type: 'warning',
+        title: 'Advance Notice Required',
+        message: 'Reservations must be submitted at least 7 days in advance to allow time for processing and registrar approval.',
+        autoCloseMs: 4000,
+      });
+      return;
+    }
+
+    // Check room capacity fit
+    if (!isDraft && roomCapacity > 0 && Number(form.participants || 0) > roomCapacity) {
+      setError(`Number of participants (${form.participants}) exceeds room capacity (${roomCapacity} pax).`);
+      showNotification({
+        type: 'warning',
+        title: 'Capacity Exceeded',
+        message: `Number of participants (${form.participants}) exceeds the room maximum capacity (${roomCapacity} pax). Please reduce the number of participants or select a larger venue.`,
+        autoCloseMs: 4000,
       });
       return;
     }
@@ -410,13 +644,13 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
       return;
     }
     
-    // Check for course schedule conflicts (only for non-draft submissions)
+    // Check for schedule conflicts (only for non-draft submissions)
     if (!isDraft && scheduleConflicts.length > 0) {
-      setError('This time slot conflicts with existing course schedules.');
+      setError('This time slot conflicts with existing schedules.');
       showNotification({
         type: 'error',
-        title: 'Schedule conflict',
-        message: `Cannot reserve: ${scheduleConflicts.length} course schedule${scheduleConflicts.length > 1 ? 's' : ''} already scheduled at this time.`,
+        title: 'Schedule Conflict',
+        message: `Cannot reserve: Conflicts detected with ${scheduleConflicts.length} existing class schedule(s), reservation(s), or maintenance.`,
         autoCloseMs: 0,
       });
       return;
@@ -507,14 +741,15 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
   const title = eventType === APPROVAL_TYPES.ACADEMIC ? 'Academic Room Reservation' : 'Non-Academic Room Reservation';
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <>
+      <div className="modal-overlay" onClick={onClose}>
       <div
         className="bg-white rounded-2xl w-full max-w-xl relative flex flex-col"
         style={{ maxHeight: '92vh' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-8 pt-7 pb-4 border-b border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose} className="absolute right-5 top-5 p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors">
+          <button type="button" onClick={onClose} className="absolute right-5 top-5 p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
             <X size={20} />
           </button>
           <div className="text-center mb-2">
@@ -532,15 +767,17 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 py-5">
-          {error && (
-            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
-              {error}
-            </p>
-          )}
+        <div className="px-8 py-6 overflow-y-auto flex-1">
+          {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-xs font-semibold mb-4 border border-red-200">{error}</div>}
 
-          <h3 className="font-bold text-base mb-4 text-dark">Reservation Details</h3>
-          <div className="grid grid-cols-2 gap-4 mb-5">
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="col-span-2">
+              <label className="form-label">
+                Name of Organization / Department <span className="text-red-600">*</span>
+              </label>
+              <input className="form-input" value={form.nameOfOrg} onChange={(e) => set('nameOfOrg', e.target.value)} required />
+            </div>
+
             <div className="col-span-2">
               <label className="form-label">
                 Name of Activity <span className="text-red-600">*</span>
@@ -549,10 +786,11 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
             </div>
             <div className="col-span-2">
               <label className="form-label">
-                Objective of the Activity <span className="text-red-600">*</span>
+                Objectives of the Activity <span className="text-red-600">*</span>
               </label>
               <textarea className="form-input resize-none" rows={3} value={form.objectives} onChange={(e) => set('objectives', e.target.value)} required />
             </div>
+
             {!isPrefilledRoom && (
               <>
                 <div className="col-span-2">
@@ -562,11 +800,16 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                   <select
                     className="form-input"
                     value={form.building}
-                    onChange={(e) => setForm((f) => ({ ...f, building: e.target.value, room: '', designatedVenue: '' }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setForm((f) => ({ ...f, building: value, room: '', designatedVenue: '' }));
+                    }}
                     required
                   >
                     <option value="">Select Building</option>
-                    {buildingList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+                    {buildingList.map((b) => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="col-span-2">
@@ -589,12 +832,14 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                   >
                     <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
                     {roomsInBuilding.map((r) => (
-                      <option key={r.id} value={r.id}>{`${r.id} (Floor ${r.floor})`}</option>
+                      <option key={r.id} value={r.id}>{`${r.name || r.id} (Floor ${r.floor})`}</option>
                     ))}
                   </select>
                 </div>
               </>
             )}
+
+            {/* Designated Venue with View Schedule Button */}
             <div className="col-span-2">
               <label className="form-label">
                 Designated Venue <span className="text-red-600">*</span>
@@ -607,19 +852,66 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                 style={isPrefilledRoom ? { background: '#f9f9f9' } : undefined}
                 required
               />
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[11px] font-semibold text-gray-500">
+                  {resolvedTarget.room?.type ? `${resolvedTarget.room.type} · ` : ''}
+                  {roomCapacity > 0 ? `Capacity: ${roomCapacity} Pax` : ''}
+                </span>
+                {form.room && (
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduleModal(true)}
+                    className="text-xs font-extrabold text-[#7A0808] hover:text-[#600000] hover:underline flex items-center gap-1.5 transition-colors cursor-pointer py-0.5"
+                  >
+                    <Calendar size={13} />
+                    View Schedule
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Date of Activity (minDate = 7 days in advance) */}
             <div>
               <label className="form-label">
                 Date of Activity <span className="text-red-600">*</span>
               </label>
-              <DatePicker value={form.dateOfActivity} onChange={(val) => set('dateOfActivity', val)} required />
+              <DatePicker
+                value={form.dateOfActivity}
+                onChange={(val) => set('dateOfActivity', val)}
+                minDate={minReservationDate}
+                required
+              />
+              <p className="text-[10px] text-gray-400 mt-1">Must be at least 7 days in advance.</p>
             </div>
+
+            {/* Number of Participants (with room capacity fit check) */}
             <div>
               <label className="form-label">
                 Number of Participants <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="number" value={form.participants} onChange={(e) => set('participants', e.target.value)} required />
+              <input
+                className={`form-input ${
+                  isOverCapacity
+                    ? 'border-red-500 bg-red-50/40 text-red-900 focus:border-red-600 ring-1 ring-red-200'
+                    : ''
+                }`}
+                type="number"
+                min="1"
+                value={form.participants}
+                onChange={(e) => set('participants', e.target.value)}
+                required
+              />
+              {roomCapacity > 0 && (
+                <p className={`text-[10px] font-bold mt-1 ${
+                  isOverCapacity ? 'text-red-600' : 'text-gray-500'
+                }`}>
+                  {isOverCapacity
+                    ? `⚠️ Exceeds capacity of ${roomCapacity} pax`
+                    : `Room Capacity: ${roomCapacity} Pax`}
+                </p>
+              )}
             </div>
+
             <div>
               <label className="form-label">
                 Time Start <span className="text-red-600">*</span>
@@ -633,15 +925,9 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
               <TimePicker value={form.timeEnd} onChange={(val) => set('timeEnd', val)} required />
             </div>
             
-            {/* Course Schedule Conflict Warning */}
-            {checkingConflicts && (
-              <div className="col-span-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-                <p className="text-xs text-gray-600">Checking for course schedule conflicts...</p>
-              </div>
-            )}
-            
-            {!checkingConflicts && scheduleConflicts.length > 0 && (
-              <div className="col-span-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            {/* Real-Time Instant Schedule Conflict Warning */}
+            {scheduleConflicts.length > 0 && (
+              <div className="col-span-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
                 <div className="flex items-start gap-2 mb-2">
                   <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
                   <div>
@@ -649,22 +935,28 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                       Schedule Conflict Detected
                     </p>
                     <p className="text-xs text-red-700 mt-1">
-                      This time slot conflicts with {scheduleConflicts.length} existing course schedule{scheduleConflicts.length > 1 ? 's' : ''}. 
-                      Please choose a different time or room.
+                      This time slot conflicts with {scheduleConflicts.length} existing event(s) or class(es). Please choose another time or view the schedule.
                     </p>
                   </div>
                 </div>
-                <div className="mt-3 space-y-2 max-h-32 overflow-y-auto">
+                <div className="mt-2.5 space-y-2 max-h-36 overflow-y-auto">
                   {scheduleConflicts.map((conflict, idx) => (
-                    <div key={idx} className="bg-white rounded px-3 py-2 text-xs">
-                      <p className="font-bold text-red-900">
-                        {conflict.title} ({conflict.courseCode})
-                      </p>
-                      <p className="text-gray-700 mt-0.5">
-                        {conflict.section} • {conflict.college}
-                      </p>
+                    <div key={idx} className="bg-white rounded-lg p-2.5 text-xs border border-red-100 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-bold text-red-900 truncate">
+                          {conflict.title} {conflict.courseCode ? `(${conflict.courseCode})` : ''}
+                        </p>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-red-100 text-red-800 flex-shrink-0">
+                          {conflict.type}
+                        </span>
+                      </div>
+                      {conflict.section && (
+                        <p className="text-gray-700 mt-0.5 font-medium">
+                          {conflict.section} {conflict.college ? `• ${conflict.college}` : ''}
+                        </p>
+                      )}
                       <p className="text-gray-600 mt-0.5">
-                        {conflict.dayOfWeek} {conflict.timeStart} - {conflict.timeEnd} • {conflict.instructor}
+                        {conflict.dayOfWeek} {conflict.timeStart} - {conflict.timeEnd} {conflict.instructor ? `• ${conflict.instructor}` : ''}
                       </p>
                     </div>
                   ))}
@@ -672,12 +964,13 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
               </div>
             )}
             
-            {!checkingConflicts && scheduleConflicts.length === 0 && form.room && form.dateOfActivity && form.timeStart && form.timeEnd && (
-              <div className="col-span-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-                <p className="text-xs text-green-700 font-medium">✓ No course schedule conflicts detected</p>
+            {scheduleConflicts.length === 0 && form.room && form.dateOfActivity && form.timeStart && form.timeEnd && (
+              <div className="col-span-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                <span className="text-xs text-green-700 font-bold">✓ Room is available! No conflicts detected.</span>
               </div>
             )}
             
+            {/* Contact Number (Normalized to 09XXXXXXXXX format) */}
             <div className="col-span-2">
               <label className="form-label">
                 Contact Number <span className="text-red-600">*</span>
@@ -695,7 +988,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                 />
               </div>
               <p className="text-[11px] text-gray-500 mt-1">
-                Enter 10 digits (e.g. 9171234567). Typing 0 (e.g. 09171234567) is automatically adapted.
+                Enter 10 digits (e.g. 9171234567). Saved in standard local format (090995...).
               </p>
             </div>
             <div className="col-span-2">
@@ -721,26 +1014,18 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                   </span>
                 )}
               </div>
-
               {(form.requestorSignatureUrl || form.signatureUrl) ? (
-                <div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="h-14 w-28 bg-gray-50 border border-dashed border-gray-300 rounded flex items-center justify-center p-1">
-                      <img
-                        src={form.requestorSignatureUrl || form.signatureUrl}
-                        alt="E-Signature Preview"
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-gray-800">Your E-Signature</p>
-                      <p className="text-[11px] text-gray-500">Automatically overprinted on permit</p>
-                    </div>
+                <div className="flex items-center gap-4 bg-white p-3 rounded-lg border border-gray-200">
+                  <div className="h-16 w-32 border border-gray-200 rounded bg-white flex items-center justify-center p-1 overflow-hidden">
+                    <img
+                      src={form.requestorSignatureUrl || form.signatureUrl}
+                      alt="Signature"
+                      className="max-h-full max-w-full object-contain"
+                    />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="cursor-pointer px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-xs font-bold text-gray-700 flex items-center gap-1 shadow-sm transition-colors">
-                      <Upload size={13} />
-                      <span>Change</span>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="btn-outline text-xs px-3 py-1.5 cursor-pointer flex items-center gap-1.5 text-gray-700 hover:bg-gray-50">
+                      <Upload size={13} /> Change Signature
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
@@ -751,7 +1036,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                     <button
                       type="button"
                       onClick={handleClearSignature}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                       title="Remove Signature"
                     >
                       <Trash2 size={15} />
@@ -797,17 +1082,37 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
         </div>
 
         <div className="px-8 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-          <button type="button" onClick={() => submit(true)} disabled={busy} className="btn-outline-maroon flex-1">
+          <button type="button" onClick={() => submit(true)} disabled={busy} className="btn-outline-maroon flex-1 cursor-pointer">
             {busy ? 'Saving...' : 'Save as Draft'}
           </button>
-          <button type="button" onClick={() => submit(false)} disabled={busy} className="btn-maroon flex-1 justify-center">
+          <button type="button" onClick={() => submit(false)} disabled={busy} className="btn-maroon flex-1 justify-center cursor-pointer">
             {busy ? 'Submitting...' : 'Submit Request'}
           </button>
         </div>
       </div>
-      
-      <LoadingModal isOpen={isLoading} message={loadingMessage} />
-      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
-  );
+      
+    {/* Weekly Room Schedule Modal - Isolated from parent overlay */}
+    {showScheduleModal && (
+      <RoomWeeklyScheduleModal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        room={{
+          id: form.room || prefill.room,
+          roomCode: form.room || prefill.room,
+          name: resolvedTarget.room?.name || form.room || prefill.room,
+          docId: targetRoomDocId,
+          buildingName: form.building || selectedBuilding?.name || prefill.building,
+          capacity: resolvedTarget.room?.capacity || prefill.capacity || 0,
+          type: resolvedTarget.room?.type || prefill.roomType || 'Classroom',
+          floor: resolvedTarget.floor?.floor || prefill.floor,
+        }}
+        initialDate={form.dateOfActivity}
+      />
+    )}
+
+    <LoadingModal isOpen={isLoading} message={loadingMessage} />
+    <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
+  </>
+);
 }

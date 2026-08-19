@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, Edit2, Plus, Trash2 } from 'lucide-react';
 import {
   SCHEDULE_TYPE_COLORS,
@@ -25,6 +25,7 @@ export default function WeeklyScheduleGrid({
   semester = '1',
   onSemesterChange,
   lockSemester = false,
+  semesterOptions = null,
   scheduleTab = 'regular',
   onScheduleTabChange,
   weekStartDate,
@@ -47,6 +48,18 @@ export default function WeeklyScheduleGrid({
   onDeleteBlock,
   emptyMessage,
 }) {
+  const activeSemesterOptions = useMemo(() => {
+    if (Array.isArray(semesterOptions) && semesterOptions.length > 0) {
+      return semesterOptions.map((opt) =>
+        typeof opt === 'string' ? { value: opt, label: `Semester ${opt}` } : opt
+      );
+    }
+    return [
+      { value: '1', label: 'Semester 1' },
+      { value: '2', label: 'Semester 2' },
+    ];
+  }, [semesterOptions]);
+
   const weekStart = weekStartDate || new Date();
   const dayDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i).getDate());
   const weekLabel = formatWeekRange(weekStart);
@@ -264,17 +277,17 @@ export default function WeeklyScheduleGrid({
           ) : (
             <span className="text-xs font-bold px-3 py-2 rounded-lg border border-gray-200" style={{ color: '#2B3235' }}>{schoolYearLabel}</span>
           )}
-          <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 10 }}>
-            {['1', '2'].map((s) => (
+          <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm flex-wrap" style={{ background: '#F9FAFB', borderRadius: 10 }}>
+            {activeSemesterOptions.map((opt) => (
               <button
-                key={s}
+                key={opt.value}
                 type="button"
-                onClick={() => !lockSemester && onSemesterChange?.(s)}
+                onClick={() => !lockSemester && onSemesterChange?.(opt.value)}
                 disabled={lockSemester}
                 className="px-4 py-1.5 text-xs font-bold transition-all disabled:opacity-60"
-                style={semester === s ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                style={semester === opt.value ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
               >
-                Semester {s}
+                {opt.label}
               </button>
             ))}
           </div>
@@ -449,10 +462,13 @@ export default function WeeklyScheduleGrid({
                     const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
                     const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
 
+                    const isNonCourse = sched.isReservation || sched.isMaintenance;
                     return (
                       <div
                         key={sched.id}
-                        className="absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center"
+                        className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center ${
+                          isNonCourse ? 'print:hidden' : ''
+                        }`}
                         onMouseDown={(e) => e.stopPropagation()}
                         style={{
                           top: topCalc,

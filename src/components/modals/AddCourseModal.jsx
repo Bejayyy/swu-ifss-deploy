@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Plus,
@@ -16,7 +16,7 @@ import {
   parseBulkCourseSpreadsheet,
   toTitleCase,
 } from '../../utils/excelTemplate';
-import { addCourse } from '../../services/courseService';
+import { addCourse, updateCourse } from '../../services/courseService';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -48,6 +48,20 @@ export default function AddCourseModal({
   const [individualError, setIndividualError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (editingCourse) {
+      setIndividualForm({
+        code: editingCourse.code || '',
+        title: editingCourse.title || '',
+        yearLevel: editingCourse.yearLevel || '1st Year',
+        semester: editingCourse.semester || '1st Semester',
+        units: editingCourse.units ? String(editingCourse.units) : '3',
+        type: editingCourse.type || 'lecture',
+      });
+      setActiveTab('individual');
+    }
+  }, [editingCourse]);
+
   // Bulk Upload State
   const [isDragOver, setIsDragOver] = useState(false);
   const [parsedRows, setParsedRows] = useState([]);
@@ -57,7 +71,7 @@ export default function AddCourseModal({
   const [importedProgress, setImportedProgress] = useState(0);
 
   // ----------------------------------------------------
-  // INDIVIDUAL SAVE HANDLER
+  // INDIVIDUAL SAVE / UPDATE HANDLER
   // ----------------------------------------------------
   const handleIndividualSubmit = async (e) => {
     e.preventDefault();
@@ -80,18 +94,18 @@ export default function AddCourseModal({
       return;
     }
 
-    // Check duplicate code
-    if (!editingCourse || editingCourse.code !== code) {
-      const duplicate = existingCourses.find((c) => (c.code || '').toUpperCase() === code);
-      if (duplicate) {
-        setIndividualError(`A course with code "${code}" already exists in ${collegeCode}.`);
-        return;
-      }
+    // Check duplicate code (excluding current course being edited)
+    const duplicate = existingCourses.find(
+      (c) => (c.code || '').toUpperCase() === code && c.id !== editingCourse?.id
+    );
+    if (duplicate) {
+      setIndividualError(`A course with code "${code}" already exists in ${collegeCode}.`);
+      return;
     }
 
     setIsSubmitting(true);
     try {
-      await addCourse({
+      const coursePayload = {
         code,
         title,
         yearLevel: individualForm.yearLevel,
@@ -99,10 +113,18 @@ export default function AddCourseModal({
         units,
         type: individualForm.type,
         collegeCode,
-      });
+      };
 
-      if (onSaveSuccess) {
-        onSaveSuccess(`Course ${code} saved successfully.`);
+      if (editingCourse?.id) {
+        await updateCourse(editingCourse.id, coursePayload);
+        if (onSaveSuccess) {
+          onSaveSuccess(`Course ${code} updated successfully.`);
+        }
+      } else {
+        await addCourse(coursePayload);
+        if (onSaveSuccess) {
+          onSaveSuccess(`Course ${code} saved successfully.`);
+        }
       }
       onClose();
     } catch (err) {
@@ -232,46 +254,53 @@ export default function AddCourseModal({
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-black text-lg text-dark flex items-center gap-2">
-                <BookOpen size={20} className="text-[#7A0808]" /> Add Courses — {collegeName || collegeCode}
+                <BookOpen size={20} className="text-[#7A0808]" />
+                {editingCourse
+                  ? `Edit Course — ${editingCourse.code || ''} (${collegeName || collegeCode})`
+                  : `Add Courses — ${collegeName || collegeCode}`}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Add courses individually or download the template to import subjects in bulk.
+                {editingCourse
+                  ? 'Update course details, units, semester, and course type.'
+                  : 'Add courses individually or download the template to import subjects in bulk.'}
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 hover:bg-gray-200/60 rounded-lg transition-colors text-gray-400 hover:text-gray-700"
+              className="p-1 hover:bg-gray-200/60 rounded-lg transition-colors text-gray-400 hover:text-gray-700 cursor-pointer"
             >
               <X size={18} />
             </button>
           </div>
 
           {/* Nav Tabs */}
-          <div className="flex items-center gap-2 border-b border-gray-200 -mb-3">
-            <button
-              type="button"
-              onClick={() => setActiveTab('individual')}
-              className={`px-4 py-2 text-xs font-bold transition-all border-b-2 ${
-                activeTab === 'individual'
-                  ? 'border-[#7A0808] text-[#7A0808]'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              Individual Course
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('bulk')}
-              className={`px-4 py-2 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 ${
-                activeTab === 'bulk'
-                  ? 'border-[#7A0808] text-[#7A0808]'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <FileSpreadsheet size={14} /> Bulk Add Courses
-            </button>
-          </div>
+          {!editingCourse && (
+            <div className="flex items-center gap-2 border-b border-gray-200 -mb-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab('individual')}
+                className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${
+                  activeTab === 'individual'
+                    ? 'border-[#7A0808] text-[#7A0808]'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Individual Course
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('bulk')}
+                className={`px-4 py-2 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'bulk'
+                    ? 'border-[#7A0808] text-[#7A0808]'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <FileSpreadsheet size={14} /> Bulk Add Courses
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Tab Content Body */}

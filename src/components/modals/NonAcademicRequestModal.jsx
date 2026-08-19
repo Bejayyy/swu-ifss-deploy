@@ -33,7 +33,7 @@ function getNormalizedContactNumber(val) {
   if (!clean) return '';
   const digits = clean.startsWith('0') ? clean.slice(1) : clean;
   if (digits.length === 10) {
-    return `+63${digits}`;
+    return `0${digits}`;
   }
   return '';
 }

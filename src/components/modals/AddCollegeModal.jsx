@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { addCollege, updateCollege } from '../../services/collegeService';
-import { addCourse, subscribeCollegeCourses } from '../../services/courseService';
+import { addCourse, updateCourse, subscribeCollegeCourses } from '../../services/courseService';
 import {
   downloadBulkCourseTemplate,
   parseBulkCourseSpreadsheet,
@@ -323,7 +323,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         const prgCode = prg.code.trim().toUpperCase();
         for (const crs of prg.courses) {
           if (crs.code.trim() && crs.title.trim()) {
-            await addCourse({
+            const coursePayload = {
               code: crs.code.trim().toUpperCase(),
               title: toTitleCase(crs.title),
               yearLevel: crs.yearLevel || '1st Year',
@@ -332,7 +332,13 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               type: crs.type || 'lecture',
               collegeCode: code,
               programCode: prgCode,
-            });
+            };
+
+            if (crs.id && !crs.id.startsWith('crs_')) {
+              await updateCourse(crs.id, coursePayload);
+            } else {
+              await addCourse(coursePayload);
+            }
           }
         }
       }

@@ -1048,39 +1048,86 @@ export async function checkReservationTimeConflict({
  * Get approved reservations for a specific room
  * Useful for displaying schedules
  */
-export async function fetchApprovedReservationsForRoom(roomId) {
-  if (!roomId) return [];
+export async function fetchApprovedReservationsForRoom(roomId, optionalRoomCode = '') {
+  if (!roomId && !optionalRoomCode) return [];
 
   const q = query(
     reservationsCollection(),
-    where('roomId', '==', roomId),
-    where('status', '==', RESERVATION_STATUS.APPROVED),
-    orderBy('dateOfActivity', 'asc')
+    where('status', 'in', [
+      RESERVATION_STATUS.PENDING,
+      RESERVATION_STATUS.IN_PROGRESS,
+      RESERVATION_STATUS.APPROVED,
+      RESERVATION_STATUS.REJECTED
+    ])
   );
 
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(mapReservationDoc);
+  const allApproved = snapshot.docs
+    .map(mapReservationDoc)
+    .filter((r) => r.status === RESERVATION_STATUS.APPROVED || r.status === 'Approved' || r.status === 'approved');
+  const targetId = String(roomId || '').trim().toLowerCase();
+  const targetCode = String(optionalRoomCode || '').trim().toLowerCase();
+
+  const matched = allApproved.filter((res) => {
+    const rRoomId = String(res.roomId || '').trim().toLowerCase();
+    const rRoomDocId = String(res.roomDocId || '').trim().toLowerCase();
+    const rRoom = String(res.room || '').trim().toLowerCase();
+    const rVenue = String(res.designatedVenue || '').trim().toLowerCase();
+
+    const matchId = targetId && (rRoomId === targetId || rRoomDocId === targetId || rRoom === targetId);
+    const matchCode = targetCode && (rRoom === targetCode || rRoomId === targetCode || rRoomDocId === targetCode || rVenue.includes(targetCode));
+    return matchId || matchCode;
+  });
+
+  matched.sort((a, b) => String(a.dateOfActivity || '').localeCompare(String(b.dateOfActivity || '')));
+  return matched;
 }
 
 /**
  * Subscribe to approved reservations for a specific room
  */
-export function subscribeApprovedReservationsForRoom(roomId, onData, onError) {
-  if (!roomId) {
+export function subscribeApprovedReservationsForRoom(roomId, onData, onError, optionalRoomCode = '') {
+  if (!roomId && !optionalRoomCode) {
     onData([]);
     return () => {};
   }
 
   const q = query(
     reservationsCollection(),
-    where('roomId', '==', roomId),
-    where('status', '==', RESERVATION_STATUS.APPROVED),
-    orderBy('dateOfActivity', 'asc')
+    where('status', 'in', [
+      RESERVATION_STATUS.PENDING,
+      RESERVATION_STATUS.IN_PROGRESS,
+      RESERVATION_STATUS.APPROVED,
+      RESERVATION_STATUS.REJECTED
+    ])
   );
 
   return onSnapshot(
     q,
-    (snap) => onData(snap.docs.map(mapReservationDoc)),
-    onError
+    (snap) => {
+      const allApproved = snap.docs
+        .map(mapReservationDoc)
+        .filter((r) => r.status === RESERVATION_STATUS.APPROVED || r.status === 'Approved' || r.status === 'approved');
+      const targetId = String(roomId || '').trim().toLowerCase();
+      const targetCode = String(optionalRoomCode || '').trim().toLowerCase();
+
+      const matched = allApproved.filter((res) => {
+        const rRoomId = String(res.roomId || '').trim().toLowerCase();
+        const rRoomDocId = String(res.roomDocId || '').trim().toLowerCase();
+        const rRoom = String(res.room || '').trim().toLowerCase();
+        const rVenue = String(res.designatedVenue || '').trim().toLowerCase();
+
+        const matchId = targetId && (rRoomId === targetId || rRoomDocId === targetId || rRoom === targetId);
+        const matchCode = targetCode && (rRoom === targetCode || rRoomId === targetCode || rRoomDocId === targetCode || rVenue.includes(targetCode));
+        return matchId || matchCode;
+      });
+
+      matched.sort((a, b) => String(a.dateOfActivity || '').localeCompare(String(b.dateOfActivity || '')));
+      onData(matched);
+    },
+    (err) => {
+      console.warn('[subscribeApprovedReservationsForRoom] Subscription note:', err?.message || err);
+      if (onError) onError(err);
+    }
   );
 }

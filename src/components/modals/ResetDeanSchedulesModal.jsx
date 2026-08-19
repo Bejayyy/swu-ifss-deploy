@@ -13,12 +13,13 @@ export default function ResetDeanSchedulesModal({
   onClose,
   onConfirm,
   deanUsers = [],
-  semester = '1', // Now receives just the number (e.g., "1" or "2")
+  semester = '1',
+  semesterLabel = '',
   schoolYear = '2024-2025',
 }) {
   const { showNotification } = useModal();
   // Format semester for display
-  const semesterDisplay = `Semester ${semester}`;
+  const semesterDisplay = semesterLabel || `Semester ${semester}`;
   const [selectedDeans, setSelectedDeans] = useState(new Set());
   const [deanSectionsMap, setDeanSectionsMap] = useState({});
   const [loading, setLoading] = useState(false);

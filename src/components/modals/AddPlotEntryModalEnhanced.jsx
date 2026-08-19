@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   X,
   ChevronRight,
@@ -16,7 +16,12 @@ import {
   Eye,
   Check,
 } from 'lucide-react';
-import { parseTimeToHour, validateScheduleHours, hourToTimeInput } from '../../services/plotScheduleService';
+import {
+  parseTimeToHour,
+  validateScheduleHours,
+  hourToTimeInput,
+  subscribeDeanSections,
+} from '../../services/plotScheduleService';
 import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
 import { subscribeCollegeCourses } from '../../services/courseService';
@@ -59,11 +64,25 @@ export default function AddPlotEntryModalEnhanced({
   sectionYearLevel = '1st Year', // Selected section's year level
   dayIndex, // 0-6 for Mon-Sun
   fromDrag = false,
+  initialBuildingId,
+  initialRoomCode,
+  initialBuilding,
+  initialRoom,
+  initialType,
+  lockRoom = false,
+  sections = [],
+  initialSection = '',
+  skipTypeStep = false,
 }) {
   // Multi-step form state
   const [step, setStep] = useState(1); // 1: Course, 2: Teacher, 3: Type, 4: Building & Room, 5: Summary
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Year level and section filters
+  const [activeYearLevel, setActiveYearLevel] = useState(sectionYearLevel || 'All');
+  const [deanSections, setDeanSections] = useState(sections || []);
+  const [selectedSection, setSelectedSection] = useState(initialSection || (sections?.[0]?.name || ''));
 
   // Data loading states
   const [courses, setCourses] = useState([]);
@@ -80,9 +99,13 @@ export default function AddPlotEntryModalEnhanced({
   // Form data
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
-  const [selectedType, setSelectedType] = useState('Lecture');
-  const [selectedBuilding, setSelectedBuilding] = useState(null);
-  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedType, setSelectedType] = useState(() => {
+    if (initialType) return initialType;
+    if (initialRoom?.type && String(initialRoom.type).toLowerCase().includes('lab')) return 'Laboratory';
+    return 'Lecture';
+  });
+  const [selectedBuilding, setSelectedBuilding] = useState(initialBuilding || null);
+  const [selectedRoom, setSelectedRoom] = useState(initialRoom || null);
   const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
   // Only pre-populate time if user dragged on grid or editing existing schedule
   const [startTime, setStartTime] = useState(fromDrag || initial?.title ? initial?.startTime : null);
@@ -91,6 +114,10 @@ export default function AddPlotEntryModalEnhanced({
 
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
+
+  // Refs to ensure pre-selection only runs once on mount
+  const initializedBuildingRef = useRef(false);
+  const initializedRoomRef = useRef(false);
 
   // Subscribe to staff teachers for fallback if course isn't pre-assigned
   useEffect(() => {
@@ -102,6 +129,24 @@ export default function AddPlotEntryModalEnhanced({
       (err) => console.error('Error loading teachers in modal:', err)
     );
   }, []);
+
+  // Subscribe to Dean's sections if deanUid is provided and sections not passed
+  useEffect(() => {
+    if (!deanUid || (sections && sections.length > 0)) return;
+    return subscribeDeanSections(
+      deanUid,
+      (secs) => {
+        setDeanSections(secs);
+        if (!selectedSection && secs.length > 0) {
+          setSelectedSection(secs[0].name);
+          if (secs[0].yearLevel && (!sectionYearLevel || sectionYearLevel === '1st Year')) {
+            setActiveYearLevel(secs[0].yearLevel);
+          }
+        }
+      },
+      (err) => console.error('Error loading dean sections:', err)
+    );
+  }, [deanUid, sections]);
 
   // Subscribe to courses for the Dean's college
   useEffect(() => {
@@ -132,8 +177,8 @@ export default function AddPlotEntryModalEnhanced({
           }
 
           // 2. Section Year Level matching
-          if (sectionYearLevel) {
-            const activeYear = String(sectionYearLevel).toLowerCase().trim();
+          if (activeYearLevel && activeYearLevel !== 'All' && activeYearLevel !== 'all') {
+            const activeYear = String(activeYearLevel).toLowerCase().trim();
             const courseYear = String(c.yearLevel || '1st Year').toLowerCase().trim();
 
             const activeDigit = activeYear.match(/\d/)?.[0];
@@ -155,7 +200,7 @@ export default function AddPlotEntryModalEnhanced({
         setLoadingCourses(false);
       }
     );
-  }, [deanCollege, semester, sectionYearLevel]);
+  }, [deanCollege, semester, activeYearLevel]);
 
   // Subscribe to buildings
   useEffect(() => {
@@ -301,6 +346,49 @@ export default function AddPlotEntryModalEnhanced({
       .filter((f) => f.rooms.length > 0 || rawFloors.length === 1);
   }, [selectedBuilding, selectedType]);
 
+  // Pre-select building ONCE if initialBuilding or initialBuildingId is passed
+  useEffect(() => {
+    if (initializedBuildingRef.current) return;
+    if (buildings.length > 0) {
+      if (initialBuilding) {
+        const found = buildings.find(b => b.id === initialBuilding.id || b.docId === initialBuilding.docId || b.name === initialBuilding.name) || initialBuilding;
+        setSelectedBuilding(found);
+        initializedBuildingRef.current = true;
+      } else if (initialBuildingId || initial?.buildingId) {
+        const bId = initialBuildingId || initial?.buildingId;
+        const found = buildings.find(b => b.id === bId || b.docId === bId || b.name === bId);
+        if (found) {
+          setSelectedBuilding(found);
+          initializedBuildingRef.current = true;
+        }
+      }
+    }
+  }, [buildings, initialBuilding, initialBuildingId, initial?.buildingId]);
+
+  // Pre-select room ONCE if initialRoom or initialRoomCode is passed
+  useEffect(() => {
+    if (initializedRoomRef.current) return;
+    if (selectedBuilding && availableFloors.length > 0) {
+      const targetCode = initialRoom?.roomCode || initialRoom?.id || initialRoom?.name || initialRoomCode || initial?.roomCode || initial?.roomId;
+      if (targetCode) {
+        for (const floor of availableFloors) {
+          const found = (floor.rooms || []).find(
+            r => r.roomCode === targetCode || r.id === targetCode || r.name === targetCode || r.docId === targetCode
+          );
+          if (found) {
+            setSelectedRoom(found);
+            setOpenFloors(prev => ({ ...prev, [floor.floorNumber]: true }));
+            initializedRoomRef.current = true;
+            break;
+          }
+        }
+      } else if (initialRoom) {
+        setSelectedRoom(initialRoom);
+        initializedRoomRef.current = true;
+      }
+    }
+  }, [selectedBuilding, availableFloors, initialRoom, initialRoomCode, initial?.roomCode, initial?.roomId]);
+
   // Auto-expand all floors when selected building changes
   useEffect(() => {
     if (selectedBuilding && availableFloors.length > 0) {
@@ -318,6 +406,34 @@ export default function AddPlotEntryModalEnhanced({
       [fNum]: prev[fNum] === undefined ? false : !prev[fNum],
     }));
   };
+
+  const isTypeSkipped = skipTypeStep || Boolean(initialRoom || initialRoomCode);
+
+  const stepConfig = useMemo(() => {
+    if (isTypeSkipped) {
+      return [
+        { id: 1, title: 'Select Course' },
+        { id: 2, title: 'Select Teacher' },
+        { id: 4, title: 'Select Building & Room' },
+        { id: 5, title: 'Summary' },
+      ];
+    }
+    return [
+      { id: 1, title: 'Select Course' },
+      { id: 2, title: 'Select Teacher' },
+      { id: 3, title: 'Select Type' },
+      { id: 4, title: 'Select Building & Room' },
+      { id: 5, title: 'Summary' },
+    ];
+  }, [isTypeSkipped]);
+
+  const currentStepIndex = useMemo(() => {
+    const idx = stepConfig.findIndex((s) => s.id === step);
+    return idx >= 0 ? idx : 0;
+  }, [stepConfig, step]);
+
+  const totalSteps = stepConfig.length;
+  const currentStepTitle = stepConfig[currentStepIndex]?.title || '';
 
   const handleNext = () => {
     setError('');
@@ -347,12 +463,18 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
-    setStep(step + 1);
+    const nextStepObj = stepConfig[currentStepIndex + 1];
+    if (nextStepObj) {
+      setStep(nextStepObj.id);
+    }
   };
 
   const handleBack = () => {
     setError('');
-    setStep(step - 1);
+    const prevStepObj = stepConfig[currentStepIndex - 1];
+    if (prevStepObj) {
+      setStep(prevStepObj.id);
+    }
   };
 
   const handleSubmit = async () => {
@@ -394,14 +516,21 @@ export default function AddPlotEntryModalEnhanced({
       );
       await onSave({
         date: finalDate,
+        day: selectedDayIndex,
+        dayLabel: finalDayLabel,
         title: selectedCourse.title,
         courseCode: selectedCourse.code,
         instructor: selectedTeacher.name,
         type: selectedType,
         startHour: timeCheck.startHour,
         endHour: timeCheck.endHour,
-        roomCode: selectedRoom.roomCode,
+        roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
+        buildingId: selectedBuilding?.id || selectedBuilding?.docId,
+        buildingName: selectedBuilding?.name,
+        section: selectedSection || 'Section 1',
+        yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
         scheduleMode,
+        semester,
       });
       console.log('Modal: Save completed, closing modal');
       onClose();
@@ -444,13 +573,13 @@ export default function AddPlotEntryModalEnhanced({
                 Add Schedule Block ({scheduleMode === 'exam' ? 'Exam Mode' : 'Regular Class'})
               </h2>
               <p className="text-xs text-gray-500 mt-1">
-                Step {step} of 5: {stepTitles[step - 1]}
+                Step {currentStepIndex + 1} of {totalSteps}: {currentStepTitle}
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-700"
+              className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-700 cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -458,13 +587,13 @@ export default function AddPlotEntryModalEnhanced({
 
           {/* Stepper Progress */}
           <div className="flex items-center justify-between">
-            {stepTitles.map((title, idx) => {
+            {stepConfig.map((s, idx) => {
               const stepNumber = idx + 1;
-              const isCurrent = step === stepNumber;
-              const isDone = step > stepNumber;
+              const isCurrent = step === s.id;
+              const isDone = currentStepIndex > idx;
 
               return (
-                <React.Fragment key={stepNumber}>
+                <React.Fragment key={s.id}>
                   <div className="flex items-center gap-2">
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
@@ -486,13 +615,13 @@ export default function AddPlotEntryModalEnhanced({
                           : 'text-gray-400'
                       }`}
                     >
-                      {title}
+                      {s.title}
                     </span>
                   </div>
-                  {stepNumber < 5 && (
+                  {stepNumber < totalSteps && (
                     <div
                       className={`flex-1 h-0.5 mx-2 ${
-                        step > stepNumber ? 'bg-[#7A0808]' : 'bg-gray-200'
+                        currentStepIndex > idx ? 'bg-[#7A0808]' : 'bg-gray-200'
                       }`}
                     />
                   )}
@@ -528,14 +657,54 @@ export default function AddPlotEntryModalEnhanced({
                       Select a Course
                     </h3>
                   </div>
-                  <p className="text-xs font-semibold text-[#7A0808] mt-1 bg-red-50/80 px-3 py-1.5 rounded-xl border border-red-200/80 inline-block shadow-2xs">
-                    Courses offered for {sectionYearLevel || '1st Year'} ({semesterDisplay})
-                  </p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <p className="text-xs font-semibold text-[#7A0808] bg-red-50/80 px-3 py-1.5 rounded-xl border border-red-200/80 inline-block shadow-2xs">
+                      Courses for {activeYearLevel === 'All' ? 'All Years' : activeYearLevel} ({semesterDisplay})
+                    </p>
+                    {deanSections.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-xl">
+                        <span>Section:</span>
+                        <select
+                          value={selectedSection}
+                          onChange={(e) => {
+                            setSelectedSection(e.target.value);
+                            const sec = deanSections.find(s => s.name === e.target.value);
+                            if (sec?.yearLevel) setActiveYearLevel(sec.yearLevel);
+                          }}
+                          className="bg-transparent font-black text-[#7A0808] outline-none cursor-pointer"
+                        >
+                          {deanSections.map((s) => (
+                            <option key={s.id || s.name} value={s.name}>
+                              {s.name} {s.yearLevel ? `(${s.yearLevel})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-xl self-start sm:self-auto">
                   {displayedCourses.length} course(s) available
                 </span>
+              </div>
+
+              {/* Year Level Filter Tabs */}
+              <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                {['All', '1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'].map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setActiveYearLevel(lvl)}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                      activeYearLevel === lvl
+                        ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    {lvl === 'All' ? 'All Year Levels' : lvl}
+                  </button>
+                ))}
               </div>
 
               {/* Quick Search Bar */}
@@ -922,11 +1091,18 @@ export default function AddPlotEntryModalEnhanced({
                                         const isSelected = selectedRoom?.roomCode === room.roomCode;
 
                                         return (
-                                          <button
+                                          <div
                                             key={room.roomCode}
-                                            type="button"
+                                            role="button"
+                                            tabIndex={0}
                                             onClick={() => setSelectedRoom(room)}
-                                            className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between ${
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                setSelectedRoom(room);
+                                              }
+                                            }}
+                                            className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between cursor-pointer ${
                                               isSelected
                                                 ? 'border-[#7A0808] bg-red-50 shadow-2xs'
                                                 : 'border-gray-100 hover:border-[#7A0808] hover:bg-gray-50'
@@ -953,12 +1129,12 @@ export default function AddPlotEntryModalEnhanced({
                                                      floorName: floorData.name,
                                                    });
                                                  }}
-                                                 className="p-1 rounded-md text-gray-400 hover:text-[#7A0808] hover:bg-red-100/60 transition-colors"
+                                                 className="p-1 rounded-md text-gray-400 hover:text-[#7A0808] hover:bg-red-100/60 transition-colors cursor-pointer"
                                                >
                                                  <Eye size={13} />
                                                </button>
                                              </div>
-                                          </button>
+                                          </div>
                                         );
                                       })
                                     )}
@@ -1218,7 +1394,7 @@ export default function AddPlotEntryModalEnhanced({
         {/* Footer Navigation */}
         <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
           <div>
-            {step > 1 && (
+            {currentStepIndex > 0 && (
               <button
                 type="button"
                 onClick={handleBack}
@@ -1239,7 +1415,7 @@ export default function AddPlotEntryModalEnhanced({
               Cancel
             </button>
 
-            {step < 5 ? (
+            {currentStepIndex < totalSteps - 1 ? (
               <button
                 type="button"
                 onClick={handleNext}

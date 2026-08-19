@@ -113,6 +113,21 @@ export default function CourseScheduling() {
     return undefined;
   }, [isRegistrar, isDean, profile]);
 
+  const semesterOptions = useMemo(() => {
+    if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
+      return calendarData.config.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start,
+        end: s.end,
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1', start: calendarData?.config?.semester1Start, end: calendarData?.config?.semester1End },
+      { value: '2', label: 'Semester 2', start: calendarData?.config?.semester2Start, end: calendarData?.config?.semester2End },
+    ];
+  }, [calendarData?.config]);
+
   const selectedPlot = plotRequests.find((p) => p.id === selectedPlotId);
 
   useEffect(() => {
@@ -467,6 +482,7 @@ export default function CourseScheduling() {
                 onSchoolYearChange={(val) => setActiveSchoolYearId(val)}
                 semester={semester}
                 onSemesterChange={setSemester}
+                semesterOptions={semesterOptions}
                 lockSemester={false}
                 scheduleTab={scheduleTab}
                 onScheduleTabChange={setScheduleTab}

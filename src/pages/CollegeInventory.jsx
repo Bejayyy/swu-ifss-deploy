@@ -831,7 +831,7 @@ export default function CollegeInventory() {
           onSaveSuccess={(msg) => {
             setNotification({
               type: 'success',
-              title: 'Courses Saved!',
+              title: editingCourse ? 'Course Updated!' : 'Courses Saved!',
               message: msg || 'Courses have been saved successfully.',
             });
             setEditingCourse(null);

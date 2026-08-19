@@ -27,6 +27,14 @@ export function isDateInRange(dateStr, startStr, endStr) {
 
 export function getSemesterForDate(dateStr, config) {
   if (!config) return null;
+  if (Array.isArray(config.semesters) && config.semesters.length > 0) {
+    for (let i = 0; i < config.semesters.length; i++) {
+      const sem = config.semesters[i];
+      if (sem?.start && sem?.end && isDateInRange(dateStr, sem.start, sem.end)) {
+        return i + 1;
+      }
+    }
+  }
   if (config.semester1Start && config.semester1End && isDateInRange(dateStr, config.semester1Start, config.semester1End)) {
     return 1;
   }
@@ -52,7 +60,12 @@ export function getSchedulingBlockReason(dateStr, { config, holidays = [], noCla
   if (noClass) return `No-class period: ${noClass.reason}`;
 
   const semester = getSemesterForDate(dateStr, config);
-  if (!semester && (config?.semester1Start || config?.semester2Start)) {
+  const hasConfiguredSemesters =
+    (Array.isArray(config?.semesters) && config.semesters.some((s) => s.start || s.end)) ||
+    config?.semester1Start ||
+    config?.semester2Start;
+
+  if (!semester && hasConfiguredSemesters) {
     return 'Date is outside configured semester ranges';
   }
 
@@ -81,35 +94,38 @@ export function formatExamRange(range) {
   return `${formatDisplayDate(range.start)} to ${formatDisplayDate(range.end)}`;
 }
 
+export const createEmptyExamPeriod = () => ({
+  p1: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+  p2: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+  p3: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+  rbe: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+});
+
 export const EMPTY_EXAM_PERIODS = {
-  1: {
-    p1: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    p2: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    p3: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    rbe: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-  },
-  2: {
-    p1: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    p2: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    p3: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-    rbe: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
-  },
+  1: createEmptyExamPeriod(),
+  2: createEmptyExamPeriod(),
 };
 
 export function normalizeExamPeriods(raw) {
-  const base = EMPTY_EXAM_PERIODS;
-  if (!raw) return base;
+  const result = { 1: createEmptyExamPeriod(), 2: createEmptyExamPeriod() };
+  if (!raw) return result;
   const mergeLevel = (fallback, value) => ({
     fr: { ...fallback.fr, ...(value?.fr || {}) },
     up: { ...fallback.up, ...(value?.up || {}) },
   });
-  const mergeSem = (semKey) => ({
-    p1: mergeLevel(base[semKey].p1, raw[semKey]?.p1 || raw[Number(semKey)]?.p1),
-    p2: mergeLevel(base[semKey].p2, raw[semKey]?.p2 || raw[Number(semKey)]?.p2),
-    p3: mergeLevel(base[semKey].p3, raw[semKey]?.p3 || raw[Number(semKey)]?.p3),
-    rbe: mergeLevel(base[semKey].rbe, raw[semKey]?.rbe || raw[Number(semKey)]?.rbe),
+  const mergeSem = (fallback, val) => ({
+    p1: mergeLevel(fallback.p1, val?.p1),
+    p2: mergeLevel(fallback.p2, val?.p2),
+    p3: mergeLevel(fallback.p3, val?.p3),
+    rbe: mergeLevel(fallback.rbe, val?.rbe),
   });
-  return { 1: mergeSem('1'), 2: mergeSem('2') };
+
+  Object.keys(raw).forEach((semKey) => {
+    const fallback = result[semKey] || createEmptyExamPeriod();
+    result[semKey] = mergeSem(fallback, raw[semKey]);
+  });
+
+  return result;
 }
 
 export function formatDateOnly(date) {
@@ -121,6 +137,19 @@ export function formatDateOnly(date) {
 
 export function getSemesterBounds(config, semester) {
   if (!config) return { start: null, end: null };
+  if (Array.isArray(config.semesters) && config.semesters.length > 0) {
+    const sNum = Number(semester);
+    if (!isNaN(sNum) && sNum >= 1 && config.semesters[sNum - 1]) {
+      const sem = config.semesters[sNum - 1];
+      return { start: sem.start || null, end: sem.end || null };
+    }
+    const found = config.semesters.find(
+      (s) => s.id === semester || (s.name && s.name.toLowerCase() === String(semester).toLowerCase())
+    );
+    if (found) {
+      return { start: found.start || null, end: found.end || null };
+    }
+  }
   const s = Number(semester);
   if (s === 1) return { start: config.semester1Start || null, end: config.semester1End || null };
   if (s === 2) return { start: config.semester2Start || null, end: config.semester2End || null };

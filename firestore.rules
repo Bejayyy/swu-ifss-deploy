@@ -340,28 +340,31 @@ service cloud.firestore {
     match /room_reservations/{reservationId} {
       allow read: if isSignedIn() && isPhinmaedEmail() && (
         // Allow anyone authenticated to read APPROVED reservations (they're public schedule info)
-        resource.data.status == 'approved'
-        || isMainRole() && (
-          isRegistrar()
-          || canManageRoomActivityApproval()
-          || canManageStudentActivityApproval()
-          || canEndorseActivity()
-          || resource.data.createdByUid == request.auth.uid
-          || (
-            isDean() 
-            && userDocExists()
-            && (
-              // Standard workflow: dean's college matches
-              (resource.data.college != null && (
-                resource.data.college == userDoc().data.college
-                || resource.data.college == userDoc().data.department
-              ))
-              // Custom manager workflow: dean is assigned to this room/floor
-              || (resource.data.customManagerUid != null && resource.data.customManagerUid == request.auth.uid)
+        resource.data.status in ['Approved', 'approved']
+        || resource.data.status == 'Approved'
+        || resource.data.status == 'approved'
+        || (
+          isMainRole() && (
+            isRegistrar()
+            || canManageRoomActivityApproval()
+            || canManageStudentActivityApproval()
+            || canEndorseActivity()
+            || resource.data.createdByUid == request.auth.uid
+            || (
+              isDean() 
+              && userDocExists()
+              && (
+                // Standard workflow: dean's college matches
+                (resource.data.college != null && (
+                  resource.data.college == userDoc().data.college
+                  || resource.data.college == userDoc().data.department
+                ))
+                // Custom manager workflow: dean is assigned to this room/floor
+                || (resource.data.customManagerUid != null && resource.data.customManagerUid == request.auth.uid)
+              )
             )
-          )
-          || (
-            hasRole('gsd')
+            || hasRole('dean')
+            || hasRole('gsd')
             || hasRole('organization_head')
             || hasRole('teacher')
             || hasRole('student_life')

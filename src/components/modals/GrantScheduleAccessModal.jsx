@@ -10,6 +10,7 @@ export default function GrantScheduleAccessModal({
   onClose,
   schoolYearId,
   semester,
+  semesterLabel,
   initialCollegeCodes = [],
   initialStartDate = '',
   initialEndDate = '',
@@ -195,7 +196,7 @@ export default function GrantScheduleAccessModal({
             {/* Info Box */}
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5">
               <p className="text-xs font-bold text-blue-900 mb-1">
-                📋 School Year {schoolYearId} · Semester {semester}
+                📋 School Year {schoolYearId} · {semesterLabel || `Semester ${semester}`}
               </p>
               <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
                 Selected deans will receive email & in-app notifications with their scheduling accomplishment start date, end date deadline, and day limit.

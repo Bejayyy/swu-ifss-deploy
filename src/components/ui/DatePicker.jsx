@@ -5,7 +5,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-export function CalendarCard({ value, onChange, onClose }) {
+export function CalendarCard({ value, onChange, onClose, minDate = null, maxDate = null }) {
   const initialDate = value ? new Date(value + 'T00:00:00') : new Date();
   const [currentYear, setCurrentYear] = useState(isNaN(initialDate.getFullYear()) ? new Date().getFullYear() : initialDate.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(isNaN(initialDate.getMonth()) ? new Date().getMonth() : initialDate.getMonth());
@@ -36,7 +36,10 @@ export function CalendarCard({ value, onChange, onClose }) {
   const handleSelectDay = (day) => {
     const m = String(currentMonth + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
-    if (onChange) onChange(`${currentYear}-${m}-${d}`);
+    const dateStr = `${currentYear}-${m}-${d}`;
+    if (minDate && dateStr < minDate) return;
+    if (maxDate && dateStr > maxDate) return;
+    if (onChange) onChange(dateStr);
     if (onClose) onClose();
   };
 
@@ -141,19 +144,24 @@ export function CalendarCard({ value, onChange, onClose }) {
               const dateStr = `${currentYear}-${m}-${d}`;
               const isSelected = selectedDateStr === dateStr;
               const isToday = todayStr === dateStr;
+              const isDisabled = (minDate && dateStr < minDate) || (maxDate && dateStr > maxDate);
 
               return (
                 <button
                   key={`curr-${day}`}
                   type="button"
+                  disabled={isDisabled}
                   onClick={() => handleSelectDay(day)}
-                  className={`py-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center justify-center font-normal ${
-                    isSelected
-                      ? 'bg-[#7A0808] text-white shadow-sm scale-[1.05] font-semibold'
+                  className={`py-1.5 rounded-lg text-xs transition-all flex items-center justify-center font-normal ${
+                    isDisabled
+                      ? 'text-gray-300 cursor-not-allowed bg-gray-50/40 opacity-50'
+                      : isSelected
+                      ? 'bg-[#7A0808] text-white shadow-sm scale-[1.05] font-semibold cursor-pointer'
                       : isToday
-                      ? 'border border-[#7A0808] text-[#7A0808] bg-red-50/60 hover:bg-[#7A0808] hover:text-white'
-                      : 'text-gray-700 hover:bg-red-50 hover:text-[#7A0808]'
+                      ? 'border border-[#7A0808] text-[#7A0808] bg-red-50/60 hover:bg-[#7A0808] hover:text-white cursor-pointer'
+                      : 'text-gray-700 hover:bg-red-50 hover:text-[#7A0808] cursor-pointer'
                   }`}
+                  title={isDisabled ? (minDate && dateStr < minDate ? 'Date must be at least 7 days in advance' : 'Date unavailable') : ''}
                 >
                   {day}
                 </button>
@@ -166,31 +174,33 @@ export function CalendarCard({ value, onChange, onClose }) {
             ))}
           </div>
 
-          {/* Today shortcut */}
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                const today = new Date();
-                setCurrentMonth(today.getMonth());
-                setCurrentYear(today.getFullYear());
-                const m = String(today.getMonth() + 1).padStart(2, '0');
-                const d = String(today.getDate()).padStart(2, '0');
-                if (onChange) onChange(`${today.getFullYear()}-${m}-${d}`);
-                if (onClose) onClose();
-              }}
-              className="text-[11px] font-semibold text-[#7A0808] hover:underline transition-colors cursor-pointer"
-            >
-              Today
-            </button>
-          </div>
+          {/* Today shortcut (only if today is not disabled by minDate) */}
+          {(!minDate || todayStr >= minDate) && (
+            <div className="mt-3 pt-2.5 border-t border-gray-100 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const today = new Date();
+                  setCurrentMonth(today.getMonth());
+                  setCurrentYear(today.getFullYear());
+                  const m = String(today.getMonth() + 1).padStart(2, '0');
+                  const d = String(today.getDate()).padStart(2, '0');
+                  if (onChange) onChange(`${today.getFullYear()}-${m}-${d}`);
+                  if (onClose) onClose();
+                }}
+                className="text-[11px] font-semibold text-[#7A0808] hover:underline transition-colors cursor-pointer"
+              >
+                Today
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
   );
 }
 
-export default function DatePicker({ value, onChange, placeholder = 'Select date', className = '', readOnly = false, required = false }) {
+export default function DatePicker({ value, onChange, placeholder = 'Select date', className = '', readOnly = false, required = false, minDate = null, maxDate = null }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -238,6 +248,8 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
             value={value}
             onChange={(val) => { if (onChange) onChange(val); setIsOpen(false); }}
             onClose={() => setIsOpen(false)}
+            minDate={minDate}
+            maxDate={maxDate}
           />
         </div>
       )}

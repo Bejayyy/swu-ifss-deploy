@@ -3,12 +3,28 @@ import { X, Calendar, User, Filter } from 'lucide-react';
 import WeeklyScheduleGrid from '../scheduling/WeeklyScheduleGrid';
 import { subscribePlotEntriesForTeacher } from '../../services/plotScheduleService';
 import { entriesToGridBlocks } from '../../services/plotScheduleService';
+import { useAcademicCalendar } from '../../hooks/useAcademicCalendar';
 
 export default function TeacherScheduleModal({ teacher, onClose, initialSemester = '1', collegeCode }) {
+  const { calendarData } = useAcademicCalendar();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [semester, setSemester] = useState(initialSemester);
   const [selectedSection, setSelectedSection] = useState('all');
+
+  const semesterOptions = useMemo(() => {
+    if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
+      return calendarData.config.semesters.map((s, idx) => ({
+        value: String(idx + 1),
+        label: s.name || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        shortLabel: (s.name || '').toLowerCase().includes('summer') ? 'Summer' : `Sem ${idx + 1}`,
+      }));
+    }
+    return [
+      { value: '1', label: 'Semester 1', shortLabel: 'Sem 1' },
+      { value: '2', label: 'Semester 2', shortLabel: 'Sem 2' },
+    ];
+  }, [calendarData?.config]);
 
   // Subscribe to all schedule entries for this teacher
   useEffect(() => {
@@ -115,19 +131,19 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
             {/* Semester Selector */}
             <div className="flex items-center gap-2">
               <label className="text-xs font-bold text-gray-600">Semester:</label>
-              <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 8 }}>
-                {['1', '2'].map((s) => (
+              <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm flex-wrap" style={{ background: '#F9FAFB', borderRadius: 8 }}>
+                {semesterOptions.map((s) => (
                   <button
-                    key={s}
+                    key={s.value}
                     type="button"
                     onClick={() => {
-                      setSemester(s);
+                      setSemester(s.value);
                       setSelectedSection('all'); // Reset section filter when changing semester
                     }}
                     className="px-3 py-1 text-xs font-bold transition-all"
-                    style={semester === s ? { background: '#7A0808', color: 'white', borderRadius: 8 } : { background: 'transparent', color: '#2B3235', borderRadius: 8 }}
+                    style={semester === s.value ? { background: '#7A0808', color: 'white', borderRadius: 8 } : { background: 'transparent', color: '#2B3235', borderRadius: 8 }}
                   >
-                    Sem {s}
+                    {s.shortLabel}
                   </button>
                 ))}
               </div>
@@ -208,6 +224,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
               <WeeklyScheduleGrid
                 title={`${teacher.name}'s Weekly Schedule`}
                 semester={semester}
+                semesterOptions={semesterOptions}
                 showControls={false}
                 showDayDates={false}
                 blocks={gridBlocks}

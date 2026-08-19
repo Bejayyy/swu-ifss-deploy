@@ -115,6 +115,8 @@ export async function updateCourse(courseId, updates) {
 
   if (updates.code) cleanUpdates.code = updates.code.trim().toUpperCase();
   if (updates.title) cleanUpdates.title = updates.title.trim();
+  if (updates.type) cleanUpdates.type = updates.type;
+  if (updates.units !== undefined) cleanUpdates.units = Number(updates.units) || 0;
   if (updates.semester) cleanUpdates.semester = updates.semester;
   if (updates.yearLevel) cleanUpdates.yearLevel = updates.yearLevel;
   if (updates.collegeCode) cleanUpdates.collegeCode = updates.collegeCode.trim().toUpperCase();
