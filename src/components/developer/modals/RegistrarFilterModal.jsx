@@ -12,7 +12,7 @@ export default function RegistrarFilterModal({ onClose, onApply, initialStatus =
           <X size={20} />
         </button>
         <div className="p-8 pt-10">
-          <h2 className="font-black text-lg mb-4" style={{ color: '#800000' }}>Filter registrars</h2>
+          <h2 className="font-black text-lg mb-4" style={{ color: '#7A0808' }}>Filter registrars</h2>
           <label className="form-label">Status</label>
           <select className="form-input mb-6" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="any">Any status</option>
@@ -24,7 +24,7 @@ export default function RegistrarFilterModal({ onClose, onApply, initialStatus =
             <button
               type="button"
               className="flex-1 justify-center py-2.5 rounded-[10px] text-white font-semibold text-sm"
-              style={{ background: '#800000' }}
+              style={{ background: '#7A0808' }}
               onClick={() => {
                 onApply({ status });
                 onClose();

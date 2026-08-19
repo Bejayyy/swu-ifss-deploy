@@ -1,5 +1,6 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 /**
  * Loading modal that appears during async operations
@@ -9,11 +10,13 @@ import { Loader2 } from 'lucide-react';
  * @param {string} message - Loading message to display
  */
 export default function LoadingModal({ isOpen, message = 'Processing...' }) {
+  useBodyScrollLock(Boolean(isOpen));
+
   if (!isOpen) return null;
 
   return (
     <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-center justify-center modal-overlay"
       style={{
         background: 'rgba(0, 0, 0, 0.5)',
         backdropFilter: 'blur(4px)',

@@ -11,6 +11,7 @@ export default function CobraChatbot() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dataPreloaded, setDataPreloaded] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(2);
   const [quickPrompts, setQuickPrompts] = useState([
     'Find an available room for 40 students',
     'Show room schedules this week',
@@ -99,6 +100,9 @@ export default function CobraChatbot() {
           )
         );
       }
+      if (!open) {
+        setUnreadCount(prev => prev + 1);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages(prev => 
@@ -134,16 +138,33 @@ export default function CobraChatbot() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-[70] w-16 h-16 rounded-full shadow-xl flex items-center justify-center border-2 border-white print:hidden"
-        style={{ background: 'linear-gradient(135deg, #800000 0%, #9E1C1C 100%)' }}
+        onClick={() => {
+          setOpen(true);
+          setUnreadCount(0);
+        }}
+        className="fixed bottom-6 right-6 z-[70] w-16 h-16 rounded-full shadow-2xl flex items-center justify-center border-2 border-white print:hidden transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer bg-[#7A0808]"
         title={`Open ${BOT_NAME}`}
       >
-        <img
-          src={chatbotFace}
-          alt="Cobra chatbot"
-          className="w-full h-full object-cover rounded-full"
-        />
+        <div className="relative w-full h-full rounded-full overflow-hidden p-1.5 bg-[#7A0808] flex items-center justify-center">
+          <img
+            src={chatbotFace}
+            alt="COBRA AI Assistant"
+            className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+
+        {/* Live Active Green Status Ping */}
+        <span className="absolute bottom-0 right-0 flex h-3.5 w-3.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white shadow-2xs"></span>
+        </span>
+
+        {/* Unread Chat Message Count Badge */}
+        {unreadCount > 0 && !open && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 flex items-center justify-center rounded-full text-[11px] font-black shadow-md bg-[#F59E0B] text-white border-2 border-white">
+            {unreadCount}
+          </span>
+        )}
       </button>
 
       {open && (
@@ -152,7 +173,7 @@ export default function CobraChatbot() {
           <div className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white">
             <div
               className="px-4 py-3 flex items-center justify-between"
-              style={{ background: 'linear-gradient(135deg, #800000 0%, #5F0000 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #7A0808 0%, #5F0000 100%)' }}
             >
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center border border-white/25">
@@ -211,7 +232,7 @@ export default function CobraChatbot() {
                   <div 
                     className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed border ${
                       msg.role === 'user'
-                        ? 'bg-[#800000] text-white border-[#800000]'
+                        ? 'bg-[#7A0808] text-white border-[#7A0808]'
                         : msg.error
                         ? 'bg-red-50 border-red-200 text-red-900'
                         : 'bg-white border-gray-200 text-[#2B3235]'
@@ -232,9 +253,9 @@ export default function CobraChatbot() {
                     <div className="flex items-center gap-2">
                       <span>Analyzing system data</span>
                       <span className="flex gap-1">
-                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1 h-1 bg-[#800000] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        <span className="w-1 h-1 bg-[#7A0808] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1 h-1 bg-[#7A0808] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1 h-1 bg-[#7A0808] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                       </span>
                     </div>
                   </div>
@@ -249,7 +270,7 @@ export default function CobraChatbot() {
                       <button
                         key={prompt}
                         type="button"
-                        className="text-[11px] px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-[#2B3235] hover:border-[#800000] hover:text-[#800000] transition-colors"
+                        className="text-[11px] px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-[#2B3235] hover:border-[#7A0808] hover:text-[#7A0808] transition-colors"
                         onClick={() => handleQuickPrompt(prompt)}
                       >
                         {prompt}
@@ -263,7 +284,7 @@ export default function CobraChatbot() {
             <div className="p-3 border-t border-gray-100 bg-white">
               <div className="flex items-center gap-2">
                 <input
-                  className="form-input text-sm flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000] focus:border-transparent"
+                  className="form-input text-sm flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808] focus:border-transparent"
                   placeholder="Ask about rooms, schedules, equipment..."
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -273,7 +294,7 @@ export default function CobraChatbot() {
                 <button
                   type="button"
                   className="w-10 h-10 rounded-xl flex items-center justify-center text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                  style={{ background: '#800000' }}
+                  style={{ background: '#7A0808' }}
                   onClick={handleSend}
                   disabled={loading || !input.trim()}
                 >

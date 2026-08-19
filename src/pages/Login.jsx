@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
-import systemLogo from '../assets/logo.png';
-import loginBg from '../assets/login-bg.jpg';
 import { useAuth } from '../context/AuthContext';
+import AuthLayout from '../components/auth/AuthLayout';
 
 export default function Login() {
   const navigate = useNavigate();
   const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,106 +46,96 @@ export default function Login() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{ background: '#7A0808' }}
+    <AuthLayout
+      title="Welcome Back"
+      subtitle="Please enter your credentials to access the portal."
     >
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: `url(${loginBg})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.35,
-        }}
-      />
+      <form onSubmit={handleLogin} className="space-y-4">
+        {error && (
+          <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-150 rounded-xl px-4 py-3 shadow-2xs">
+            {error}
+          </div>
+        )}
 
-
-      <div
-        className="relative bg-white rounded-3xl shadow-2xl w-full px-10 py-10"
-        style={{ maxWidth: 420 }}
-      >
-        <div className="flex flex-col items-center mb-7">
-          {systemLogo ? (
-            <img src={systemLogo} alt="SWU-IFSS logo" className="h-20 w-auto object-contain mb-3" />
-          ) : null}
-          <p className="text-xs text-gray-400">Southwestern University PHINMA</p>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1.5">Username</label>
+          <input
+            className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+            type="email"
+            placeholder="Enter your username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
         </div>
 
-        <form onSubmit={handleLogin}>
-          {error && (
-            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
-              {error}
-            </p>
-          )}
-          <div className="mb-4">
-            <label className="form-label">Email</label>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1.5">Password</label>
+          <div className="relative">
             <input
-              className="form-input"
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              className="w-full pl-4 pr-11 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+              type={showPass ? 'text' : 'password'}
+              placeholder="••••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
           </div>
-
-          <div className="mb-6">
-            <label className="form-label">Password</label>
-            <div className="relative">
-              <input
-                className="form-input pr-10"
-                type={showPass ? 'text' : 'password'}
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <div className="flex justify-end mt-1.5">
-              <Link
-                to="/forgot-password"
-                className="text-xs font-semibold hover:underline"
-                style={{ color: '#7A0808' }}
-              >
-                Forgot Password?
-              </Link>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full py-3 rounded-xl font-black text-sm text-white transition-all"
-            style={{ background: '#7A0808' }}
-            disabled={loading}
-          >
-            {loading ? 'Signing In…' : 'Sign In'}
-          </button>
-        </form>
-        <div className="mt-3">
-          <button
-            type="button"
-            className="w-full py-3 rounded-xl font-black text-sm border border-gray-200 text-[#2B3235] bg-white"
-            disabled={loading}
-            onClick={handleGoogleLogin}
-          >
-            Continue with Google
-          </button>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          © {new Date().getFullYear()} Southwestern University PHINMA. All rights reserved.
-        </p>
-      </div>
-    </div>
+        {/* Options Row */}
+        <div className="flex items-center justify-between pt-1">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-600">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="accent-[#7A0808] w-4 h-4 rounded cursor-pointer"
+            />
+            <span>Remember me</span>
+          </label>
+          <Link
+            to="/forgot-password"
+            className="text-xs font-bold text-[#7A0808] hover:underline"
+          >
+            Forgot Password?
+          </Link>
+        </div>
+
+        {/* Main Sign In Button */}
+        <button
+          type="submit"
+          className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#7A0808] hover:bg-[#5E0606] active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 mt-2"
+          disabled={loading}
+        >
+          {loading ? 'Signing In…' : 'Sign In'}
+        </button>
+
+        {/* Continue with Google */}
+        <button
+          type="button"
+          className="w-full py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center gap-2.5 mt-3 cursor-pointer shadow-2xs disabled:opacity-60"
+          disabled={loading}
+          onClick={handleGoogleLogin}
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+          </svg>
+          <span>Continue with Google</span>
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

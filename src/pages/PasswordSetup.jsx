@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Check, X } from 'lucide-react';
+import { Eye, EyeOff, Check, X, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import AuthLayout from '../components/auth/AuthLayout';
 
 export default function PasswordSetup() {
   const navigate = useNavigate();
@@ -39,7 +40,6 @@ export default function PasswordSetup() {
     setLoading(true);
     try {
       await completePasswordSetup(password);
-      // Redirect to dashboard after successful password setup
       navigate(profile?.role === 'developer' ? '/developer' : '/dashboard', { replace: true });
     } catch (err) {
       setError(err.message || 'Unable to set password.');
@@ -49,94 +49,97 @@ export default function PasswordSetup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: '#7A0808' }}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
-        <h1 className="text-xl font-black mb-2" style={{ color: '#2B3235' }}>Set your Password</h1>
-        <p className="text-xs text-gray-500 mb-5">
-          Welcome <strong className="font-bold uppercase" style={{ color: '#2B3235' }}>{profile?.displayName || ''}</strong>. Please create a permanent password for your account. After this, you can sign in using either your password or Google.
-        </p>
-        {error && <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">{error}</p>}
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="form-label">New Password</label>
-            <div className="relative">
-              <input
-                className="form-input pr-10"
-                type={showPass ? 'text' : 'password'}
-                placeholder="Create a strong password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                required
-                autoFocus
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                onClick={() => setShowPass((v) => !v)}
-              >
-                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
+    <AuthLayout
+      title="Set Your Password"
+      subtitle={`Welcome ${profile?.displayName || ''}! Please create a permanent password for your portal account.`}
+    >
+      <form onSubmit={onSubmit} className="space-y-4">
+        {error && (
+          <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-150 rounded-xl px-4 py-3 shadow-2xs">
+            {error}
           </div>
+        )}
 
-          {/* Password Requirements Checklist */}
-          <div
-            className="rounded-lg px-3 py-2.5"
-            style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}
-          >
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Password Requirements</p>
-            <ul className="space-y-1">
-              {passwordChecks.map((check, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  {check.met ? (
-                    <Check size={14} className="shrink-0" style={{ color: '#16a34a' }} />
-                  ) : (
-                    <X size={14} className="shrink-0" style={{ color: password ? '#dc2626' : '#9ca3af' }} />
-                  )}
-                  <span
-                    className="text-xs transition-colors"
-                    style={{ color: check.met ? '#16a34a' : password ? '#6b7280' : '#9ca3af' }}
-                  >
-                    {check.label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <div className="flex items-center gap-2 p-3 bg-red-50/50 rounded-xl border border-red-100 mb-2">
+          <ShieldCheck size={16} className="text-[#7A0808] shrink-0" />
+          <p className="text-xs text-gray-600 font-medium">
+            After setting your password, you can sign in using either your credentials or Google.
+          </p>
+        </div>
 
-          <div>
-            <label className="form-label">Confirm Password</label>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1.5">New Password</label>
+          <div className="relative">
             <input
-              className="form-input"
+              className="w-full pl-4 pr-11 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
               type={showPass ? 'text' : 'password'}
-              placeholder="Re-enter your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Create a strong password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
               required
+              autoFocus
             />
-            {confirmPassword && !passwordsMatch && (
-              <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                <X size={12} /> Passwords do not match
-              </p>
-            )}
-            {passwordsMatch && (
-              <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#16a34a' }}>
-                <Check size={12} /> Passwords match
-              </p>
-            )}
+            <button
+              type="button"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+              onClick={() => setShowPass((v) => !v)}
+            >
+              {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            className="btn-maroon w-full justify-center py-2.5 text-sm font-semibold transition-all disabled:opacity-60"
-            disabled={loading || !allChecksMet || !passwordsMatch}
-          >
-            {loading ? 'Saving...' : 'Save Password'}
-          </button>
-        </form>
-      </div>
-    </div>
+        {/* Password Requirements Checklist */}
+        <div className="rounded-xl px-4 py-3 bg-gray-50 border border-gray-200">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Password Requirements</p>
+          <ul className="space-y-1">
+            {passwordChecks.map((check, i) => (
+              <li key={i} className="flex items-center gap-2">
+                {check.met ? (
+                  <Check size={13} className="shrink-0 text-emerald-600 font-bold" />
+                ) : (
+                  <X size={13} className="shrink-0 text-gray-400" />
+                )}
+                <span className={`text-xs ${check.met ? 'text-emerald-700 font-semibold' : 'text-gray-500'}`}>
+                  {check.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1.5">Confirm Password</label>
+          <input
+            className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+            type={showPass ? 'text' : 'password'}
+            placeholder="Re-enter your password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+          />
+          {confirmPassword && !passwordsMatch && (
+            <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-semibold">
+              <X size={13} /> Passwords do not match
+            </p>
+          )}
+          {passwordsMatch && (
+            <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-semibold">
+              <Check size={13} /> Passwords match
+            </p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#7A0808] hover:bg-[#600000] active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-4"
+          disabled={loading || !allChecksMet || !passwordsMatch}
+        >
+          {loading ? 'Saving Password…' : 'Save Password & Continue'}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

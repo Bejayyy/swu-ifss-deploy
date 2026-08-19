@@ -167,7 +167,7 @@ export default function ApprovalWorkflowManagement() {
             className="px-5 py-2 text-sm font-bold transition-all whitespace-nowrap"
             style={
               tab === APPROVAL_TYPES.ACADEMIC
-                ? { background: '#800000', color: 'white', borderRadius: 10 }
+                ? { background: '#7A0808', color: 'white', borderRadius: 10 }
                 : { background: 'transparent', color: '#2B3235', borderRadius: 10 }
             }
           >
@@ -179,7 +179,7 @@ export default function ApprovalWorkflowManagement() {
             className="px-5 py-2 text-sm font-bold transition-all whitespace-nowrap"
             style={
               tab === APPROVAL_TYPES.NON_ACADEMIC
-                ? { background: '#800000', color: 'white', borderRadius: 10 }
+                ? { background: '#7A0808', color: 'white', borderRadius: 10 }
                 : { background: 'transparent', color: '#2B3235', borderRadius: 10 }
             }
           >
@@ -191,7 +191,7 @@ export default function ApprovalWorkflowManagement() {
             className="px-5 py-2 text-sm font-bold transition-all whitespace-nowrap"
             style={
               tab === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC
-                ? { background: '#800000', color: 'white', borderRadius: 10 }
+                ? { background: '#7A0808', color: 'white', borderRadius: 10 }
                 : { background: 'transparent', color: '#2B3235', borderRadius: 10 }
             }
           >
@@ -203,7 +203,7 @@ export default function ApprovalWorkflowManagement() {
             className="px-5 py-2 text-sm font-bold transition-all whitespace-nowrap"
             style={
               tab === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC
-                ? { background: '#800000', color: 'white', borderRadius: 10 }
+                ? { background: '#7A0808', color: 'white', borderRadius: 10 }
                 : { background: 'transparent', color: '#2B3235', borderRadius: 10 }
             }
           >

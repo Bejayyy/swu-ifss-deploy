@@ -18,6 +18,7 @@ import { StatCardItem } from '../components/ProgressStatCards';
 import LoadingModal from '../components/modals/LoadingModal';
 
 import NotificationModal from '../components/modals/NotificationModal';
+import CustomSelect from '../components/ui/CustomSelect';
 import ConfirmModal from '../components/modals/ConfirmModal';
 import AddCollegeModal from '../components/modals/AddCollegeModal';
 import AddCourseModal from '../components/modals/AddCourseModal';
@@ -339,16 +340,21 @@ export default function CollegeInventory() {
               {/* Rows Per Page Selector */}
               <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
                 <span>Show:</span>
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-bold cursor-pointer"
-                >
-                  <option value={5}>5 per page</option>
-                  <option value={10}>10 per page</option>
-                  <option value={20}>20 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
+                <div className="w-[125px]">
+                  <CustomSelect
+                    value={`${itemsPerPage} per page`}
+                    onChange={(e) => {
+                      const val = Number(String(e.target.value).split(' ')[0]);
+                      if (val) setItemsPerPage(val);
+                    }}
+                    options={[
+                      { value: '5 per page', label: '5 per page' },
+                      { value: '10 per page', label: '10 per page' },
+                      { value: '20 per page', label: '20 per page' },
+                      { value: '50 per page', label: '50 per page' },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -422,7 +428,7 @@ export default function CollegeInventory() {
                                 {college.programs.map((p, pIdx) => (
                                   <span
                                     key={pIdx}
-                                    className="px-2 py-0.5 bg-gray-100 text-gray-700 font-bold text-[10px] rounded-md border border-gray-200"
+                                    className="inline-flex items-center px-2.5 py-1 bg-gray-100 text-gray-700 font-bold text-[11px] rounded-full border border-gray-200 leading-none"
                                     title={p.name}
                                   >
                                     {p.code}
@@ -457,15 +463,15 @@ export default function CollegeInventory() {
                               <button
                                 type="button"
                                 onClick={() => handleViewCourses(college)}
-                                className="px-2 py-1 bg-[#7A0808] hover:bg-[#5A0606] text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors shadow-2xs"
+                                className="btn-table-action btn-table-action-maroon"
                                 title="Manage courses"
                               >
-                                <BookOpen size={12} /> Courses
+                                <BookOpen size={13} /> Courses
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleEdit(college)}
-                                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-[#7A0808] transition-colors"
+                                className="btn-table-action-icon"
                                 title="Edit college & programs"
                               >
                                 <Pencil size={13} />
@@ -473,7 +479,7 @@ export default function CollegeInventory() {
                               <button
                                 type="button"
                                 onClick={() => handleDelete(college)}
-                                className="p-1.5 rounded-lg border border-gray-200 hover:bg-red-50 text-gray-600 hover:text-red-600 transition-colors"
+                                className="btn-delete-icon"
                                 title="Delete college"
                               >
                                 <Trash2 size={13} />
@@ -611,32 +617,33 @@ export default function CollegeInventory() {
               {/* Semester Filter Dropdown */}
               <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
                 <span>Semester:</span>
-                <select
-                  value={semesterFilter}
-                  onChange={(e) => setSemesterFilter(e.target.value)}
-                  className="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-bold cursor-pointer text-[#7A0808]"
-                >
-                  <option value="All">All Semesters</option>
-                  {SEMESTERS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-[145px]">
+                  <CustomSelect
+                    value={semesterFilter}
+                    onChange={(e) => setSemesterFilter(e.target.value)}
+                    options={['All Semesters', ...SEMESTERS]}
+                    placeholder="All Semesters"
+                  />
+                </div>
               </div>
 
               {/* Rows Per Page */}
               <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
                 <span>Show:</span>
-                <select
-                  value={courseItemsPerPage}
-                  onChange={(e) => setCourseItemsPerPage(Number(e.target.value))}
-                  className="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-bold cursor-pointer"
-                >
-                  <option value={5}>5 per page</option>
-                  <option value={10}>10 per page</option>
-                  <option value={20}>20 per page</option>
-                </select>
+                <div className="w-[125px]">
+                  <CustomSelect
+                    value={`${courseItemsPerPage} per page`}
+                    onChange={(e) => {
+                      const val = Number(String(e.target.value).split(' ')[0]);
+                      if (val) setCourseItemsPerPage(val);
+                    }}
+                    options={[
+                      { value: '5 per page', label: '5 per page' },
+                      { value: '10 per page', label: '10 per page' },
+                      { value: '20 per page', label: '20 per page' },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -738,7 +745,7 @@ export default function CollegeInventory() {
                             <button
                               type="button"
                               onClick={() => handleDeleteCourse(course)}
-                              className="p-1.5 rounded-lg border border-gray-200 hover:bg-red-50 text-gray-600 hover:text-red-600 transition-colors"
+                              className="btn-delete-icon"
                               title="Delete course"
                             >
                               <Trash2 size={13} />

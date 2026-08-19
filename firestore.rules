@@ -527,5 +527,15 @@ service cloud.firestore {
       allow create, update, delete: if isSignedIn() && isPhinmaedEmail()
         && (getRole() == 'registrar' || getRole() == 'developer');
     }
+
+    // Chat Messages Collection - All signed-in authenticated staff can read and write chat messages
+    match /chat_messages/{messageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Chat Rooms Collection - All signed-in authenticated staff can read and write chat rooms
+    match /chat_rooms/{roomId} {
+      allow read, write: if isSignedIn();
+    }
   }
 }

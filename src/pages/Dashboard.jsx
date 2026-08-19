@@ -4,14 +4,18 @@ import {
   DoorOpen, ClipboardList, CheckCircle, XCircle, Clock,
   Building2, ArrowRight, BarChart3, Calendar,
   BookOpen, Activity, Filter, RefreshCw, Layers, TrendingUp,
-  Search, Plus, PieChart, ShieldAlert, Check, AlertCircle, Wrench
+  Search, Plus, PieChart, ShieldAlert, Check, AlertCircle, Wrench,
+  Download, ChevronRight, Sparkles, SlidersHorizontal
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend
+  BarChart, Bar, AreaChart, Area, PieChart as RePieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import PageSkeleton from '../components/SkeletonLoader';
+import CustomSelect from '../components/ui/CustomSelect';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import {
   computeRoomStats,
   computeRequestStats,
@@ -22,28 +26,32 @@ import {
   computeWeeklyDemandByDay,
   computeStructuredRoomAvailability,
   computeFacilityTypeDistribution,
+  computePeakHourlyOccupancy,
+  computeOverallUtilizationRate,
   formatRelativeTime,
 } from '../services/dashboardService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 
-// ───── Design Tokens (Solid Colors — No Gradients) ─────
-const MAROON = '#800000';
-const AMBER = '#D97706';
+// ───── System Maroon & Amber Theme Tokens ─────
+const MAROON = '#7A0808';
+const MAROON_HOVER = '#5E0606';
+const AMBER = '#F59E0B';
 const EMERALD = '#059669';
 const BLUE = '#2563EB';
+const PURPLE = '#7C3AED';
 
-// ───── Status Badge Color Schemes ─────
+// ───── Status Badge Colors ─────
 const STATUS_COLORS = {
   Approved: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   Rejected: { bg: 'bg-rose-50 text-rose-700 border-rose-200' },
   Pending: { bg: 'bg-amber-50 text-amber-700 border-amber-200' },
   'In Progress': { bg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  Draft: { bg: 'bg-slate-50 text-slate-700 border-slate-200' },
+  Draft: { bg: 'bg-slate-100 text-slate-700 border-slate-200' },
   Postponed: { bg: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-// ───── Activity Icons ─────
+// ───── Activity Status Icons ─────
 const ACTIVITY_ICONS = {
   approved: <CheckCircle size={15} className="text-emerald-600" />,
   rejected: <XCircle size={15} className="text-rose-600" />,
@@ -54,60 +62,64 @@ const ACTIVITY_ICONS = {
   info: <Activity size={15} className="text-slate-400" />,
 };
 
-// ───── Custom Clean Tooltip ─────
+// ───── Custom Tooltip for Recharts ─────
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-900 text-white border border-slate-800 p-3 rounded-lg shadow-lg text-xs">
-      <p className="font-bold text-slate-200 mb-1 pb-1 border-b border-slate-800">{label}</p>
+    <div className="bg-slate-900/95 text-white border border-slate-800 p-3 rounded-xl shadow-xl text-xs backdrop-blur-md">
+      <p className="font-extrabold text-slate-200 mb-1.5 pb-1 border-b border-slate-800 flex items-center justify-between gap-4">
+        <span>{label}</span>
+        <span className="text-[10px] text-slate-400 font-normal">Report</span>
+      </p>
       {payload.map((entry, i) => (
-        <div key={i} className="flex items-center gap-2 mt-1">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color || MAROON }} />
+        <div key={i} className="flex items-center gap-2.5 mt-1 text-xs">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color || MAROON }} />
           <span className="text-slate-300 font-medium">{entry.name || entry.dataKey}:</span>
-          <span className="font-bold text-white ml-auto">{entry.value}</span>
+          <span className="font-black text-white ml-auto">{entry.value}{entry.unit || ''}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// ───── Status Badge Component ─────
+// ───── Status Badge ─────
 function StatusBadge({ status }) {
   const styleClass = STATUS_COLORS[status]?.bg || STATUS_COLORS.Draft.bg;
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${styleClass}`}>
+    <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-bold border leading-none ${styleClass}`}>
       {status}
     </span>
   );
 }
 
-// ───── Modern Uniform Stat Card Component ─────
-function StatCard({ label, value, icon: Icon, color = 'blue', onClick }) {
+// ───── Modern Executive Stat Card Component ─────
+function StatCard({ label, value, subtext, icon: Icon, color = 'maroon', onClick }) {
   const COLOR_MAP = {
-    blue: 'bg-blue-100/70 text-blue-600',
-    green: 'bg-emerald-100/70 text-emerald-600',
-    emerald: 'bg-emerald-100/70 text-emerald-600',
-    rose: 'bg-rose-100/70 text-rose-600',
-    amber: 'bg-amber-100/70 text-amber-600',
-    maroon: 'bg-red-100/70 text-[#800000]',
-    slate: 'bg-slate-100 text-slate-500',
+    maroon: { bg: 'bg-red-50 text-[#7A0808] border-red-100', badge: 'bg-red-100/80 text-[#7A0808]' },
+    emerald: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-100', badge: 'bg-emerald-100/80 text-emerald-800' },
+    rose: { bg: 'bg-rose-50 text-rose-700 border-rose-100', badge: 'bg-rose-100/80 text-rose-800' },
+    amber: { bg: 'bg-amber-50 text-amber-700 border-amber-100', badge: 'bg-amber-100/80 text-amber-800' },
+    blue: { bg: 'bg-blue-50 text-blue-700 border-blue-100', badge: 'bg-blue-100/80 text-blue-800' },
   };
-  const colorStyle = COLOR_MAP[color] || COLOR_MAP.blue;
+  const theme = COLOR_MAP[color] || COLOR_MAP.maroon;
 
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-[16px] border border-slate-200/70 p-5 shadow-2xs flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+      className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer group"
     >
-      <div className="flex items-center justify-between mb-4">
-        <div className={`w-11 h-11 rounded-[12px] flex items-center justify-center ${colorStyle}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center border ${theme.bg} shadow-2xs group-hover:scale-105 transition-transform`}>
           {Icon && <Icon size={20} strokeWidth={2} />}
         </div>
-        <span className="text-2xl sm:text-3xl font-extrabold text-slate-800 tabular-nums">
+        <span className="text-2xl sm:text-3xl font-black text-slate-900 tabular-nums">
           {typeof value === 'number' ? value : value}
         </span>
       </div>
-      <p className="text-[13px] font-bold text-slate-700 leading-tight">{label}</p>
+      <div>
+        <p className="text-xs font-bold text-slate-700 leading-tight mb-0.5">{label}</p>
+        {subtext && <p className="text-[11px] font-semibold text-slate-400">{subtext}</p>}
+      </div>
     </div>
   );
 }
@@ -118,9 +130,13 @@ function StatCard({ label, value, icon: Icon, color = 'blue', onClick }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { buildingList, requests, buildingsLoading, requestsLoading } = useApp();
+  const { startNewReservation, openReservation, modals: reservationModals } = useRoomReservationFlow();
+
+  const [timeRange, setTimeRange] = useState('This Week');
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [activeDay, setActiveDay] = useState('Mon');
   const [assignmentSort, setAssignmentSort] = useState('subject');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const isLoading = buildingsLoading || requestsLoading;
 
@@ -133,26 +149,38 @@ export default function Dashboard() {
   const facilityTypes = useMemo(() => computeFacilityTypeDistribution(buildingList), [buildingList]);
   const subjectAssignments = useMemo(() => computeSubjectRoomAssignments(buildingList, requests), [buildingList, requests]);
   const recentActivity = useMemo(() => buildRecentActivity(requests, 10), [requests]);
-  
+  const peakOccupancy = useMemo(() => computePeakHourlyOccupancy(buildingList, requests), [buildingList, requests]);
+  const overallRate = useMemo(() => computeOverallUtilizationRate(buildingList, requests), [buildingList, requests]);
+
   const { timeBlocks, roomCards } = useMemo(
     () => computeStructuredRoomAvailability(buildingList, requests, selectedBuilding, activeDay),
     [buildingList, requests, selectedBuilding, activeDay]
   );
 
-  // Sort assignments
-  const sortedAssignments = useMemo(() => {
-    const copy = [...subjectAssignments];
+  // Filtered Subject Assignments
+  const filteredAssignments = useMemo(() => {
+    let copy = [...subjectAssignments];
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      copy = copy.filter(
+        (a) =>
+          a.subject.toLowerCase().includes(q) ||
+          a.room.toLowerCase().includes(q) ||
+          a.building.toLowerCase().includes(q) ||
+          a.type.toLowerCase().includes(q)
+      );
+    }
     copy.sort((a, b) => {
       if (assignmentSort === 'status') return (a.status || '').localeCompare(b.status || '');
       if (assignmentSort === 'room') return (a.room || '').localeCompare(b.room || '');
       return (a.subject || '').localeCompare(b.subject || '');
     });
-    return copy.slice(0, 15);
-  }, [subjectAssignments, assignmentSort]);
+    return copy.slice(0, 12);
+  }, [subjectAssignments, assignmentSort, searchTerm]);
 
   if (isLoading) {
     return (
-      <Layout title="Dashboard" subtitle="Facility Overview & Analytics">
+      <Layout title="Facility Dashboard" subtitle="Campus Analytics & Operations Overview">
         <PageSkeleton />
       </Layout>
     );
@@ -161,61 +189,161 @@ export default function Dashboard() {
   const pendingTotal = requestStats.pending + requestStats.inProgress;
 
   return (
-    <Layout title="Dashboard" subtitle="Facility Overview & Analytics">
-      {/* ───── 1. Top Metric Cards (4 Cards Grid) ───── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <Layout title="Facility Dashboard" subtitle="Campus Analytics & Operations Overview">
+      {reservationModals}
+
+      {/* ───── 1. Top Executive KPI Metric Cards (5 Grid Layout) ───── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
           label="Total Facilities"
           value={roomStats.total}
+          subtext={`${buildingList.length} Buildings`}
           icon={DoorOpen}
           color="maroon"
           onClick={() => navigate('/building-management')}
         />
         <StatCard
+          label="Campus Utilization"
+          value={`${overallRate}%`}
+          subtext="Active Capacity Rate"
+          icon={TrendingUp}
+          color="emerald"
+          onClick={() => navigate('/room-availability')}
+        />
+        <StatCard
           label="Available Rooms"
           value={roomStats.available}
+          subtext="Ready for Booking"
           icon={CheckCircle}
-          color="green"
+          color="emerald"
           onClick={() => navigate('/room-finder')}
         />
         <StatCard
           label="Occupied Rooms"
           value={roomStats.occupied}
+          subtext="In Active Session"
           icon={Building2}
           color="rose"
           onClick={() => navigate('/building-management')}
         />
         <StatCard
-          label="Pending Requests"
+          label="Pending Queue"
           value={pendingTotal}
+          subtext="Awaiting Signature"
           icon={ClipboardList}
           color="amber"
           onClick={() => navigate('/approvals')}
         />
       </div>
 
-      {/* ───── 2. Primary Analytics Charts (Solid Colors — No Gradients) ───── */}
+      {/* ───── 2. Primary Visual Analytics (Peak Hourly Demand Curve + Weekly Booking Volume) ───── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Peak Campus Occupancy & Demand Curve (Recharts AreaChart) */}
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
+                  <TrendingUp size={18} />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">Peak Hourly Occupancy & Demand Curve</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Facility demand percentage (07:00 AM – 07:00 PM)</CardDescription>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-xs font-bold text-[#7A0808] bg-red-50/70 border-red-200">
+                Peak: 09 AM - 10 AM
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={peakOccupancy} margin={{ left: -15, right: 10, top: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="maroonGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={MAROON} stopOpacity={0.4} />
+                      <stop offset="95%" stopColor={MAROON} stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} domain={[0, 100]} unit="%" />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="OccupancyPct"
+                    name="Occupancy Rate"
+                    unit="%"
+                    stroke={MAROON}
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#maroonGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Weekly Campus Room Demand (Mon - Sat Stacked Report) */}
+        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
+          <CardHeader className="pb-3 border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
+                  <Calendar size={18} />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">Weekly Booking & Request Volume</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Day-by-day reservation requests (Mon – Sat)</CardDescription>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200">
+                Mon – Sat Report
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={weeklyDemand} margin={{ left: -15, right: 10, top: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                  <Bar dataKey="Approved" fill={MAROON} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Pending" fill={AMBER} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ───── 3. Secondary Analytics (Room Utilization + Facility Category Distribution) ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Room Utilization Rate by Building */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
+                <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
                   <BarChart3 size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Room Utilization Rate</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Facility usage intensity per building</CardDescription>
+                  <CardTitle className="text-base font-bold text-slate-900">Building Utilization Intensity</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Utilization percentage per campus building</CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold text-[#800000] bg-red-50/60 border-red-200">
+              <Badge variant="outline" className="text-xs font-semibold text-[#7A0808] bg-red-50/60 border-red-200">
                 Live Rate
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="pt-5">
-            <div className="h-64">
+            <div className="h-60">
               {utilization.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={utilization} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
@@ -234,7 +362,7 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-sm text-slate-400">
+                <div className="flex items-center justify-center h-full text-sm text-slate-400 font-medium">
                   No building utilization data available
                 </div>
               )}
@@ -242,93 +370,21 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Weekly Campus Room Demand (Mon - Sat Report) */}
-        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
-          <CardHeader className="pb-3 border-b border-slate-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
-                  <Calendar size={18} />
-                </div>
-                <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Weekly Room Demand & Booking Volume</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Day-by-day reservation requests (Mon – Sat)</CardDescription>
-                </div>
-              </div>
-              <Badge variant="outline" className="text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200">
-                Mon – Sat Report
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyDemand} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                  <Bar dataKey="Approved" fill={MAROON} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Pending" fill={AMBER} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ───── 3. Secondary Analytics Section (Department Activity + Facility Types) ───── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Department Scheduling Volume */}
+        {/* Facility Category Breakdown */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
-                <Layers size={18} />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-slate-900">Department Scheduling Volume</CardTitle>
-                <CardDescription className="text-xs text-slate-500">Total room allocations requested per college</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <div className="h-60">
-              {deptActivity.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={deptActivity} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                    <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                    <YAxis dataKey="department" type="category" width={120} tick={{ fill: '#334155', fontSize: 10, fontWeight: 600 }} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="count" name="Requests" fill={MAROON} radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-sm text-slate-400">
-                  No department scheduling data available
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Facility Type Distribution */}
-        <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
-          <CardHeader className="pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
+              <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
                 <PieChart size={18} />
               </div>
               <div>
                 <CardTitle className="text-base font-bold text-slate-900">Facility Type Distribution</CardTitle>
-                <CardDescription className="text-xs text-slate-500">Breakdown of campus facilities by room category</CardDescription>
+                <CardDescription className="text-xs text-slate-500">Breakdown of campus rooms by category</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="pt-5">
-            <div className="space-y-3.5">
+            <div className="space-y-3">
               {facilityTypes.map((item) => {
                 const totalRooms = roomStats.total || 1;
                 const percentage = Math.round((item.value / totalRooms) * 100);
@@ -336,7 +392,7 @@ export default function Dashboard() {
                   <div key={item.name} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-800 flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
                         {item.name}
                       </span>
                       <div className="flex items-center gap-2 font-mono">
@@ -358,17 +414,17 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ───── 4. COMPACT ROOM AVAILABILITY QUICK MATRIX ───── */}
+      {/* ───── 4. INTERACTIVE ROOM AVAILABILITY MATRIX WIDGET (Clean Grid Layout) ───── */}
       <Card className="border-slate-200/80 shadow-2xs bg-white mb-6 rounded-2xl">
         <CardHeader className="border-b border-slate-100 pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
+              <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
                 <DoorOpen size={18} />
               </div>
               <div>
-                <CardTitle className="text-base font-bold text-slate-900">Room Availability Matrix</CardTitle>
-                <CardDescription className="text-xs text-slate-500">Quick schedule overview & time slot availability</CardDescription>
+                <CardTitle className="text-base font-bold text-slate-900">Room Availability & Schedule Matrix</CardTitle>
+                <CardDescription className="text-xs text-slate-500">Live time-slot grid overview per day & building</CardDescription>
               </div>
             </div>
 
@@ -378,10 +434,11 @@ export default function Dashboard() {
                 {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
                   <button
                     key={day}
+                    type="button"
                     onClick={() => setActiveDay(day)}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       activeDay === day
-                        ? 'bg-[#800000] text-white shadow-xs'
+                        ? 'bg-[#7A0808] text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
@@ -391,145 +448,189 @@ export default function Dashboard() {
               </div>
 
               {/* Building Filter */}
-              <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-2.5 py-1 bg-slate-50/50 text-xs">
-                <Filter size={12} className="text-slate-400" />
-                <select
-                  className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer text-xs"
+              <div className="w-[160px]">
+                <CustomSelect
                   value={selectedBuilding || ''}
                   onChange={(e) => setSelectedBuilding(e.target.value || null)}
-                >
-                  <option value="">All Buildings</option>
-                  {buildingList.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'All Buildings' },
+                    ...buildingList.map((b) => ({ value: b.id, label: b.name })),
+                  ]}
+                  placeholder="All Buildings"
+                />
               </div>
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="p-0">
-          <div className="max-h-72 overflow-y-auto">
+          <div className="overflow-x-auto max-h-[380px]">
             {roomCards.length > 0 ? (
-              <table className="w-full text-xs border-collapse min-w-[700px]">
-                <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200/80">
-                  <tr className="text-slate-600 font-bold text-left">
-                    <th className="py-2.5 px-4 min-w-[140px]">Room & Building</th>
-                    <th className="py-2.5 px-3 w-[110px]">Current Status</th>
-                    <th className="py-2.5 px-3">Time Slots ({activeDay})</th>
+              <table className="w-full text-xs border-collapse min-w-[950px]">
+                <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-md z-10 border-b border-slate-200/80">
+                  <tr className="text-slate-600 font-bold">
+                    <th className="py-3 px-4 text-left min-w-[170px]">Room & Building</th>
+                    <th className="py-3 px-3 text-center w-[110px]">Type / Capacity</th>
+                    {timeBlocks.map((tb) => (
+                      <th key={tb.id} className="py-3 px-2 text-center whitespace-nowrap min-w-[115px]">
+                        <span className="block font-extrabold text-slate-800 text-[11px]">{tb.label.split('-')[0]} - {tb.label.split('-')[1]}</span>
+                      </th>
+                    ))}
+                    <th className="py-3 px-4 text-right min-w-[100px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {roomCards.map((room) => (
-                    <tr key={room.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-2.5 px-4">
-                        <p className="font-extrabold text-slate-900 leading-tight">{room.name}</p>
-                        <p className="text-[11px] text-slate-400 font-medium">{room.buildingName} · {room.type}</p>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        {room.maintenanceStatus === 'under-maintenance' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            <Wrench size={10} /> Maint.
-                          </span>
-                        ) : room.status === 'Occupied' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <AlertCircle size={10} /> Occupied
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <Check size={10} /> Free
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1.5 overflow-x-auto">
-                          {timeBlocks.map((tb) => {
-                            const slotStatus = room.slots[tb.id] || 'available';
-                            const isFree = slotStatus === 'available';
-                            const isMaint = slotStatus === 'maintenance';
+                  {roomCards.map((room) => {
+                    const hasAvailableSlot = timeBlocks.some((tb) => room.slots[tb.id] === 'available');
 
-                            return (
-                              <div
-                                key={tb.id}
-                                className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1 border whitespace-nowrap ${
-                                  isMaint
-                                    ? 'bg-slate-100 text-slate-500 border-slate-200'
-                                    : isFree
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-red-50 text-[#800000] border-red-200'
-                                }`}
-                                title={`${tb.label}: ${isMaint ? 'Under Maintenance' : isFree ? 'Available' : 'Booked'}`}
-                              >
-                                <span className="font-semibold text-slate-400">{tb.id}:</span>
-                                <span>{isMaint ? 'Maint' : isFree ? 'Free' : 'Booked'}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                    return (
+                      <tr key={room.id} className="hover:bg-slate-50/70 transition-colors">
+                        {/* Room & Building Column */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-red-50 text-[#7A0808] border border-red-100 flex items-center justify-center flex-shrink-0 font-bold text-xs">
+                              <Building2 size={15} />
+                            </div>
+                            <div>
+                              <p className="font-extrabold text-slate-900 text-sm leading-snug">{room.name}</p>
+                              <p className="text-[11px] text-slate-500 font-semibold">{room.buildingName}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Room Type & Capacity */}
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px] mb-1">
+                            {room.type}
+                          </span>
+                          <p className="text-[11px] text-slate-500 font-mono font-semibold">👥 {room.capacity} pax</p>
+                        </td>
+
+                        {/* Dedicated Time Slot Columns */}
+                        {timeBlocks.map((tb) => {
+                          const slotStatus = room.slots[tb.id] || 'available';
+                          const isFree = slotStatus === 'available';
+                          const isMaint = slotStatus === 'maintenance';
+
+                          return (
+                            <td key={tb.id} className="py-3 px-2 text-center">
+                              {isMaint ? (
+                                <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
+                                  <Wrench size={11} /> Maint.
+                                </span>
+                              ) : isFree ? (
+                                <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+                                  <CheckCircle size={11} /> Free
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1.5 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80 shadow-2xs">
+                                  <XCircle size={11} /> Booked
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {/* Action Button Column */}
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openReservation({
+                                building: room.buildingName || '',
+                                room: room.id || room.name || '',
+                                designatedVenue: `${room.name || room.id}${room.buildingName ? `, ${room.buildingName}` : ''}`,
+                                buildingId: room.buildingId || '',
+                                roomType: room.type || '',
+                                capacity: room.capacity || '',
+                              })
+                            }
+                            disabled={!hasAvailableSlot}
+                            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer inline-flex items-center gap-1 ${
+                              hasAvailableSlot
+                                ? 'bg-red-50 text-[#7A0808] hover:bg-[#7A0808] hover:text-white border border-red-200 shadow-2xs'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            }`}
+                          >
+                            <span>Book</span>
+                            <ArrowRight size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (
-              <div className="text-center py-10 text-slate-400 text-xs font-medium">
-                No rooms found matching selected criteria.
+              <div className="text-center py-12 text-slate-400 text-xs font-semibold">
+                No rooms found matching selected building criteria.
               </div>
             )}
           </div>
         </CardContent>
       </Card>
 
-
-      {/* ───── 5. Bottom Section: Subject Assignments & Activity ───── */}
+      {/* ───── 5. BOTTOM SECTION: ACADEMIC ASSIGNMENTS REPORT + LIVE TIMELINE ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Subject Room Assignments */}
+        {/* Academic Subject Room Assignments Table */}
         <Card className="lg:col-span-2 border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
+                <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
                   <BookOpen size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Academic Subject Assignments</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Allocated classrooms and facility specs</CardDescription>
+                  <CardTitle className="text-base font-bold text-slate-900">Academic Subject & Room Allocations</CardTitle>
+                  <CardDescription className="text-xs text-slate-500 font-medium">Classroom assignments and approval status</CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-500">Sort by:</span>
-                <select
-                  className="text-xs font-medium border border-slate-200 rounded-md px-2.5 py-1 bg-white text-slate-700 outline-none cursor-pointer"
-                  value={assignmentSort}
-                  onChange={(e) => setAssignmentSort(e.target.value)}
-                >
-                  <option value="subject">Subject Code</option>
-                  <option value="room">Assigned Room</option>
-                  <option value="status">Status</option>
-                </select>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search subject or room..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-7 pr-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-[#7A0808]"
+                  />
+                </div>
+                <div className="w-[140px]">
+                  <CustomSelect
+                    value={assignmentSort}
+                    onChange={(e) => setAssignmentSort(e.target.value)}
+                    options={[
+                      { value: 'subject', label: 'Sort: Subject' },
+                      { value: 'room', label: 'Sort: Room' },
+                      { value: 'status', label: 'Sort: Status' },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-72">
               <table className="w-full text-xs border-collapse min-w-[550px]">
-                <thead>
-                  <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-600 font-bold">
-                    <th className="text-left py-2.5 px-4">Subject</th>
-                    <th className="text-left py-2.5 px-3">Room</th>
+                <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-100">
+                  <tr className="text-slate-600 font-bold text-left">
+                    <th className="py-2.5 px-4">Subject</th>
+                    <th className="py-2.5 px-3">Room</th>
                     <th className="text-center py-2.5 px-3">Capacity</th>
-                    <th className="text-left py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Type</th>
                     <th className="text-center py-2.5 px-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {sortedAssignments.length > 0 ? (
-                    sortedAssignments.map((row, i) => (
+                  {filteredAssignments.length > 0 ? (
+                    filteredAssignments.map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-2.5 px-4 font-semibold text-slate-900">{row.subject}</td>
-                        <td className="py-2.5 px-3 font-mono text-xs font-bold text-[#800000]">{row.room}</td>
-                        <td className="py-2.5 px-3 text-center tabular-nums font-medium">{row.capacity}</td>
-                        <td className="py-2.5 px-3 text-slate-500">{row.type}</td>
+                        <td className="py-2.5 px-4 font-bold text-slate-900">{row.subject}</td>
+                        <td className="py-2.5 px-3 font-mono text-xs font-bold text-[#7A0808]">{row.room}</td>
+                        <td className="py-2.5 px-3 text-center tabular-nums font-semibold">{row.capacity} pax</td>
+                        <td className="py-2.5 px-3 text-slate-500 font-medium">{row.type}</td>
                         <td className="py-2.5 px-3 text-center">
                           <StatusBadge status={row.status} />
                         </td>
@@ -537,8 +638,8 @@ export default function Dashboard() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="text-center py-10 text-slate-400">
-                        No subject room assignments found
+                      <td colSpan={5} className="text-center py-10 text-slate-400 font-medium">
+                        No subject assignments found matching search criteria.
                       </td>
                     </tr>
                   )}
@@ -548,29 +649,30 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
+        {/* Live Approval Queue & Activity Feed */}
         <Card className="border-slate-200/80 shadow-2xs bg-white rounded-2xl">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-50 text-[#800000] border border-red-100">
+                <div className="p-2 rounded-xl bg-red-50 text-[#7A0808] border border-red-100">
                   <Activity size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-bold text-slate-900">Recent Activity</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">Live reservation events</CardDescription>
+                  <CardTitle className="text-base font-bold text-slate-900">Recent System Activity</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">Live reservation & signature logs</CardDescription>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => navigate('/approvals')}
-                className="text-xs font-bold text-[#800000] hover:underline flex items-center gap-1"
+                className="text-xs font-bold text-[#7A0808] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 View All <ArrowRight size={12} />
               </button>
             </div>
           </CardHeader>
           <CardContent className="pt-4">
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-72 overflow-y-auto">
               {recentActivity.length > 0 ? (
                 recentActivity.map((a, i) => (
                   <div
@@ -584,13 +686,13 @@ export default function Dashboard() {
                       <p className="text-xs font-bold text-slate-800 truncate">{a.text}</p>
                       <p className="text-[11px] text-slate-500 truncate">{a.sub}</p>
                     </div>
-                    <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0 whitespace-nowrap">
+                    <span className="text-[10px] font-bold text-slate-400 flex-shrink-0 whitespace-nowrap">
                       {formatRelativeTime(a.timestamp)}
                     </span>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-10 text-slate-400 text-xs">No recent activity logged</div>
+                <div className="text-center py-10 text-slate-400 text-xs font-medium">No recent activity logged</div>
               )}
             </div>
           </CardContent>

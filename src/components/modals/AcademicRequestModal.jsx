@@ -5,6 +5,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
+import DatePicker from '../ui/DatePicker';
+import TimePicker from '../ui/TimePicker';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const academicTypes = [
   { value: 'room-reservation', label: 'Room Reservation', fields: ['courseCode','courseDesc','instructor','semester','numStudents'] },
@@ -15,6 +18,7 @@ const academicTypes = [
 ];
 
 export default function AcademicRequestModal({ onClose }) {
+  useBodyScrollLock(true);
   const { addRequest, buildingList } = useApp();
   const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
@@ -22,7 +26,7 @@ export default function AcademicRequestModal({ onClose }) {
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [form, setForm] = useState({
     reqType: '', courseCode: '', courseDesc: '', instructor: '', semester: '',
-    numStudents: '', building: '', floor: '', room: '', dateField: '', timeStart: '', timeEnd: '',
+    numStudents: '', building: '', floor: '', room: '', dateOfActivity: '', dateField: '', timeStart: '', timeEnd: '',
     specificVenue: '', dateFiled: new Date().toLocaleDateString('en-GB'), labRequirements: '',
     examDate: '', reason: '', objectives: '',
   });
@@ -35,32 +39,76 @@ export default function AcademicRequestModal({ onClose }) {
   const roomsInSelectedBuilding = useMemo(() => {
     if (!selectedBuilding) return [];
     return selectedBuilding.floorData.flatMap((f) =>
-      f.rooms.map((r) => ({ id: r.id, floor: f.floor }))
+      f.rooms.map((r) => ({ id: r.id, docId: r.docId || r.id, floor: f.floor, floorId: f.floorId }))
     );
   }, [selectedBuilding]);
+
+  const selectedRoomObj = useMemo(() => {
+    if (!roomsInSelectedBuilding.length || !form.room) return null;
+    return roomsInSelectedBuilding.find((r) => r.id === form.room);
+  }, [roomsInSelectedBuilding, form.room]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSubmit = async (draft = false) => {
     const isDraft = draft === true;
+    const actDate = form.dateOfActivity || form.dateField;
     
     // Validate required fields for submission
-    if (!isDraft && !form.reqType) {
-      showNotification({
-        type: 'warning',
-        title: 'Missing information',
-        message: 'Please select a request type.',
-        autoCloseMs: 3000,
-      });
-      return;
+    if (!isDraft) {
+      if (!form.reqType) {
+        showNotification({
+          type: 'warning',
+          title: 'Missing Request Type',
+          message: 'Please select the type of academic request.',
+          autoCloseMs: 3000,
+        });
+        return;
+      }
+      if (!form.courseCode.trim() || !form.courseDesc.trim()) {
+        showNotification({
+          type: 'warning',
+          title: 'Missing Course Information',
+          message: 'Please fill in both Course Code and Course Description.',
+          autoCloseMs: 3000,
+        });
+        return;
+      }
+      if (!form.building || !form.room) {
+        showNotification({
+          type: 'warning',
+          title: 'Missing Venue',
+          message: 'Please select a Building and Room for the activity.',
+          autoCloseMs: 3000,
+        });
+        return;
+      }
+      if (!actDate) {
+        showNotification({
+          type: 'warning',
+          title: 'Missing Activity Date',
+          message: 'Please select the Date of Activity.',
+          autoCloseMs: 3000,
+        });
+        return;
+      }
+      if (!form.timeStart || !form.timeEnd) {
+        showNotification({
+          type: 'warning',
+          title: 'Missing Activity Times',
+          message: 'Please specify both Start Time and End Time for the activity.',
+          autoCloseMs: 3000,
+        });
+        return;
+      }
     }
 
     const confirmed = await showConfirm({
-      title: isDraft ? 'Save as draft?' : 'Submit request?',
+      title: isDraft ? 'Save as draft?' : 'Submit Academic Request?',
       message: isDraft 
         ? 'The request will be saved as a draft and can be submitted later.'
         : 'This will submit the academic request for approval.',
-      confirmText: isDraft ? 'Save Draft' : 'Submit',
+      confirmText: isDraft ? 'Save Draft' : 'Submit Request',
       cancelText: 'Cancel',
       variant: 'primary',
     });
@@ -68,36 +116,57 @@ export default function AcademicRequestModal({ onClose }) {
     if (!confirmed) return;
 
     setIsLoading(true);
-    setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting request...');
+    setLoadingMessage(isDraft ? 'Saving academic draft...' : 'Submitting academic request...');
 
     try {
-      await addRequest({
-        type: 'academic',
-        title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
-        ...form,
-        college: profile?.college || profile?.department || '', // Include college for dean filtering
-        status: isDraft ? 'Draft' : 'Pending',
-      });
+      const reqTitle = `${selectedType?.label || 'Academic Request'}: ${form.courseCode ? form.courseCode + ' - ' : ''}${form.courseDesc || 'Untitled Course'}`;
+      const userDisplayName = profile?.displayName || profile?.name || profile?.email || 'Academic Requestor';
+      const userDepartment = profile?.department || profile?.college || 'Academic Department';
+
+      await addRequest(
+        {
+          type: 'academic',
+          title: reqTitle,
+          activity: reqTitle,
+          ...form,
+          dateOfActivity: actDate,
+          requestedBy: userDisplayName,
+          requestor: userDisplayName,
+          requestorEmail: profile?.email || '',
+          createdByUid: profile?.uid || '',
+          department: userDepartment,
+          nameOfOrg: userDepartment,
+          college: profile?.college || profile?.department || '',
+          buildingId: selectedBuilding?.id || null,
+          roomId: selectedRoomObj?.docId || selectedRoomObj?.id || form.room || null,
+          floor: selectedRoomObj?.floor ?? (form.floor ? parseInt(form.floor) : null),
+          floorId: selectedRoomObj?.floorId || null,
+          status: isDraft ? 'Draft' : 'Pending',
+        },
+        { draft: isDraft }
+      );
       
+      setIsLoading(false);
       showNotification({
         type: 'success',
-        title: isDraft ? 'Draft saved' : 'Request submitted',
+        title: isDraft ? 'Draft Saved Successfully' : 'Submit Successful!',
         message: isDraft 
           ? 'Your academic request has been saved as a draft.'
           : 'Your academic request has been submitted for approval.',
-        autoCloseMs: 2000,
+        autoCloseMs: 2500,
       });
       
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 2200);
     } catch (error) {
+      setIsLoading(false);
       showNotification({
         type: 'error',
-        title: isDraft ? 'Save failed' : 'Submit failed',
-        message: error.message || 'An error occurred. Please try again.',
+        title: isDraft ? 'Save Failed' : 'Submission Failed',
+        message: error.message || 'An error occurred while submitting your request. Please check details and try again.',
         autoCloseMs: 0,
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -176,7 +245,7 @@ export default function AcademicRequestModal({ onClose }) {
                   {selectedType?.fields.includes('examDate') && (
                     <div className="col-span-2">
                       <label className="form-label">Exam Date</label>
-                      <input className="form-input" type="date" value={form.examDate} onChange={e => set('examDate', e.target.value)} />
+                            <DatePicker value={form.examDate} onChange={val => set('examDate', val)} />
                     </div>
                   )}
                   {selectedType?.fields.includes('reason') && (
@@ -235,14 +304,14 @@ export default function AcademicRequestModal({ onClose }) {
                   </div>
                   <div>
                     <label className="form-label">Date of Activity</label>
-                    <input className="form-input" type="date" value={form.dateField} onChange={e => set('dateField', e.target.value)} />
+                                        <DatePicker value={form.dateField} onChange={val => set('dateField', val)} />
                   </div>
                   <div>
                     <label className="form-label">Time of Activity</label>
                     <div className="flex items-center gap-2">
-                      <input className="form-input" type="time" value={form.timeStart} onChange={e => set('timeStart', e.target.value)} />
+                      <TimePicker value={form.timeStart} onChange={val => set('timeStart', val)} />
                       <span className="text-xs font-semibold text-gray-400">To</span>
-                      <input className="form-input" type="time" value={form.timeEnd} onChange={e => set('timeEnd', e.target.value)} />
+                      <TimePicker value={form.timeEnd} onChange={val => set('timeEnd', val)} />
                     </div>
                   </div>
                   <div className="col-span-2">

@@ -5,8 +5,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase/firebase';
 import { INSTITUTIONAL_EMAIL_DOMAIN } from '../firebase/constants';
 import { validateInstitutionalEmail } from '../firebase/authHelpers';
-import systemLogo from '../assets/logo.png';
-import loginBg from '../assets/login-bg.jpg';
+import AuthLayout from '../components/auth/AuthLayout';
 
 const STEPS = { EMAIL: 1, OTP: 2, NEW_PASSWORD: 3 };
 const OTP_EXPIRY_SECONDS = 10 * 60; // 10 minutes
@@ -120,7 +119,6 @@ export default function ForgotPassword() {
   };
 
   // ─── Step 3: Reset Password ────────────────────────────────────────────────
-  // Password requirement checks
   const passwordChecks = [
     { label: 'At least 8 characters', met: newPassword.length >= 8 },
     { label: 'One uppercase letter (A-Z)', met: /[A-Z]/.test(newPassword) },
@@ -156,7 +154,6 @@ export default function ForgotPassword() {
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
       const msg = err.message || 'Failed to reset password.';
-      // If OTP expired or too many attempts, go back to email step
       if (msg.includes('expired') || msg.includes('request a new code') || msg.includes('Too many')) {
         setError(msg);
         setStep(STEPS.EMAIL);
@@ -170,7 +167,6 @@ export default function ForgotPassword() {
     }
   };
 
-  // ─── Resend OTP ────────────────────────────────────────────────────────────
   const handleResendOTP = async () => {
     if (resendCooldown > 0) return;
     setOtp(['', '', '', '', '', '']);
@@ -183,13 +179,13 @@ export default function ForgotPassword() {
       {[STEPS.EMAIL, STEPS.OTP, STEPS.NEW_PASSWORD].map((s, i) => (
         <React.Fragment key={s}>
           <div
-            className="flex items-center justify-center rounded-full transition-all duration-300"
+            className="flex items-center justify-center rounded-full transition-all duration-300 shadow-2xs"
             style={{
-              width: 32,
-              height: 32,
-              background: step >= s ? '#7A0808' : '#e5e7eb',
+              width: 30,
+              height: 30,
+              background: step >= s ? '#7A0808' : '#f3f4f6',
               color: step >= s ? '#fff' : '#9ca3af',
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 700,
             }}
           >
@@ -197,9 +193,9 @@ export default function ForgotPassword() {
           </div>
           {i < 2 && (
             <div
-              className="transition-all duration-300"
+              className="transition-all duration-300 rounded-full"
               style={{
-                width: 40,
+                width: 36,
                 height: 2,
                 background: step > s ? '#7A0808' : '#e5e7eb',
               }}
@@ -211,283 +207,234 @@ export default function ForgotPassword() {
   );
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{ background: '#7A0808' }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: `url(${loginBg})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.35,
-        }}
-      />
-
-
-      <div
-        className="relative bg-white rounded-3xl shadow-2xl w-full px-10 py-10"
-        style={{ maxWidth: 420 }}
-      >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-5">
-          {systemLogo ? (
-            <img src={systemLogo} alt="SWU-IFSS logo" className="h-16 w-auto object-contain mb-2" />
-          ) : null}
-          <h2 className="text-lg font-black" style={{ color: '#2B3235' }}>
-            Reset Password
-          </h2>
+    <AuthLayout
+      title="Reset Password"
+      subtitle="Follow the steps to securely recover your portal access."
+      footer={
+        <div className="pt-2">
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#7A0808] hover:underline"
+          >
+            <ArrowLeft size={14} />
+            <span>Back to Sign In</span>
+          </Link>
         </div>
+      }
+    >
+      <StepIndicator />
 
-        <StepIndicator />
+      {error && (
+        <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-150 rounded-xl px-4 py-3 mb-4 shadow-2xs">
+          {error}
+        </div>
+      )}
+      {success && !error && (
+        <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-150 rounded-xl px-4 py-3 mb-4 shadow-2xs">
+          {success}
+        </div>
+      )}
 
-        {/* Error / Success Messages */}
-        {error && (
-          <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
-            {error}
-          </p>
-        )}
-        {success && !error && (
-          <p className="text-xs font-semibold text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2 mb-4">
-            {success}
-          </p>
-        )}
+      {/* ─── Step 1: Email ────────────────────────────────────────────── */}
+      {step === STEPS.EMAIL && (
+        <form onSubmit={handleSendOTP} className="space-y-4">
+          <div className="flex items-center gap-2 p-3 bg-red-50/50 rounded-xl border border-red-100 mb-4">
+            <Mail size={16} className="text-[#7A0808] shrink-0" />
+            <p className="text-xs text-gray-600 font-medium">
+              Enter your institutional email to receive a 6-digit verification code.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5">Institutional Email</label>
+            <input
+              className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+              type="email"
+              placeholder={`you@${INSTITUTIONAL_EMAIL_DOMAIN}`}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              required
+              autoFocus
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#7A0808] hover:bg-[#600000] active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Sending Code…</span>
+              </>
+            ) : (
+              'Send Verification Code'
+            )}
+          </button>
+        </form>
+      )}
 
-        {/* ─── Step 1: Email ────────────────────────────────────────────── */}
-        {step === STEPS.EMAIL && (
-          <form onSubmit={handleSendOTP}>
-            <div className="flex items-center gap-2 mb-4">
-              <Mail size={18} className="text-gray-400" />
-              <p className="text-xs text-gray-500">
-                Enter your institutional email and we'll send you a verification code.
-              </p>
-            </div>
-            <div className="mb-5">
-              <label className="form-label">Institutional email</label>
+      {/* ─── Step 2: OTP ──────────────────────────────────────────────── */}
+      {step === STEPS.OTP && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-3 bg-red-50/50 rounded-xl border border-red-100 mb-4">
+            <KeyRound size={16} className="text-[#7A0808] shrink-0" />
+            <p className="text-xs text-gray-600 font-medium">
+              Enter the 6-digit code sent to <strong className="text-gray-800">{email}</strong>
+            </p>
+          </div>
+
+          <div className="flex justify-center gap-2 my-4" onPaste={handleOtpPaste}>
+            {otp.map((digit, i) => (
               <input
-                className="form-input"
-                type="email"
-                placeholder={`you@${INSTITUTIONAL_EMAIL_DOMAIN}`}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
+                key={i}
+                ref={(el) => (otpRefs.current[i] = el)}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleOtpChange(i, e.target.value)}
+                onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                className="w-10 h-12 sm:w-11 sm:h-13 text-center font-black text-xl border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none transition-all bg-white shadow-2xs"
+                style={{
+                  borderColor: digit ? '#7A0808' : '#e5e7eb',
+                }}
+                autoFocus={i === 0}
+              />
+            ))}
+          </div>
+
+          {countdown > 0 ? (
+            <p className="text-center text-xs text-gray-500 font-medium">
+              Code expires in{' '}
+              <span className="font-bold" style={{ color: countdown < 60 ? '#dc2626' : '#7A0808' }}>
+                {formatTime(countdown)}
+              </span>
+            </p>
+          ) : (
+            <p className="text-center text-xs text-red-600 font-semibold">
+              Code has expired. Please request a new code.
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleVerifyOTP}
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#7A0808] hover:bg-[#600000] active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            disabled={loading || countdown === 0}
+          >
+            Verify Code
+          </button>
+
+          <p className="text-center text-xs text-gray-500 pt-1">
+            Didn't receive code?{' '}
+            {resendCooldown > 0 ? (
+              <span className="text-gray-400 font-medium">Resend in {resendCooldown}s</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResendOTP}
+                className="font-bold text-[#7A0808] hover:underline cursor-pointer"
+                disabled={loading}
+              >
+                Resend Code
+              </button>
+            )}
+          </p>
+        </div>
+      )}
+
+      {/* ─── Step 3: New Password ─────────────────────────────────────── */}
+      {step === STEPS.NEW_PASSWORD && (
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <div className="flex items-center gap-2 p-3 bg-red-50/50 rounded-xl border border-red-100 mb-3">
+            <ShieldCheck size={16} className="text-[#7A0808] shrink-0" />
+            <p className="text-xs text-gray-600 font-medium">
+              Create a new strong password for your account.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5">New Password</label>
+            <div className="relative">
+              <input
+                className="w-full pl-4 pr-11 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+                type={showPass ? 'text' : 'password'}
+                placeholder="Create a strong password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
                 required
                 autoFocus
               />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+              >
+                {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </div>
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl font-black text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{ background: '#7A0808' }}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Sending Code…
-                </>
-              ) : (
-                'Send Verification Code'
-              )}
-            </button>
-          </form>
-        )}
+          </div>
 
-        {/* ─── Step 2: OTP ──────────────────────────────────────────────── */}
-        {step === STEPS.OTP && (
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <KeyRound size={18} className="text-gray-400" />
-              <p className="text-xs text-gray-500">
-                Enter the 6-digit code sent to <strong>{email}</strong>
-              </p>
-            </div>
-
-            {/* OTP Input Boxes */}
-            <div className="flex justify-center gap-2 mb-4" onPaste={handleOtpPaste}>
-              {otp.map((digit, i) => (
-                <input
-                  key={i}
-                  ref={(el) => (otpRefs.current[i] = el)}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(i, e.target.value)}
-                  onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                  className="form-input text-center font-bold"
-                  style={{
-                    width: 48,
-                    height: 52,
-                    fontSize: 22,
-                    letterSpacing: 0,
-                    borderColor: digit ? '#7A0808' : '#e2e5e8',
-                  }}
-                  autoFocus={i === 0}
-                />
+          {/* Password Requirements Checklist */}
+          <div className="rounded-xl px-4 py-3 bg-gray-50 border border-gray-200">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Password Requirements</p>
+            <ul className="space-y-1">
+              {passwordChecks.map((check, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  {check.met ? (
+                    <Check size={13} className="shrink-0 text-emerald-600 font-bold" />
+                  ) : (
+                    <X size={13} className="shrink-0 text-gray-400" />
+                  )}
+                  <span className={`text-xs ${check.met ? 'text-emerald-700 font-semibold' : 'text-gray-500'}`}>
+                    {check.label}
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
+          </div>
 
-            {/* Timer */}
-            {countdown > 0 ? (
-              <p className="text-center text-xs text-gray-500 mb-4">
-                Code expires in{' '}
-                <span className="font-bold" style={{ color: countdown < 60 ? '#dc2626' : '#7A0808' }}>
-                  {formatTime(countdown)}
-                </span>
-              </p>
-            ) : (
-              <p className="text-center text-xs text-red-600 font-semibold mb-4">
-                Code has expired. Please request a new one.
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5">Confirm Password</label>
+            <input
+              className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none font-medium placeholder-gray-300 transition-all bg-white shadow-2xs"
+              type={showPass ? 'text' : 'password'}
+              placeholder="Re-enter your password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+            {confirmPassword && !passwordsMatch && (
+              <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-semibold">
+                <X size={13} /> Passwords do not match
               </p>
             )}
-
-            <button
-              type="button"
-              onClick={handleVerifyOTP}
-              className="w-full py-3 rounded-xl font-black text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{ background: '#7A0808' }}
-              disabled={loading || countdown === 0}
-            >
-              Verify Code
-            </button>
-
-            {/* Resend */}
-            <p className="text-center text-xs text-gray-500 mt-3">
-              Didn't receive the code?{' '}
-              {resendCooldown > 0 ? (
-                <span className="text-gray-400">Resend in {resendCooldown}s</span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResendOTP}
-                  className="font-semibold underline"
-                  style={{ color: '#7A0808' }}
-                  disabled={loading}
-                >
-                  Resend Code
-                </button>
-              )}
-            </p>
-          </div>
-        )}
-
-        {/* ─── Step 3: New Password ─────────────────────────────────────── */}
-        {step === STEPS.NEW_PASSWORD && (
-          <form onSubmit={handleResetPassword}>
-            <div className="flex items-center gap-2 mb-4">
-              <ShieldCheck size={18} className="text-gray-400" />
-              <p className="text-xs text-gray-500">
-                Create a new password for your account.
+            {passwordsMatch && (
+              <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-semibold">
+                <Check size={13} /> Passwords match
               </p>
-            </div>
+            )}
+          </div>
 
-            <div className="mb-2">
-              <label className="form-label">New Password</label>
-              <div className="relative">
-                <input
-                  className="form-input pr-10"
-                  type={showPass ? 'text' : 'password'}
-                  placeholder="Create a strong password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                  required
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Password Requirements Checklist */}
-            <div
-              className="rounded-lg px-3 py-2.5 mb-4"
-              style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}
-            >
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Password Requirements</p>
-              <ul className="space-y-1">
-                {passwordChecks.map((check, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    {check.met ? (
-                      <Check size={14} className="shrink-0" style={{ color: '#16a34a' }} />
-                    ) : (
-                      <X size={14} className="shrink-0" style={{ color: newPassword ? '#dc2626' : '#9ca3af' }} />
-                    )}
-                    <span
-                      className="text-xs transition-colors"
-                      style={{ color: check.met ? '#16a34a' : newPassword ? '#6b7280' : '#9ca3af' }}
-                    >
-                      {check.label}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="mb-5">
-              <label className="form-label">Confirm Password</label>
-              <input
-                className="form-input"
-                type={showPass ? 'text' : 'password'}
-                placeholder="Re-enter your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
-              {confirmPassword && !passwordsMatch && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <X size={12} /> Passwords do not match
-                </p>
-              )}
-              {passwordsMatch && (
-                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#16a34a' }}>
-                  <Check size={12} /> Passwords match
-                </p>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl font-black text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{ background: allChecksMet && passwordsMatch ? '#7A0808' : '#c4a0a0' }}
-              disabled={loading || !allChecksMet || !passwordsMatch}
-            >
-              {loading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Resetting Password…
-                </>
-              ) : (
-                'Reset Password'
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* Back to Login */}
-        <div className="mt-5 text-center">
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-1 text-xs font-semibold hover:underline"
-            style={{ color: '#7A0808' }}
+          <button
+            type="submit"
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#7A0808] hover:bg-[#600000] active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            disabled={loading || !allChecksMet || !passwordsMatch}
           >
-            <ArrowLeft size={14} />
-            Back to Sign In
-          </Link>
-        </div>
-
-        <p className="text-center text-xs text-gray-400 mt-4">
-          © {new Date().getFullYear()} Southwestern University PHINMA. All rights reserved.
-        </p>
-      </div>
-    </div>
+            {loading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Resetting Password…</span>
+              </>
+            ) : (
+              'Reset Password'
+            )}
+          </button>
+        </form>
+      )}
+    </AuthLayout>
   );
 }

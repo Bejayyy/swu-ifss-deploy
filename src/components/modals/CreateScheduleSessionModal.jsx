@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Plus, Trash2, Users, ArrowUp, ArrowDown } from 'lucide-react';
 import { getDeanDepartmentOptions } from '../../services/systemUserService';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function CreateScheduleSessionModal({
   onClose,
@@ -178,7 +179,7 @@ export default function CreateScheduleSessionModal({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g., Semester 1 2025-2026 Course Scheduling"
-                  className="input-field w-full"
+                  className="form-input w-full"
                   required
                 />
               </div>
@@ -188,34 +189,30 @@ export default function CreateScheduleSessionModal({
                   <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                     School Year <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={schoolYearId}
                     onChange={(e) => setSchoolYearId(e.target.value)}
-                    className="input-field w-full"
-                    required
-                  >
-                    <option value="">Select school year</option>
-                    {schoolYears.map((sy) => (
-                      <option key={sy.id} value={sy.id}>
-                        {sy.displayLabel || `SY ${sy.label}`}
-                      </option>
-                    ))}
-                  </select>
+                    options={schoolYears.map((sy) => ({
+                      value: sy.id,
+                      label: sy.displayLabel || `SY ${sy.label}`,
+                    }))}
+                    placeholder="Select school year"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                     Semester <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={semester}
                     onChange={(e) => setSemester(e.target.value)}
-                    className="input-field w-full"
-                    required
-                  >
-                    <option value="1">Semester 1</option>
-                    <option value="2">Semester 2</option>
-                  </select>
+                    options={[
+                      { value: '1', label: 'Semester 1' },
+                      { value: '2', label: 'Semester 2' },
+                    ]}
+                    placeholder="Select semester"
+                  />
                 </div>
               </div>
             </div>
@@ -236,19 +233,15 @@ export default function CreateScheduleSessionModal({
                 </div>
               </div>
 
-              <select
+              <CustomSelect
                 value={baseCreatorUid}
                 onChange={(e) => setBaseCreatorUid(e.target.value)}
-                className="input-field w-full"
-                required
-              >
-                <option value="">Select base template creator</option>
-                {deanOptions.map((dean) => (
-                  <option key={dean.uid} value={dean.uid}>
-                    {dean.name} - {dean.collegeName}
-                  </option>
-                ))}
-              </select>
+                options={deanOptions.map((dean) => ({
+                  value: dean.uid,
+                  label: `${dean.name} - ${dean.collegeName}`,
+                }))}
+                placeholder="Select base template creator"
+              />
             </div>
 
             {/* Participants */}
@@ -374,7 +367,7 @@ export default function CreateScheduleSessionModal({
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-2 rounded-lg text-sm font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               <Plus size={16} />
               {saving ? 'Creating...' : 'Create Session'}

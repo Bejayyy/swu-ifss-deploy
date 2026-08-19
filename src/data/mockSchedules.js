@@ -23,7 +23,7 @@ export const deanScheduleHistory = [
     dean: 'Dr. John Mark Somoged',
     role: 'Dean of Engineering',
     avatarInitials: 'JS',
-    accent: '#800000',
+    accent: '#7A0808',
     buildingsTagged: 2,
     schedulesTagged: 5,
     isAdmin: true,

@@ -1,13 +1,14 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck,
+  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck, MessageSquare, MessageCircle, LogOut,
 } from 'lucide-react';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { getInitials } from '../firebase/authHelpers';
 import { getActivePendingRecord, isReservationActionable } from '../constants/approvalWorkflow';
+import { subscribeAllUserChats, extractAllKeys } from '../services/chatService';
 import { subscribeMaintenanceReports } from '../services/maintenanceService';
 import { getRoleLabel } from '../constants/rolePermissions';
 import {
@@ -15,6 +16,8 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
 } from '../services/notificationService';
+import chatIcon from '../assets/chat-icon.png';
+import navBgTexture from '../assets/login-bg.jpg';
 
 export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav = () => {} }) {
   const navigate = useNavigate();
@@ -22,6 +25,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const { requests } = useApp();
   const [showNotif, setShowNotif] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showSignOutConfirmModal, setShowSignOutConfirmModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -29,6 +33,29 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const [maintenanceReports, setMaintenanceReports] = useState([]);
   const [dbNotifications, setDbNotifications] = useState([]);
   const [hasSeenBell, setHasSeenBell] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  const currentUserObj = useMemo(() => {
+    return {
+      uid: profile?.uid || profile?.id,
+      email: profile?.email,
+      name: profile?.displayName || profile?.name,
+    };
+  }, [profile]);
+
+  useEffect(() => {
+    if (!currentUserObj.email && !currentUserObj.uid) return;
+    const unsub = subscribeAllUserChats(currentUserObj, (chats) => {
+      const userKeys = extractAllKeys(currentUserObj);
+      const count = (chats || []).filter((msg) => {
+        const rKey = String(msg.receiverKey || msg.receiverEmail || msg.receiverUid || '').toLowerCase();
+        const isReceiver = userKeys.includes(rKey);
+        return isReceiver && !msg.read;
+      }).length;
+      setUnreadChatCount(count);
+    });
+    return () => unsub();
+  }, [currentUserObj]);
 
   const [readNotifIds, setReadNotifIds] = useState(() => {
     try {
@@ -337,24 +364,53 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     setShowForgotPassword(false);
   };
   const hasAnyOverlay =
-    showNotif || showProfile || showProfileModal || showEditProfileModal || showSettingsModal || showForgotPassword;
+    showNotif || showProfileModal || showEditProfileModal || showSettingsModal || showForgotPassword;
 
   return (
     <div
-      className="fixed top-0 right-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-6 print:hidden"
+      className="fixed top-0 right-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-6 print:hidden shadow-md overflow-hidden"
       style={{
         left: isDesktop ? NAV_WIDTH_PX : 0,
         height: TOP_NAV_HEIGHT_PX,
-        background: '#800000',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        background: '#7A0808',
       }}
     >
-      <div className="min-w-0 flex items-center gap-2 sm:gap-3">
+      {/* Top Edge Ambient Highlight Sheen */}
+      <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none z-10" />
+
+      {/* Pure SWU Maroon Shaded Background (No Patterns) */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-hidden"
+        xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          {/* Base Shaded Maroon Background Gradient */}
+          <linearGradient id="cleanMaroonGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#4A0303" />
+            <stop offset="30%" stopColor="#7A0808" />
+            <stop offset="60%" stopColor="#8C0D0D" />
+            <stop offset="85%" stopColor="#6E0606" />
+            <stop offset="100%" stopColor="#450101" />
+          </linearGradient>
+
+          <radialGradient id="subtleTopGlow" cx="50%" cy="0%" r="75%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="#7A0808" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* Clean Shaded Maroon Base Color */}
+        <rect width="100%" height="100%" fill="url(#cleanMaroonGrad)" />
+        <rect width="100%" height="100%" fill="url(#subtleTopGlow)" />
+      </svg>
+
+      <div className="min-w-0 flex items-center gap-2 sm:gap-3 relative z-10">
         {!isDesktop && (
           <button
             type="button"
             onClick={onToggleNav}
-            className="relative p-2 hover:bg-white/10 transition-colors flex-shrink-0"
+            className="relative p-2 hover:bg-white/15 transition-colors flex-shrink-0"
             style={{ borderRadius: r }}
             aria-label="Open sidebar"
           >
@@ -362,121 +418,207 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           </button>
         )}
         <div className="min-w-0">
-        <h1 className="text-white font-bold text-lg sm:text-xl leading-tight truncate">{title}</h1>
-        {subtitle && <p className="text-red-100 text-xs font-normal mt-0.5">{subtitle}</p>}
+          <h1 className="text-white font-black text-lg sm:text-xl leading-tight truncate tracking-tight drop-shadow-xs">
+            {title}
+          </h1>
+          {subtitle && <p className="text-red-100/90 text-xs font-semibold mt-0.5 tracking-wide">{subtitle}</p>}
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-4 flex-shrink-0">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              const nextShow = !showNotif;
-              setShowNotif(nextShow);
-              setHasSeenBell(true); // Resets bell counter icon number to normal!
-              setShowProfile(false);
-              setShowProfileModal(false);
-              setShowSettingsModal(false);
-              setShowForgotPassword(false);
-            }}
-            className="relative p-2 hover:bg-white/10 transition-colors"
-            style={{ borderRadius: r }}
-            title="Notifications"
-          >
-            <Bell size={22} className="text-white" />
-            {unreadCount > 0 && !hasSeenBell && (
-              <span
-                className="absolute -top-0.5 -right-0.5 text-[#2B3235] text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center shadow-xs"
-                style={{ background: '#FFC107', borderRadius: 6 }}
-              >
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        </div>
+      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 relative z-10">
+        {/* Message Action Button */}
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/messages');
+            setShowNotif(false);
+            setShowProfile(false);
+          }}
+          className="relative w-10 h-10 bg-white/20 hover:bg-white/30 backdrop-blur-xs border border-white/40 rounded-2xl flex items-center justify-center cursor-pointer transition-all duration-300 shadow-xs hover:shadow-md group active:scale-95"
+          title="Messages & Chat Coordination"
+        >
+          <MessageCircle
+            size={20}
+            className="text-white group-hover:rotate-12 group-hover:scale-110 transition-transform duration-300 drop-shadow-xs"
+          />
 
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              setShowProfile(!showProfile);
-              setShowNotif(false);
-              setShowProfileModal(false);
-              setShowSettingsModal(false);
-              setShowForgotPassword(false);
-            }}
-            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 border border-white/20 px-2.5 py-1.5 transition-all shadow-2xs"
-            style={{ borderRadius: r }}
-          >
-            {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
-              <img
-                src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
-                alt={displayName}
-                className="w-8 h-8 rounded-xl object-cover border border-white/40 shadow-xs flex-shrink-0"
-              />
-            ) : (
-              <div
-                className="w-8 h-8 flex items-center justify-center text-[#2B3235] font-black text-xs shadow-xs border border-white/40"
-                style={{ background: '#FFC107', borderRadius: r }}
-              >
-                {initials}
-              </div>
-            )}
-            <div className="text-left hidden sm:block">
-              <p className="text-white text-xs font-bold leading-tight">{displayName}</p>
-              <p className="text-red-100 text-[10px] font-medium">{roleLabel}</p>
-            </div>
-            <ChevronDown size={14} className="text-red-100 hidden sm:block" />
-          </button>
-          {showProfile && (
-            <div className="absolute right-0 top-14 w-60 bg-white shadow-2xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
-              <div className="p-4 bg-gradient-to-br from-red-50 to-amber-50/40 border-b border-gray-100 flex items-center gap-3">
-                {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
-                  <img
-                    src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
-                    alt={displayName}
-                    className="w-11 h-11 rounded-xl object-cover border-2 border-[#800000] shadow-xs flex-shrink-0"
-                  />
-                ) : (
-                  <div className="w-11 h-11 rounded-xl bg-[#800000] text-white font-black text-base flex items-center justify-center shadow-xs flex-shrink-0">
-                    {initials}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-extrabold text-gray-900 truncate">{displayName}</p>
-                  <p className="text-[11px] text-gray-500 truncate">{profile?.email}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-[#800000] text-white">
-                    {roleLabel}
-                  </span>
-                </div>
-              </div>
-              <div className="p-2 space-y-0.5">
-                <button
-                  type="button"
-                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-gray-700 hover:bg-red-50/70 hover:text-[#800000] rounded-xl flex items-center gap-2.5 transition-colors"
-                  onClick={() => {
-                    setShowProfile(false);
-                    navigate('/profile-settings');
-                  }}
-                >
-                  <Settings size={16} className="text-[#800000]" />
-                  Profile & Settings
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2.5 transition-colors"
-                  onClick={handleSignOut}
-                >
-                  <User size={16} className="text-red-600" />
-                  Sign Out
-                </button>
-              </div>
+          {/* Unread Chat Message Count Badge (100% Real-Time) */}
+          {unreadChatCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 flex items-center justify-center rounded-full text-[10px] font-black shadow-md bg-[#F59E0B] text-white border-2 border-[#7A0808] animate-in zoom-in duration-200">
+              {unreadChatCount}
+            </span>
+          )}
+        </button>
+
+        {/* Notifications Bell Button */}
+        <button
+          type="button"
+          onClick={() => {
+            const nextShow = !showNotif;
+            setShowNotif(nextShow);
+            setHasSeenBell(true);
+            setShowProfile(false);
+            setShowProfileModal(false);
+            setShowSettingsModal(false);
+            setShowForgotPassword(false);
+          }}
+          className="relative w-10 h-10 bg-white/20 hover:bg-white/30 backdrop-blur-xs border border-white/40 rounded-2xl flex items-center justify-center cursor-pointer transition-all duration-300 shadow-xs hover:shadow-md group active:scale-95"
+          title="Notifications"
+        >
+          <Bell
+            size={20}
+            className={`text-white transition-transform duration-300 drop-shadow-xs ${
+              unreadCount > 0 && !hasSeenBell ? 'animate-bell-ring' : 'group-hover-bell-ring'
+            }`}
+          />
+
+          {/* Real-Time Notification Count Badge */}
+          {unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 flex items-center justify-center rounded-full text-[10px] font-black shadow-md bg-[#F59E0B] text-white border-2 border-[#7A0808] animate-in zoom-in duration-200">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+
+        {/* User Profile Button (No Transparent Container) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowProfile(!showProfile);
+            setShowNotif(false);
+          }}
+          className="flex items-center gap-2.5 py-1 px-1.5 hover:bg-white/10 rounded-xl transition-colors cursor-pointer active:scale-95"
+        >
+          {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
+            <img
+              src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
+              alt={displayName}
+              className="w-10 h-10 rounded-full object-cover shadow-xs flex-shrink-0"
+            />
+          ) : (
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-[#2B3235] font-black text-sm shadow-xs flex-shrink-0"
+              style={{ background: '#FFC107' }}
+            >
+              {initials}
             </div>
           )}
-
-        </div>
+          <div className="text-left hidden sm:block">
+            <p className="text-white text-xs font-bold leading-tight truncate max-w-[140px]">{displayName}</p>
+            <p className="text-red-100 text-[10px] font-medium leading-tight">{roleLabel}</p>
+          </div>
+          <ChevronDown size={14} className="text-red-100 hidden sm:block" />
+        </button>
       </div>
+
+      {/* Profile Dropdown Menu Overlay */}
+      {showProfile && (
+        <div
+          className="fixed inset-0 z-[100] flex items-start justify-end px-3 sm:px-4 lg:px-6 pt-14 pointer-events-auto"
+          onClick={() => setShowProfile(false)}
+        >
+          <div
+            className="w-64 bg-white shadow-2xl border border-gray-200 overflow-hidden rounded-2xl animate-in fade-in zoom-in-95 duration-150 cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 bg-gradient-to-br from-red-50 to-amber-50/40 border-b border-gray-100 flex items-center gap-3">
+              {(profile?.photoURL || profile?.avatarUrl || profile?.photoUrl) ? (
+                <img
+                  src={profile.photoURL || profile.avatarUrl || profile.photoUrl}
+                  alt={displayName}
+                  className="w-11 h-11 rounded-full object-cover shadow-xs flex-shrink-0"
+                />
+              ) : (
+                <div className="w-11 h-11 rounded-full bg-[#7A0808] text-white font-black text-base flex items-center justify-center shadow-xs flex-shrink-0">
+                  {initials}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-extrabold text-gray-900 truncate">{displayName}</p>
+                <p className="text-[11px] text-gray-500 truncate">{profile?.email}</p>
+                <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-[#7A0808] text-white">
+                  {roleLabel}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-2 space-y-1">
+              <button
+                type="button"
+                className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-gray-700 hover:bg-red-50/70 hover:text-[#7A0808] rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProfile(false);
+                  navigate('/profile-settings');
+                }}
+              >
+                <Settings size={16} className="text-[#7A0808]" />
+                Profile & Settings
+              </button>
+              <button
+                type="button"
+                className="w-full text-left px-3.5 py-2.5 text-xs font-bold bg-[#FFF0F0] text-[#7A0808] hover:bg-[#FFE5E5] border border-[#FFCACA] rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProfile(false);
+                  setShowSignOutConfirmModal(true);
+                }}
+              >
+                <LogOut size={16} className="text-[#7A0808]" />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sign Out Confirmation Modal */}
+      {showSignOutConfirmModal && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setShowSignOutConfirmModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden p-6 animate-in zoom-in-95 duration-200 cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3.5 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#FFF0F0] text-[#7A0808] border border-[#FFCACA] flex items-center justify-center flex-shrink-0">
+                <LogOut size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">Sign Out Confirmation</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Are you sure you want to log out of SWU-IFSS?</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 mb-6 bg-gray-50 p-3 rounded-xl border border-gray-100 leading-relaxed">
+              You will be signed out of your current session. Any unsaved form progress will be lost.
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirmModal(false)}
+                className="btn-ghost-sm cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSignOutConfirmModal(false);
+                  handleSignOut();
+                }}
+                className="btn-delete cursor-pointer"
+              >
+                <LogOut size={14} /> Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {hasAnyOverlay && (
         <div className="fixed inset-0 z-40" onClick={closeAll} aria-hidden />
@@ -493,12 +635,12 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white shadow-2xs">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-[#800000]">
+                  <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-[#7A0808]">
                     <Bell size={16} />
                   </div>
                   <p className="font-black text-base text-[#2B3235]">Notifications</p>
                   {unreadCount > 0 && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-[#800000] text-white shadow-xs">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-[#7A0808] text-white shadow-xs">
                       {unreadCount} Unread
                     </span>
                   )}
@@ -515,7 +657,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                     onClick={handleMarkAllRead}
                     className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1.5"
                   >
-                    <CheckCheck size={14} className="text-[#800000]" />
+                    <CheckCheck size={14} className="text-[#7A0808]" />
                     Mark all as read
                   </button>
                 )}
@@ -564,7 +706,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                           </div>
                         ) : (
                           <div className={`p-2.5 rounded-xl flex-shrink-0 ${
-                            isUnread ? 'bg-red-100 text-[#800000]' : 'bg-slate-100 text-slate-500'
+                            isUnread ? 'bg-red-100 text-[#7A0808]' : 'bg-slate-100 text-slate-500'
                           }`}>
                             <Bell size={18} />
                           </div>
@@ -575,7 +717,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                             <span
                               className="inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-md"
                               style={{
-                                color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#800000',
+                                color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#7A0808',
                                 background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEE2E2',
                               }}
                             >
@@ -587,7 +729,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                             </span>
 
                             {isUnread ? (
-                              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#800000] text-white">
+                              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#7A0808] text-white">
                                 UNREAD
                               </span>
                             ) : (
@@ -629,7 +771,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                             <button 
                               type="button" 
                               className={`text-xs py-1.5 px-3 font-bold rounded-xl transition-all ${
-                                isUnread ? 'bg-[#800000] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                isUnread ? 'bg-[#7A0808] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                               }`}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -684,9 +826,9 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                   <p className="text-sm font-semibold" style={{ color: '#2B3235' }}>{profileForm.role}</p>
                 </div>
               </div>
-              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><Mail size={14} className="text-[#800000]" /> {profileForm.email}</p>
-              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><Phone size={14} className="text-[#800000]" /> {profileForm.phone}</p>
-              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><BadgeCheck size={14} className="text-[#800000]" /> Account status: Verified</p>
+              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><Mail size={14} className="text-[#7A0808]" /> {profileForm.email}</p>
+              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><Phone size={14} className="text-[#7A0808]" /> {profileForm.phone}</p>
+              <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235' }}><BadgeCheck size={14} className="text-[#7A0808]" /> Account status: Verified</p>
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
@@ -713,7 +855,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
-              <User size={16} style={{ color: '#800000' }} />
+              <User size={16} style={{ color: '#7A0808' }} />
               <h3 className="font-black text-sm" style={{ color: '#2B3235' }}>Edit Profile</h3>
             </div>
             <div className="p-5 space-y-3">
@@ -754,16 +896,16 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
-              <Settings size={16} style={{ color: '#800000' }} />
+              <Settings size={16} style={{ color: '#7A0808' }} />
               <h3 className="font-black text-sm" style={{ color: '#2B3235' }}>Settings</h3>
             </div>
             <div className="p-5 space-y-3">
               <button type="button" className="w-full text-left p-3 border border-gray-100 hover:bg-gray-50" style={{ borderRadius: r, color: '#2B3235' }}>
-                <div className="flex items-center gap-2 font-bold text-sm"><FileText size={14} className="text-[#800000]" /> Preferences</div>
+                <div className="flex items-center gap-2 font-bold text-sm"><FileText size={14} className="text-[#7A0808]" /> Preferences</div>
                 <p className="text-xs mt-1 opacity-70">Configure notification and display options</p>
               </button>
               <button type="button" className="w-full text-left p-3 border border-gray-100 hover:bg-gray-50" style={{ borderRadius: r, color: '#2B3235' }}>
-                <div className="flex items-center gap-2 font-bold text-sm"><Clock3 size={14} className="text-[#800000]" /> Session & Security</div>
+                <div className="flex items-center gap-2 font-bold text-sm"><Clock3 size={14} className="text-[#7A0808]" /> Session & Security</div>
                 <p className="text-xs mt-1 opacity-70">Manage devices and active sessions</p>
               </button>
               <button
@@ -775,7 +917,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                   setShowForgotPassword(true);
                 }}
               >
-                <div className="flex items-center gap-2 font-bold text-sm"><LockKeyhole size={14} className="text-[#800000]" /> Forgot Password</div>
+                <div className="flex items-center gap-2 font-bold text-sm"><LockKeyhole size={14} className="text-[#7A0808]" /> Forgot Password</div>
                 <p className="text-xs mt-1 opacity-70">Send reset link to your registered email</p>
               </button>
               <div className="pt-1">

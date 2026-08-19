@@ -370,8 +370,8 @@ export default function CourseScheduling() {
                 onKeyDown={(e) => { if (e.key === 'Enter') setSelectedPlotId(plot.id); }}
                 className="w-full text-left bg-white border rounded-2xl p-4 transition-shadow hover:shadow-md cursor-pointer"
                 style={{
-                  borderColor: isActive ? '#800000' : '#f0f0f0',
-                  boxShadow: isActive ? '0 0 0 1px #800000' : undefined,
+                  borderColor: isActive ? '#7A0808' : '#f0f0f0',
+                  boxShadow: isActive ? '0 0 0 1px #7A0808' : undefined,
                 }}
               >
                 <div className="flex items-start justify-between gap-2">

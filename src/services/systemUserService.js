@@ -17,32 +17,40 @@ import { getInitials, normalizeEmail, validateInstitutionalEmail } from '../fire
 import { getRoleDefinition } from '../constants/rolePermissions';
 
 export const STAFF_ROLE_OPTIONS = [
+  { value: 'registrar', label: 'Registrar' },
   { value: 'dean', label: 'Dean' },
   { value: 'organization_head', label: 'Organization Head' },
   { value: 'teacher', label: 'Teacher' },
   { value: 'gsd', label: 'GSD' },
   { value: 'student_life', label: 'Student Life' },
+  { value: 'property_office', label: 'Property Office' },
+  { value: 'vp_academics', label: 'VP Academics' },
+  { value: 'chancellor', label: 'Chancellor' },
 ];
 
 export function roleLabelFromValue(role, roleDefinitions = {}) {
   const def = roleDefinitions[role];
   if (def?.label) return def.label;
   const hit = STAFF_ROLE_OPTIONS.find((r) => r.value === role);
-  return hit?.label || role;
+  if (hit?.label) return hit.label;
+  if (role === 'registrar') return 'Registrar';
+  if (role === 'developer') return 'Developer';
+  return role ? (role.charAt(0).toUpperCase() + role.slice(1)).replace(/_/g, ' ') : 'User';
 }
 
 function mapStaffUserDoc(u, roleDefinitions = {}) {
+  const resolvedUid = String(u.uid || u.id || u.email || '').trim();
   return {
-    id: u.uid,
-    uid: u.uid,
-    name: u.displayName,
-    email: u.email,
+    id: resolvedUid,
+    uid: resolvedUid,
+    name: u.displayName || u.name || u.email?.split('@')[0] || 'User',
+    email: u.email || '',
     role: roleLabelFromValue(u.role, roleDefinitions),
-    roleValue: u.role,
-    department: u.department || '',
-    college: u.college || '', // Added college field
+    roleValue: u.role || 'user',
+    department: u.department || u.college || '',
+    college: u.college || '',
     status: u.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive',
-    initials: u.initials || getInitials(u.displayName, u.email),
+    initials: u.initials || getInitials(u.displayName || u.name, u.email),
     permissions: u.permissions || [],
     navKeys: u.navKeys || [],
     useCustomAccess: Boolean(u.permissions?.length || u.navKeys?.length),
@@ -50,21 +58,16 @@ function mapStaffUserDoc(u, roleDefinitions = {}) {
 }
 
 export function subscribeStaffUsers(onData, onError, roleValues = null, roleDefinitions = {}) {
-  const roles = roleValues?.length
-    ? roleValues
-    : STAFF_ROLE_OPTIONS.map((r) => r.value);
-
-  const q = query(
-    collection(db, COLLECTIONS.USERS),
-    where('role', 'in', roles.slice(0, 30)),
-  );
+  const q = roleValues?.length
+    ? query(collection(db, COLLECTIONS.USERS), where('role', 'in', roleValues.slice(0, 30)))
+    : collection(db, COLLECTIONS.USERS);
 
   return onSnapshot(
     q,
     (snap) => {
       const users = snap.docs
-        .map((d) => ({ uid: d.id, ...d.data() }))
-        .filter((u) => u.status !== 'migrated')
+        .map((d) => ({ id: d.id, uid: d.data().uid || d.id, ...d.data() }))
+        .filter((u) => u.status !== 'migrated' && u.role !== ROLES.DEVELOPER)
         .map((u) => mapStaffUserDoc(u, roleDefinitions));
       onData(users);
     },

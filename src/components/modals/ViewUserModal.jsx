@@ -155,7 +155,7 @@ export default function ViewUserModal({
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 flex items-center justify-center text-sm font-black text-white rounded-xl shadow-sm"
-              style={{ background: '#800000' }}
+              style={{ background: '#7A0808' }}
             >
               {user.initials || 'U'}
             </div>
@@ -224,14 +224,14 @@ export default function ViewUserModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-xl border border-gray-100 bg-white">
                   <p className="font-semibold text-gray-400 mb-1 flex items-center gap-1.5">
-                    <Shield size={14} className="text-[#800000]" /> Role
+                    <Shield size={14} className="text-[#7A0808]" /> Role
                   </p>
                   <p className="font-bold text-gray-800 text-sm">{user.role}</p>
                 </div>
 
                 <div className="p-3.5 rounded-xl border border-gray-100 bg-white">
                   <p className="font-semibold text-gray-400 mb-1 flex items-center gap-1.5">
-                    <Building2 size={14} className="text-[#800000]" /> Department / College
+                    <Building2 size={14} className="text-[#7A0808]" /> Department / College
                   </p>
                   <p className="font-bold text-gray-800 text-sm">{user.department || user.college || 'N/A'}</p>
                 </div>
@@ -240,7 +240,7 @@ export default function ViewUserModal({
               {/* Access Config */}
               <div className="p-3.5 rounded-xl border border-gray-100 bg-white">
                 <p className="font-semibold text-gray-400 mb-1.5 flex items-center gap-1.5">
-                  <KeyRound size={14} className="text-[#800000]" /> Navigation & Access Config
+                  <KeyRound size={14} className="text-[#7A0808]" /> Navigation & Access Config
                 </p>
                 <div className="flex items-center justify-between mt-1">
                   <span className="font-bold text-gray-800">
@@ -392,7 +392,7 @@ export default function ViewUserModal({
                     type="checkbox"
                     checked={form.useCustomAccess}
                     onChange={(e) => set('useCustomAccess', e.target.checked)}
-                    className="rounded border-gray-300 text-[#800000] focus:ring-[#800000]"
+                    className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808]"
                   />
                   Customize access for this user (override role defaults)
                 </label>

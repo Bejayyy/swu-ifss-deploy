@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import ConfirmModal from '../components/modals/ConfirmModal';
+import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
 import { subscribeCollegeCourses, subscribeAllCourses, addCourse, updateCourse, deleteCourse } from '../services/courseService';
@@ -304,13 +305,13 @@ export default function CourseInventory() {
             return (
               <div key={yearLevel}>
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#800000] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-[#7A0808] flex items-center justify-center">
                     <span className="text-white font-black text-xs">{yearLevel.charAt(0)}</span>
                   </div>
                   <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
                     {yearLevel}
                   </h3>
-                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
                     {yearCourses.length} {yearCourses.length === 1 ? 'course' : 'courses'}
                   </span>
                 </div>
@@ -324,7 +325,7 @@ export default function CourseInventory() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-black text-sm" style={{ color: '#800000' }}>
+                            <h4 className="font-black text-sm" style={{ color: '#7A0808' }}>
                               {course.code}
                             </h4>
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
@@ -345,7 +346,7 @@ export default function CourseInventory() {
                           <button
                             type="button"
                             onClick={() => handleEdit(course)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-[#800000] transition-colors"
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-[#7A0808] transition-colors"
                             title="Edit course"
                           >
                             <Pencil size={14} />
@@ -442,7 +443,7 @@ export default function CourseInventory() {
                     value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                     placeholder="e.g., CS101, MATH201"
-                    className="input-field w-full"
+                    className="form-input w-full"
                     autoFocus
                   />
                 </div>
@@ -451,15 +452,11 @@ export default function CourseInventory() {
                   <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                     Year Level <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={form.yearLevel}
                     onChange={(e) => setForm({ ...form, yearLevel: e.target.value })}
-                    className="input-field w-full"
-                  >
-                    {YEAR_LEVELS.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
+                    options={YEAR_LEVELS}
+                  />
                 </div>
               </div>
 
@@ -472,7 +469,7 @@ export default function CourseInventory() {
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="e.g., Introduction to Computer Science"
-                  className="input-field w-full"
+                  className="form-input w-full"
                 />
               </div>
 
@@ -481,15 +478,11 @@ export default function CourseInventory() {
                   <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                     Course Type <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={form.type}
                     onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    className="input-field w-full"
-                  >
-                    {COURSE_TYPES.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
+                    options={COURSE_TYPES}
+                  />
                 </div>
 
                 <div>
@@ -504,7 +497,7 @@ export default function CourseInventory() {
                     value={form.units}
                     onChange={(e) => setForm({ ...form, units: e.target.value })}
                     placeholder="e.g., 3"
-                    className="input-field w-full"
+                    className="form-input w-full"
                   />
                 </div>
               </div>
@@ -517,7 +510,7 @@ export default function CourseInventory() {
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="Brief description of the course..."
-                  className="input-field w-full"
+                  className="form-input w-full"
                   rows={3}
                 />
               </div>

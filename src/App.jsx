@@ -33,6 +33,7 @@ import CollegeInventory from './pages/CollegeInventory';
 import TeachersDirectory from './pages/TeachersDirectory';
 import CourseInventory from './pages/CourseInventory';
 import RescheduleReservation from './pages/RescheduleReservation';
+import Messages from './pages/Messages';
 
 function RegistrarPage({ children }) {
   return <RegistrarRoute>{children}</RegistrarRoute>;
@@ -79,6 +80,7 @@ export default function App() {
               }
             />
             <Route path="/dashboard" element={<RegistrarPage><Dashboard /></RegistrarPage>} />
+            <Route path="/messages" element={<RegistrarPage><Messages /></RegistrarPage>} />
             <Route path="/approvals" element={<RegistrarPage><ApprovalManagement /></RegistrarPage>} />
             <Route path="/approval-workflow" element={<RegistrarPage><ApprovalWorkflowManagement /></RegistrarPage>} />
             <Route path="/course-scheduling" element={<RegistrarPage><CourseScheduling /></RegistrarPage>} />

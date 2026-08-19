@@ -130,7 +130,7 @@ export default function AssignedRoomsManagement() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search assigned room by name, type, building..."
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 outline-none focus:border-[#800000] focus:bg-white transition-all"
+              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 outline-none focus:border-[#7A0808] focus:bg-white transition-all"
             />
           </div>
         </div>
@@ -146,7 +146,7 @@ export default function AssignedRoomsManagement() {
                   setSelectedBuildingId(e.target.value);
                   setSelectedFloor('all');
                 }}
-                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#7A0808]"
               >
                 <option value="all">All Buildings ({assignedData.buildings.length})</option>
                 {assignedData.buildings.map((b) => (
@@ -164,7 +164,7 @@ export default function AssignedRoomsManagement() {
         <PageSkeleton />
       ) : assignedData.rooms.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200/80 p-12 text-center shadow-2xs space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-red-50 text-[#800000] flex items-center justify-center mx-auto">
+          <div className="w-12 h-12 rounded-2xl bg-red-50 text-[#7A0808] flex items-center justify-center mx-auto">
             <DoorOpen size={24} />
           </div>
           <h3 className="text-base font-black text-gray-900">No Assigned Rooms Found</h3>
@@ -227,7 +227,7 @@ export default function AssignedRoomsManagement() {
                           {room.equipment.map((eq, idx) => (
                             <span
                               key={idx}
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-50 text-[#800000] border border-red-100"
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] border border-red-100"
                             >
                               {eq}
                             </span>
@@ -260,7 +260,7 @@ export default function AssignedRoomsManagement() {
                     <button
                       type="button"
                       onClick={() => setEditRoom(room)}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#800000] hover:bg-[#600000] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                      className="px-3.5 py-1.5 rounded-xl bg-[#7A0808] hover:bg-[#600000] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
                     >
                       <Edit2 size={14} /> Edit Room
                     </button>

@@ -203,17 +203,17 @@ export function getEffectivePermissions(profile, roleDefinitions = {}) {
 
 export const REGISTRAR_NAV_ORDER = [
   'dashboard',
-  'systemAdmin',
+  'approvals',
+  'roomFinder',
+  'courseScheduling',
+  'collegeInventory',
+  'teachers',
+  'approvalWorkflow',
   'buildings',
   'assignedRooms',
-  'teachers',
-  'collegeInventory',
-  'courseScheduling',
-  'approvalWorkflow',
-  'roomFinder',
   'academicCalendar',
-  'approvals',
   'maintenanceDashboard',
+  'systemAdmin',
   'systemSettings',
 ];
 

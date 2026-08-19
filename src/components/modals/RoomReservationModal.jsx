@@ -14,6 +14,9 @@ import ApprovalTimeline from '../reservations/ApprovalTimeline';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
+import DatePicker from '../ui/DatePicker';
+import TimePicker from '../ui/TimePicker';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const emptyForm = {
   nameOfOrg: '',
@@ -70,7 +73,8 @@ function getSavedSignature(profileUser) {
   return localStorage.getItem('user_saved_signature') || '';
 }
 
-export default function RoomReservationModal({ onClose, eventType, prefill = {} }) {
+export default function RoomReservationModal({ onClose, eventType, prefill = {}, isOpen = true }) {
+  useBodyScrollLock(Boolean(isOpen));
   const { addRequest, buildingList } = useApp();
   const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
@@ -471,28 +475,32 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
         { draft: isDraft },
       );
       
+      setIsLoading(false);
+      setBusy(false);
+
       showNotification({
         type: 'success',
-        title: isDraft ? 'Draft saved' : 'Reservation submitted',
+        title: isDraft ? 'Draft Saved Successfully' : 'Submit Successful!',
         message: isDraft 
           ? 'Your room reservation has been saved as a draft.'
           : 'Your room reservation has been submitted for approval.',
-        autoCloseMs: 2000,
+        autoCloseMs: 2500,
       });
       
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 2200);
     } catch (err) {
+      setIsLoading(false);
+      setBusy(false);
       const errorMessage = err.message || 'Failed to submit reservation.';
       setError(errorMessage);
       showNotification({
         type: 'error',
-        title: isDraft ? 'Save failed' : 'Submit failed',
+        title: isDraft ? 'Save Failed' : 'Submission Failed',
         message: errorMessage,
         autoCloseMs: 0,
       });
-    } finally {
-      setBusy(false);
-      setIsLoading(false);
     }
   };
 
@@ -604,7 +612,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
               <label className="form-label">
                 Date of Activity <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="date" value={form.dateOfActivity} onChange={(e) => set('dateOfActivity', e.target.value)} required />
+              <DatePicker value={form.dateOfActivity} onChange={(val) => set('dateOfActivity', val)} required />
             </div>
             <div>
               <label className="form-label">
@@ -616,13 +624,13 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
               <label className="form-label">
                 Time Start <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="time" value={form.timeStart} onChange={(e) => set('timeStart', e.target.value)} required />
+              <TimePicker value={form.timeStart} onChange={(val) => set('timeStart', val)} required />
             </div>
             <div>
               <label className="form-label">
                 Time End <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="time" value={form.timeEnd} onChange={(e) => set('timeEnd', e.target.value)} required />
+              <TimePicker value={form.timeEnd} onChange={(val) => set('timeEnd', val)} required />
             </div>
             
             {/* Course Schedule Conflict Warning */}

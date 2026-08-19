@@ -15,6 +15,7 @@ import {
   addDays,
   formatWeekRange,
 } from '../../constants/scheduleGrid';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function WeeklyScheduleGrid({
   title = 'Weekly Schedule',
@@ -190,7 +191,7 @@ export default function WeeklyScheduleGrid({
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3 print:hidden">
         <div>
           <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>{title}</h3>
-          <p className="text-xs font-bold text-[#7A0808] mt-0.5 flex items-center gap-1.5 print:hidden">
+          <p className="text-xs font-bold text-[#7A0808] mt-2 flex items-center gap-1.5 print:hidden">
             <Calendar size={13} className="text-[#7A0808]" />
             <span>
               {(() => {
@@ -212,31 +213,42 @@ export default function WeeklyScheduleGrid({
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap print:hidden">
-          {canPlot && onAddBlock && (
-            <button type="button" className="btn-maroon text-xs gap-1.5 py-1.5 px-3" onClick={onAddBlock}>
-              <Plus size={14} /> Add schedule
-            </button>
-          )}
+        <div className="flex items-center gap-3 flex-wrap print:hidden">
           {showControls && (
-            <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 10 }}>
+            <div className="inline-flex w-fit items-center p-1 gap-1 bg-white rounded-2xl border border-gray-200 shadow-2xs">
               <button
                 type="button"
                 onClick={() => onScheduleTabChange?.('regular')}
-                className="px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all"
-                style={scheduleTab === 'regular' ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                className={`px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all rounded-xl cursor-pointer ${
+                  scheduleTab === 'regular'
+                    ? 'bg-[#7A0808] text-white shadow-2xs'
+                    : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
+                }`}
               >
-                <Calendar size={12} /> Regular Schedule
+                <Calendar size={13} /> Regular Schedule
               </button>
               <button
                 type="button"
                 onClick={() => onScheduleTabChange?.('exam')}
-                className="px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all"
-                style={scheduleTab === 'exam' ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                className={`px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all rounded-xl cursor-pointer ${
+                  scheduleTab === 'exam'
+                    ? 'bg-[#7A0808] text-white shadow-2xs'
+                    : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
+                }`}
               >
-                <Calendar size={12} /> Exam Schedule
+                <Calendar size={13} /> Exam Schedule
               </button>
             </div>
+          )}
+
+          {canPlot && onAddBlock && (
+            <button
+              type="button"
+              className="btn-maroon text-xs gap-1.5 py-2 px-4 shadow-sm font-bold flex items-center cursor-pointer ml-auto"
+              onClick={onAddBlock}
+            >
+              <Plus size={14} /> Add schedule
+            </button>
           )}
         </div>
       </div>
@@ -260,7 +272,7 @@ export default function WeeklyScheduleGrid({
                 onClick={() => !lockSemester && onSemesterChange?.(s)}
                 disabled={lockSemester}
                 className="px-4 py-1.5 text-xs font-bold transition-all disabled:opacity-60"
-                style={semester === s ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                style={semester === s ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
               >
                 Semester {s}
               </button>
@@ -308,8 +320,8 @@ export default function WeeklyScheduleGrid({
                   key={type}
                   type="button"
                   onClick={() => setTypeFilter((prev) => (prev === type ? 'All' : type))}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
-                    isSelected ? 'ring-2 ring-offset-1 ring-[#800000] shadow-2xs' : 'hover:opacity-90'
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                    isSelected ? 'ring-2 ring-offset-1 ring-[#7A0808] shadow-2xs' : 'hover:opacity-90'
                   }`}
                   style={{
                     background: colors?.bg || '#EFF6FF',
@@ -327,17 +339,13 @@ export default function WeeklyScheduleGrid({
           {/* Schedule Type Filter Dropdown */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-gray-600">Filter Schedule:</span>
-            <select
-              className="form-input text-xs py-1.5 px-3 rounded-xl border-gray-200 bg-white font-medium cursor-pointer"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-            >
-              {dropdownOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[170px]">
+              <CustomSelect
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                options={dropdownOptions}
+              />
+            </div>
           </div>
         </div>
       )}

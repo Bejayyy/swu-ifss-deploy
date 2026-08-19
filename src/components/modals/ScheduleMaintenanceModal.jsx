@@ -3,6 +3,8 @@ import { X, Calendar, FileText, AlertCircle } from 'lucide-react';
 import { scheduleRoomMaintenance, updateMaintenanceSchedule } from '../../services/maintenanceService';
 import { useAuth } from '../../context/AuthContext';
 import LoadingModal from './LoadingModal';
+import DatePicker from '../ui/DatePicker';
+import TimePicker from '../ui/TimePicker';
 
 export default function ScheduleMaintenanceModal({ 
   isOpen, 
@@ -154,10 +156,10 @@ export default function ScheduleMaintenanceModal({
           style={{ maxHeight: '90vh' }}
         >
           {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#800000]/5 to-transparent">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#7A0808]/5 to-transparent">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-[#800000]/10">
-                <Calendar size={20} className="text-[#800000]" />
+              <div className="p-2 rounded-xl bg-[#7A0808]/10">
+                <Calendar size={20} className="text-[#7A0808]" />
               </div>
               <div>
                 <h2 className="font-bold text-lg text-[#2B3235]">
@@ -199,7 +201,7 @@ export default function ScheduleMaintenanceModal({
                   disabled={isLoading}
                   className={`p-4 rounded-xl border-2 transition-all text-left ${
                     durationType === 'hours'
-                      ? 'border-[#800000] bg-[#800000]/5'
+                      ? 'border-[#7A0808] bg-[#7A0808]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
@@ -212,7 +214,7 @@ export default function ScheduleMaintenanceModal({
                   disabled={isLoading}
                   className={`p-4 rounded-xl border-2 transition-all text-left ${
                     durationType === 'days'
-                      ? 'border-[#800000] bg-[#800000]/5'
+                      ? 'border-[#7A0808] bg-[#7A0808]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
@@ -229,28 +231,13 @@ export default function ScheduleMaintenanceModal({
                   <label className="block text-xs font-bold text-gray-700 mb-2">
                     Maintenance Date <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    min={today}
-                    required
-                    disabled={isLoading}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 disabled:opacity-50"
-                  />
+                  <DatePicker value={startDate} onChange={setStartDate} required readOnly={isLoading} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2">
                     Start Time <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 disabled:opacity-50"
-                  />
+                  <TimePicker value={startTime} onChange={setStartTime} required disabled={isLoading} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2">
@@ -261,7 +248,7 @@ export default function ScheduleMaintenanceModal({
                     onChange={(e) => setDurationHours(e.target.value)}
                     required
                     disabled={isLoading}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 disabled:opacity-50"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 disabled:opacity-50"
                   >
                     <option value="1">1 hour</option>
                     <option value="2">2 hours</option>
@@ -290,29 +277,13 @@ export default function ScheduleMaintenanceModal({
                     <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">
                       Start Date
                     </label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      min={today}
-                      required
-                      disabled={isLoading}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 disabled:opacity-50"
-                    />
+                    <DatePicker value={startDate} onChange={setStartDate} required readOnly={isLoading} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">
                       End Date
                     </label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      min={startDate || today}
-                      required
-                      disabled={isLoading}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 disabled:opacity-50"
-                    />
+                    <DatePicker value={endDate} onChange={setEndDate} required readOnly={isLoading} />
                   </div>
                 </div>
                 {startDate && endDate && startDate !== endDate && (
@@ -335,7 +306,7 @@ export default function ScheduleMaintenanceModal({
                 required
                 disabled={isLoading}
                 rows={4}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 resize-none disabled:opacity-50"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 resize-none disabled:opacity-50"
               />
               <p className="text-[10px] text-gray-400 mt-1">
                 {reason.length}/500 characters
@@ -374,7 +345,7 @@ export default function ScheduleMaintenanceModal({
               type="submit"
               onClick={handleSubmit}
               disabled={isLoading}
-              className="flex-1 py-2.5 px-4 rounded-xl font-bold text-sm bg-[#800000] text-white hover:bg-[#600000] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 px-4 rounded-xl font-bold text-sm bg-[#7A0808] text-white hover:bg-[#600000] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <Calendar size={16} />
               {existingSchedule ? 'Update Schedule' : 'Schedule Maintenance'}

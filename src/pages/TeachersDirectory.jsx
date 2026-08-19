@@ -23,6 +23,7 @@ import LoadingModal from '../components/modals/LoadingModal';
 
 import NotificationModal from '../components/modals/NotificationModal';
 import TeacherScheduleModal from '../components/modals/TeacherScheduleModal';
+import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
 import { subscribeStaffUsers } from '../services/systemUserService';
@@ -487,7 +488,7 @@ export default function TeachersDirectory() {
                             {teacherCourses.map((c) => (
                               <span
                                 key={c.id}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-[#7A0808] font-bold text-[10px] rounded-md border border-red-100"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-[#7A0808] font-bold text-[10px] rounded-full border border-red-200/80 leading-none shadow-2xs"
                                 title={`${c.code} - ${c.title}`}
                               >
                                 <span>{c.code}</span>
@@ -495,7 +496,7 @@ export default function TeachersDirectory() {
                                   <button
                                     type="button"
                                     onClick={() => handleUnassignCourse(c.id, `${c.code} - ${c.title}`)}
-                                    className="hover:text-red-700 hover:bg-red-200/60 p-0.5 rounded transition-colors"
+                                    className="hover:text-red-900 hover:bg-red-200/60 p-0.5 rounded-full transition-colors inline-flex items-center justify-center cursor-pointer ml-0.5"
                                     title="Unassign course"
                                   >
                                     <X size={10} />
@@ -528,7 +529,7 @@ export default function TeachersDirectory() {
                           <button
                             type="button"
                             onClick={() => handleViewSchedule(teacher)}
-                            className="px-2.5 py-1.5 bg-gray-100 hover:bg-[#7A0808] text-gray-700 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all shadow-2xs"
+                            className="btn-table-action btn-table-action-maroon"
                             title="View weekly schedule"
                           >
                             <Calendar size={13} /> Schedule
@@ -537,7 +538,7 @@ export default function TeachersDirectory() {
                             <button
                               type="button"
                               onClick={() => handleAssignCourse(teacher)}
-                              className="px-2 py-1.5 bg-red-50 hover:bg-red-100 text-[#7A0808] border border-red-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                              className="btn-table-action btn-table-action-outline"
                               title="Assign new course"
                             >
                               <Plus size={13} /> Assign
@@ -655,36 +656,24 @@ export default function TeachersDirectory() {
                   <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">
                     Year Level Filter
                   </label>
-                  <select
+                  <CustomSelect
                     value={assignModalYear}
                     onChange={(e) => setAssignModalYear(e.target.value)}
-                    className="w-full text-xs font-bold py-1.5 px-2 border border-gray-200 rounded-lg bg-white cursor-pointer"
-                  >
-                    <option value="All">All Year Levels</option>
-                    {YEAR_LEVELS.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
+                    options={['All Year Levels', ...YEAR_LEVELS]}
+                    placeholder="All Year Levels"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">
                     Semester Filter
                   </label>
-                  <select
+                  <CustomSelect
                     value={assignModalSemester}
                     onChange={(e) => setAssignModalSemester(e.target.value)}
-                    className="w-full text-xs font-bold py-1.5 px-2 border border-gray-200 rounded-lg bg-white cursor-pointer text-[#7A0808]"
-                  >
-                    <option value="All">All Semesters</option>
-                    {SEMESTERS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                    options={['All Semesters', ...SEMESTERS]}
+                    placeholder="All Semesters"
+                  />
                 </div>
               </div>
 

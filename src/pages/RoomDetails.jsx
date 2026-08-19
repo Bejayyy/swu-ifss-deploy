@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getInitialWeekStart, getSemesterForDate, getMondayOfWeek, getSemesterWeekNumber, isScheduleActiveOnWeek } from '../utils/academicCalendarUtils';
 import { addDays } from '../constants/scheduleGrid';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle, ChevronDown } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
@@ -17,6 +17,7 @@ import ScheduleMaintenanceModal from '../components/modals/ScheduleMaintenanceMo
 import ReportMaintenanceModal from '../components/modals/ReportMaintenanceModal';
 import { useModal } from '../hooks/useModal';
 import ProgressStatCards from '../components/ProgressStatCards';
+import DatePicker, { CalendarCard } from '../components/ui/DatePicker';
 
 const sampleSchedules = [];
 
@@ -40,6 +41,7 @@ export default function RoomDetails() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showScheduleMaintenance, setShowScheduleMaintenance] = useState(false);
   const [showReportMaintenance, setShowReportMaintenance] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
 
   const handleMaintenanceScheduled = () => {
     showNotification({
@@ -561,38 +563,12 @@ export default function RoomDetails() {
             <span className="text-xs font-bold">Back</span>
           </div>
         </button>
-        <div className="flex items-center gap-2 flex-wrap">
-          {buildingId && floorId && displayRoom?.docId && canEditRoom({ ...displayRoom, buildingId }) && (
-            <button
-              type="button"
-              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
-              onClick={() => setShowEditRoom(true)}
-            >
-              <Edit2 size={14} /> Edit Room Details
-            </button>
-          )}
-          {canManageRoomMaintenance() && (
-            <button
-              type="button"
-              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
-              onClick={() => setShowScheduleMaintenance(true)}
-            >
-              <Wrench size={14} /> Schedule Maintenance
-            </button>
-          )}
-          {!isGsd && (
-            <button
-              type="button"
-              className="px-3.5 py-2 rounded-xl font-bold text-xs border-2 border-orange-500 text-orange-600 hover:bg-orange-50 transition-all flex items-center gap-2 whitespace-nowrap"
-              onClick={() => setShowReportMaintenance(true)}
-            >
-              <AlertTriangle size={14} /> Report Issue
-            </button>
-          )}
+        <div className="flex items-center gap-2.5 flex-wrap relative">
+          {/* Primary Action 1: Reserve Room */}
           {canSubmitReservation() && (
             <button
               type="button"
-              className="btn-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
+              className="btn-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-4 rounded-xl shadow-2xs cursor-pointer"
               onClick={() => openReservation({
                 building: buildingName,
                 buildingId,
@@ -606,22 +582,83 @@ export default function RoomDetails() {
               <CalendarIcon size={14} /> Reserve Room
             </button>
           )}
+
+          {/* Primary Action 2: Add Schedule */}
           {(isRegistrar || canSubmitCourseSchedule()) && (
             <button
               type="button"
-              className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
+              className="btn-outline-maroon"
               onClick={() => navigate('/course-scheduling')}
             >
-              <Plus size={14} /> Add Schedule
+              <Plus size={15} /> Add Schedule
             </button>
           )}
-          <button
-            type="button"
-            className="btn-outline-maroon flex items-center gap-2 text-xs font-bold whitespace-nowrap py-2 px-3.5"
-            onClick={() => handlePrintSchedule()}
-          >
-            <Printer size={14} /> Print Schedule
-          </button>
+
+          {/* More Actions Dropdown Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowMoreActions((prev) => !prev)}
+              className="btn-soft-maroon"
+            >
+              <span>More Actions</span>
+              <ChevronDown size={15} className={`text-[#7A0808] transition-transform duration-200 ${showMoreActions ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showMoreActions && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setShowMoreActions(false)} />
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl border border-gray-200 shadow-xl p-1.5 z-30 animate-fadeIn space-y-1">
+                  {buildingId && floorId && displayRoom?.docId && canEditRoom({ ...displayRoom, buildingId }) && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100/80 hover:text-[#7A0808] flex items-center gap-2.5 transition-all cursor-pointer group"
+                      onClick={() => {
+                        setShowMoreActions(false);
+                        setShowEditRoom(true);
+                      }}
+                    >
+                      <Edit2 size={15} className="text-gray-500 group-hover:text-[#7A0808]" /> Edit Room Details
+                    </button>
+                  )}
+                  {canManageRoomMaintenance() && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100/80 hover:text-[#7A0808] flex items-center gap-2.5 transition-all cursor-pointer group"
+                      onClick={() => {
+                        setShowMoreActions(false);
+                        setShowScheduleMaintenance(true);
+                      }}
+                    >
+                      <Wrench size={15} className="text-gray-500 group-hover:text-[#7A0808]" /> Schedule Maintenance
+                    </button>
+                  )}
+                  {!isGsd && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold text-amber-800 hover:bg-amber-50 flex items-center gap-2.5 transition-all cursor-pointer group"
+                      onClick={() => {
+                        setShowMoreActions(false);
+                        setShowReportMaintenance(true);
+                      }}
+                    >
+                      <AlertTriangle size={15} className="text-amber-600 group-hover:text-amber-700" /> Report Issue
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100/80 hover:text-[#7A0808] flex items-center gap-2.5 transition-all cursor-pointer group"
+                    onClick={() => {
+                      setShowMoreActions(false);
+                      handlePrintSchedule();
+                    }}
+                  >
+                    <Printer size={15} className="text-gray-500 group-hover:text-[#7A0808]" /> Print Schedule
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -738,7 +775,7 @@ export default function RoomDetails() {
               type="button"
               onClick={() => setScheduleTab('regular')}
               className="px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all"
-              style={scheduleTab === 'regular' ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+              style={scheduleTab === 'regular' ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
             >
               <CalendarIcon size={12} /> Regular Schedule
             </button>
@@ -746,7 +783,7 @@ export default function RoomDetails() {
               type="button"
               onClick={() => setScheduleTab('exam')}
               className="px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all"
-              style={scheduleTab === 'exam' ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+              style={scheduleTab === 'exam' ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
             >
               <CalendarIcon size={12} /> Exam Calendar
             </button>
@@ -767,7 +804,7 @@ export default function RoomDetails() {
                 type="button"
                 onClick={() => setSemesterTab(s)}
                 className="px-4 py-1.5 text-xs font-bold transition-all"
-                style={semesterTab === s ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
+                style={semesterTab === s ? { background: '#7A0808', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
               >
                 Semester {s}
               </button>
@@ -794,26 +831,21 @@ export default function RoomDetails() {
               Select Week
             </button>
             
-            {showDatePicker && (
+                        {showDatePicker && (
               <>
                 <div 
                   className="fixed inset-0 z-10" 
                   onClick={() => setShowDatePicker(false)}
                 />
-                <div className="absolute right-0 mt-2 p-4 bg-white rounded-xl shadow-lg border border-gray-100 z-20" style={{ minWidth: '250px' }}>
-                  <p className="text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    Select any date to view its week
-                  </p>
-                  <input
-                    type="date"
-                    className="form-input text-sm w-full"
-                    defaultValue={formatDateForInput(weekStartDate)}
-                    onChange={handleDateSelect}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <p className="text-[10px] text-gray-400 mt-2">
-                    The calendar will show the week containing this date
-                  </p>
+                <div className="absolute right-0 mt-2 z-20">
+                  <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-2">
+                    <p className="text-[10px] font-semibold text-gray-500 px-2 pb-2">Select any date to jump to its week</p>
+                    <CalendarCard
+                      value={formatDateForInput(weekStartDate)}
+                      onChange={handleDateSelect}
+                      onClose={() => setShowDatePicker(false)}
+                    />
+                  </div>
                 </div>
               </>
             )}

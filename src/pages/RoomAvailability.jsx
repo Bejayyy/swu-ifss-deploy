@@ -43,7 +43,7 @@ function TimelineBar({ segments }) {
           <div
             key={i}
             style={{ width: `${p.w}%` }}
-            className={p.type === 'occ' ? 'bg-[#800000]' : 'bg-gray-200'}
+            className={p.type === 'occ' ? 'bg-[#7A0808]' : 'bg-gray-200'}
           />
         ))}
       </div>
@@ -53,7 +53,7 @@ function TimelineBar({ segments }) {
       </div>
       <div className="flex gap-4 mt-2 text-[10px] font-bold" style={{ color: '#2B3235' }}>
         <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-[#800000]" /> OCCUPIED
+          <span className="w-2 h-2 rounded-full bg-[#7A0808]" /> OCCUPIED
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-gray-300" /> VACANT
@@ -205,7 +205,7 @@ export default function RoomAvailability() {
                 </div>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-9 h-9 flex items-center justify-center" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                    <Users size={18} style={{ color: '#800000' }} />
+                    <Users size={18} style={{ color: '#7A0808' }} />
                   </div>
                   <span className="text-sm font-bold" style={{ color: '#2B3235' }}>{room.capacity} Seats</span>
                 </div>

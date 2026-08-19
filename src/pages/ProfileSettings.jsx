@@ -209,25 +209,25 @@ export default function ProfileSettings() {
 
       <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6 items-start">
         {/* Left Column: Profile Summary & Navigation Menu */}
-        <div className="space-y-4 sticky top-20">
+        <div className="space-y-4">
           {/* Top Profile Card Summary */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs space-y-3">
+          <div className="bg-white rounded-3xl border border-gray-200/80 p-5 shadow-2xs space-y-3">
             <div className="flex items-center gap-3">
               {photoURL ? (
                 <img
                   src={photoURL}
                   alt="Profile Avatar"
-                  className="w-14 h-14 rounded-2xl object-cover border-2 border-[#800000] shadow-xs flex-shrink-0"
+                  className="w-14 h-14 rounded-full object-cover shadow-xs flex-shrink-0"
                 />
               ) : (
-                <div className="w-14 h-14 rounded-2xl bg-[#800000] text-white text-xl font-black flex items-center justify-center shadow-xs flex-shrink-0">
+                <div className="w-14 h-14 rounded-full bg-[#7A0808] text-white text-xl font-black flex items-center justify-center shadow-xs flex-shrink-0">
                   {profile?.initials || 'U'}
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 <h3 className="font-extrabold text-sm text-gray-900 truncate">{profileForm.name || 'User'}</h3>
                 <p className="text-[11px] text-gray-500 truncate">{profileForm.email}</p>
-                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-50 text-[#800000] border border-red-100">
+                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-50 text-[#7A0808] border border-red-100">
                   {profileForm.role}
                 </span>
               </div>
@@ -235,8 +235,8 @@ export default function ProfileSettings() {
           </div>
 
           {/* Navigation Menu (Matching Reference Layout) */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
-            <p className="px-3 pt-2 pb-2 text-[10px] font-black uppercase tracking-wider text-gray-400">
+          <div className="bg-white rounded-3xl border border-gray-200/80 p-4 shadow-2xs space-y-1">
+            <p className="px-3 pt-1 pb-2 text-[10px] font-black uppercase tracking-wider text-gray-400">
               Account & Settings
             </p>
 
@@ -245,7 +245,7 @@ export default function ProfileSettings() {
               onClick={() => setActiveTab('profile')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -261,13 +261,13 @@ export default function ProfileSettings() {
               onClick={() => setActiveTab('security')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'security'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
               <div className="flex items-center gap-2.5">
                 <Lock size={16} />
-                <span>Account Security</span>
+                <span>Security & Password</span>
               </div>
               <ChevronRight size={14} className={activeTab === 'security' ? 'opacity-100' : 'opacity-40'} />
             </button>
@@ -277,13 +277,13 @@ export default function ProfileSettings() {
               onClick={() => setActiveTab('preferences')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'preferences'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
               <div className="flex items-center gap-2.5">
                 <Bell size={16} />
-                <span>Notification Preferences</span>
+                <span>Notifications & Alerts</span>
               </div>
               <ChevronRight size={14} className={activeTab === 'preferences' ? 'opacity-100' : 'opacity-40'} />
             </button>
@@ -297,7 +297,7 @@ export default function ProfileSettings() {
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
               <div className="border-b border-gray-100 pb-4">
                 <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
-                  <User size={22} className="text-[#800000]" /> Profile Information
+                  <User size={22} className="text-[#7A0808]" /> Profile Information
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
                   Update your display name, profile picture avatar, contact phone, department, and account details.
@@ -306,64 +306,63 @@ export default function ProfileSettings() {
 
               <form onSubmit={handleUpdateProfile} className="space-y-6">
                 {/* Profile Photo Uploader Section */}
-                <div className="flex flex-col sm:flex-row items-center gap-6 p-5 bg-gradient-to-r from-red-50/60 to-amber-50/30 border border-red-100 rounded-2xl">
-                  <div className="relative group flex-shrink-0">
+                <div className="flex flex-col sm:flex-row items-center gap-5 p-5 bg-gradient-to-r from-red-50/60 to-amber-50/30 border border-red-100 rounded-2xl">
+                  {/* Avatar with camera overlay */}
+                  <div className="relative flex-shrink-0">
                     {photoURL ? (
                       <img
                         src={photoURL}
                         alt="Profile Avatar"
-                        className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-md ring-2 ring-red-200"
+                        className="w-20 h-20 rounded-full object-cover shadow-md"
                       />
                     ) : (
-                      <div className="w-20 h-20 rounded-2xl bg-[#800000] text-white text-2xl font-black flex items-center justify-center border-4 border-white shadow-md">
+                      <div className="w-20 h-20 rounded-full bg-[#7A0808] text-white text-2xl font-black flex items-center justify-center shadow-md">
                         {profile?.initials || 'U'}
                       </div>
                     )}
                     <label
                       htmlFor="profile-photo-input"
-                      className="absolute -bottom-1 -right-1 p-2 bg-[#800000] hover:bg-[#600000] text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-105"
+                      className="absolute -bottom-1 -right-1 p-2 bg-[#7A0808] hover:bg-[#600000] text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-105"
                       title="Upload Profile Picture"
                     >
                       <Camera size={14} />
-                      <input
-                        id="profile-photo-input"
-                        type="file"
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
-                      />
+                      <input id="profile-photo-input" type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
                     </label>
                   </div>
 
-                  <div className="space-y-1.5 text-center sm:text-left">
-                    <h3 className="font-extrabold text-sm text-gray-900">Profile Picture</h3>
-                    <p className="text-xs text-gray-500">
-                      Upload a clean, professional photo (PNG, JPG, or WEBP under 3MB).
-                    </p>
-                    <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+                  {/* Info + Action Row */}
+                  <div className="flex-1 min-w-0 text-center sm:text-left space-y-2">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-gray-900">Profile Picture</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">PNG, JPG, or WEBP · Max 3MB · Professional photo recommended</p>
+                    </div>
+
+                    {/* Compact segmented action bar */}
+                    <div className="inline-flex items-stretch rounded-xl border border-red-200 bg-white shadow-2xs overflow-hidden text-xs font-bold">
                       <label
                         htmlFor="profile-photo-btn"
-                        className="px-3.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                        className="flex items-center gap-1.5 px-3.5 py-2 text-[#7A0808] hover:bg-red-50 cursor-pointer transition-colors border-r border-red-200"
+                        title="Upload a new profile photo"
                       >
-                        <Upload size={13} className="text-[#800000]" />
-                        Upload New Photo
-                        <input
-                          id="profile-photo-btn"
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          className="hidden"
-                        />
+                        <Upload size={13} />
+                        Upload Photo
+                        <input id="profile-photo-btn" type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
                       </label>
-                      {photoURL && (
+                      {photoURL ? (
                         <button
                           type="button"
                           onClick={handleRemovePhoto}
-                          className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
+                          className="flex items-center gap-1.5 px-3.5 py-2 text-red-600 hover:bg-red-50 transition-colors"
+                          title="Remove current photo"
                         >
                           <Trash2 size={13} />
                           Remove
                         </button>
+                      ) : (
+                        <span className="flex items-center gap-1.5 px-3.5 py-2 text-gray-300 cursor-not-allowed select-none">
+                          <Trash2 size={13} />
+                          Remove
+                        </span>
                       )}
                     </div>
                   </div>
@@ -432,7 +431,7 @@ export default function ProfileSettings() {
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
               <div className="border-b border-gray-100 pb-4">
                 <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
-                  <Lock size={22} className="text-[#800000]" /> Account Security & Password
+                  <Lock size={22} className="text-[#7A0808]" /> Account Security & Password
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
                   Change your password and manage active account security credentials.
@@ -441,7 +440,7 @@ export default function ProfileSettings() {
 
               <div className="p-5 border border-slate-200/90 bg-slate-50/50 rounded-2xl space-y-4">
                 <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
-                  <KeyRound size={16} className="text-[#800000]" /> Change Password
+                  <KeyRound size={16} className="text-[#7A0808]" /> Change Password
                 </h3>
 
                 <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-md">
@@ -481,7 +480,7 @@ export default function ProfileSettings() {
 
               <div className="p-5 border border-slate-200/90 bg-white rounded-2xl space-y-3">
                 <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
-                  <Laptop size={16} className="text-[#800000]" /> Active Login Session
+                  <Laptop size={16} className="text-[#7A0808]" /> Active Login Session
                 </h3>
 
                 <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
@@ -505,7 +504,7 @@ export default function ProfileSettings() {
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-2xs space-y-6">
               <div className="border-b border-gray-100 pb-4">
                 <h2 className="text-xl font-black text-[#2B3235] flex items-center gap-2.5">
-                  <Bell size={22} className="text-[#800000]" /> Notification Preferences
+                  <Bell size={22} className="text-[#7A0808]" /> Notification Preferences
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
                   Choose how and when you receive system alerts and reservation updates.
@@ -522,7 +521,7 @@ export default function ProfileSettings() {
                     type="checkbox"
                     checked={preferences.emailAlerts}
                     onChange={(e) => setPreferences({ ...preferences, emailAlerts: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    className="w-4 h-4 accent-[#7A0808] cursor-pointer"
                   />
                 </div>
 
@@ -535,7 +534,7 @@ export default function ProfileSettings() {
                     type="checkbox"
                     checked={preferences.inAppNotifs}
                     onChange={(e) => setPreferences({ ...preferences, inAppNotifs: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    className="w-4 h-4 accent-[#7A0808] cursor-pointer"
                   />
                 </div>
 
@@ -548,7 +547,7 @@ export default function ProfileSettings() {
                     type="checkbox"
                     checked={preferences.approvalUpdates}
                     onChange={(e) => setPreferences({ ...preferences, approvalUpdates: e.target.checked })}
-                    className="w-4 h-4 accent-[#800000] cursor-pointer"
+                    className="w-4 h-4 accent-[#7A0808] cursor-pointer"
                   />
                 </div>
               </div>

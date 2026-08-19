@@ -34,13 +34,18 @@ export function subscribeApprovalWorkflows(onData, onError) {
 }
 
 export async function fetchWorkflowLevels(approvalType) {
-  const q = query(
-    workflowCollection(),
-    where('approvalType', '==', approvalType),
-    orderBy('levelNumber'),
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map(mapWorkflowDoc);
+  try {
+    const q = query(
+      workflowCollection(),
+      where('approvalType', '==', approvalType),
+      orderBy('levelNumber'),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(mapWorkflowDoc);
+  } catch (err) {
+    console.warn(`Permission notice reading approval_workflows (${approvalType}):`, err?.message || err);
+    return [];
+  }
 }
 
 export async function getWorkflowSnapshot(approvalType) {

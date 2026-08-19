@@ -46,7 +46,7 @@ export default function ScheduleHistory() {
               <div
                 key={person.id}
                 className="bg-white shadow-md border border-gray-100 overflow-hidden flex flex-col"
-                style={{ borderRadius: 10, borderLeftWidth: 5, borderLeftColor: person.accent || '#800000' }}
+                style={{ borderRadius: 10, borderLeftWidth: 5, borderLeftColor: person.accent || '#7A0808' }}
               >
                 <button
                   type="button"
@@ -56,7 +56,7 @@ export default function ScheduleHistory() {
                 >
                   <div
                     className="w-12 h-12 flex items-center justify-center font-black text-base text-white flex-shrink-0"
-                    style={{ background: person.accent || '#800000', borderRadius: 10 }}
+                    style={{ background: person.accent || '#7A0808', borderRadius: 10 }}
                   >
                     {person.avatarInitials}
                   </div>
@@ -65,7 +65,7 @@ export default function ScheduleHistory() {
                     <p className="text-xs font-semibold mt-1" style={{ opacity: 0.7 }}>
                       {person.role}
                     </p>
-                    <p className="text-[11px] font-bold mt-2" style={{ color: '#800000' }}>
+                    <p className="text-[11px] font-bold mt-2" style={{ color: '#7A0808' }}>
                       {person.buildingsTagged} buildings · {person.schedulesTagged} tagged schedules
                     </p>
                   </div>
@@ -93,7 +93,7 @@ export default function ScheduleHistory() {
                             style={{ color: '#2B3235' }}
                           >
                             <div className="w-10 h-10 flex items-center justify-center flex-shrink-0" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                              <Building2 size={20} style={{ color: '#800000' }} />
+                              <Building2 size={20} style={{ color: '#7A0808' }} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-sm">{b.name}</p>

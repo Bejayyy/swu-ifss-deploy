@@ -355,16 +355,16 @@ export default function ResetDeanSchedulesModal({
               <button
                 onClick={handleReset}
                 disabled={loading}
-                className="px-6 py-2.5 rounded-lg text-sm font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg"
+                className="btn-delete px-5 py-2.5 font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#7A0808] border-t-transparent" />
                     Deleting...
                   </>
                 ) : (
                   <>
-                    <Trash2 size={16} />
+                    <Trash2 size={15} />
                     Yes, Delete Permanently
                   </>
                 )}

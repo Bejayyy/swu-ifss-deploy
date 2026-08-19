@@ -23,7 +23,7 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
       style={{
         left: isDesktop ? NAV_WIDTH_PX : 0,
         height: TOP_NAV_HEIGHT_PX,
-        background: '#800000',
+        background: '#7A0808',
         boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
       }}
     >
@@ -68,7 +68,7 @@ export default function DeveloperTopNav({ title, subtitle, isDesktop = true, onT
             className="absolute right-0 top-14 w-52 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden rounded-xl"
           >
             <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-              <User size={14} style={{ color: '#800000' }} />
+              <User size={14} style={{ color: '#7A0808' }} />
               <div className="min-w-0">
                 <p className="text-xs font-bold truncate" style={{ color: '#2B3235' }}>{profile?.displayName}</p>
                 <p className="text-[10px] truncate" style={{ color: '#2B3235', opacity: 0.55 }}>{profile?.email}</p>

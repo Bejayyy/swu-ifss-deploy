@@ -22,10 +22,10 @@ export default function UserActionsModal({ user, onClose, onEdit, onDelete }) {
         <div className="p-5 space-y-3">
           <p className="font-bold" style={{ color: '#2B3235' }}>{user.name}</p>
           <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235', opacity: 0.75 }}>
-            <Mail size={14} className="text-[#800000]" /> {user.email}
+            <Mail size={14} className="text-[#7A0808]" /> {user.email}
           </p>
           <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235', opacity: 0.75 }}>
-            <Shield size={14} className="text-[#800000]" /> {user.role} · {user.department || 'No department'}
+            <Shield size={14} className="text-[#7A0808]" /> {user.role} · {user.department || 'No department'}
           </p>
 
           <button

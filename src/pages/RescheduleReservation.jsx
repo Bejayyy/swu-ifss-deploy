@@ -114,7 +114,7 @@ export default function RescheduleReservation() {
     return (
       <Layout title="Reschedule Reservation" subtitle="Smart Room Recommender">
         <div className="py-20 text-center text-gray-500">
-          <RefreshCw className="animate-spin mx-auto mb-3 text-[#800000]" size={24} />
+          <RefreshCw className="animate-spin mx-auto mb-3 text-[#7A0808]" size={24} />
           Loading reservation details & generating smart recommendations…
         </div>
       </Layout>
@@ -214,7 +214,7 @@ export default function RescheduleReservation() {
 
           {loadingRecommendations ? (
             <div className="py-12 text-center text-gray-400 text-xs">
-              <RefreshCw className="animate-spin mx-auto mb-2 text-[#800000]" size={20} />
+              <RefreshCw className="animate-spin mx-auto mb-2 text-[#7A0808]" size={20} />
               Scanning room availability and schedule conflicts…
             </div>
           ) : recommendations.length === 0 ? (
@@ -234,7 +234,7 @@ export default function RescheduleReservation() {
                     onClick={() => setSelectedRec(rec)}
                     className={`border rounded-2xl p-5 cursor-pointer transition-all flex flex-col justify-between space-y-4 ${
                       isSelected
-                        ? 'border-[#800000] bg-red-50/30 ring-2 ring-[#800000]/20 shadow-xs'
+                        ? 'border-[#7A0808] bg-red-50/30 ring-2 ring-[#7A0808]/20 shadow-xs'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
                     }`}
                   >
@@ -267,7 +267,7 @@ export default function RescheduleReservation() {
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Calendar size={14} className="text-gray-400" />
-                          <span className="font-bold text-[#800000]">{rec.availableDate}</span>
+                          <span className="font-bold text-[#7A0808]">{rec.availableDate}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Clock size={14} className="text-gray-400" />

@@ -45,20 +45,15 @@ export default function ConfirmModal({
 
         <div className="p-8 pt-10">
           <div className="flex items-start gap-4 mb-6">
-            <div
-              className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
-                variant === 'danger' ? 'bg-red-100' : 'bg-amber-100'
-              }`}
-            >
+            <div className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center bg-[#FFF0F0] border border-[#FFCACA]">
               <AlertTriangle
-                size={24}
-                className={variant === 'danger' ? 'text-red-600' : 'text-amber-600'}
+                size={22}
+                className="text-[#7A0808]"
               />
             </div>
             <div className="flex-1">
               <h2
-                className="font-black text-lg mb-2"
-                style={{ color: variant === 'danger' ? '#DC2626' : '#7A0808' }}
+                className="font-black text-lg mb-2 text-[#7A0808]"
               >
                 {title}
               </h2>
@@ -71,7 +66,7 @@ export default function ConfirmModal({
           <div className="flex gap-3">
             <button
               type="button"
-              className="btn-outline-maroon flex-1 justify-center py-2.5"
+              className="btn-outline-maroon flex-1 justify-center py-2.5 rounded-xl"
               onClick={onCancel}
               disabled={isProcessing}
             >
@@ -79,10 +74,10 @@ export default function ConfirmModal({
             </button>
             <button
               type="button"
-              className={`flex-1 justify-center py-2.5 font-bold text-sm text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`flex-1 justify-center py-2.5 font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 variant === 'danger'
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-[#7A0808] hover:bg-[#5A0606]'
+                  ? 'btn-delete rounded-xl justify-center text-sm py-2.5'
+                  : 'bg-[#7A0808] text-white hover:bg-[#5A0606] rounded-xl'
               }`}
               onClick={handleConfirm}
               disabled={isProcessing}

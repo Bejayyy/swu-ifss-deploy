@@ -73,7 +73,7 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
           <X size={20} />
         </button>
         <form onSubmit={submit} className="p-8 pt-10">
-          <h2 className="font-black text-lg mb-1" style={{ color: '#800000' }}>Create Registrar account</h2>
+          <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Create Registrar account</h2>
           <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
             Only @{INSTITUTIONAL_EMAIL_DOMAIN} emails. Account must be created here before login is allowed.
           </p>
@@ -169,7 +169,7 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
           </div>
           <div className="flex gap-2 mt-8">
             <button type="button" className="btn-outline-maroon flex-1 justify-center py-2.5" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="submit" className="flex-1 justify-center py-2.5 rounded-[10px] text-white font-semibold text-sm disabled:opacity-60" style={{ background: '#800000' }} disabled={saving}>
+            <button type="submit" className="flex-1 justify-center py-2.5 rounded-[10px] text-white font-semibold text-sm disabled:opacity-60" style={{ background: '#7A0808' }} disabled={saving}>
               {saving ? 'Creating…' : 'Create account'}
             </button>
           </div>

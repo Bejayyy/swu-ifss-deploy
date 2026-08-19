@@ -13,6 +13,7 @@ import EditFloorModal from '../components/modals/EditFloorModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import BulkEditRoomsModal from '../components/modals/BulkEditRoomsModal';
 import PageSkeleton from '../components/SkeletonLoader';
+import CustomSelect from '../components/ui/CustomSelect';
 
 const getRoomTypesSummary = (rooms = []) => {
   if (!rooms || !rooms.length) return '—';
@@ -292,7 +293,7 @@ export default function BuildingManagement() {
                           >
                             <Layers size={12} className={`transition-colors ${isFloorSelected ? 'text-[#7A0808]' : 'text-gray-400 group-hover:text-[#7A0808]'}`} />
                             <span className="flex-1 truncate">{floorObj.label || `Floor ${floorObj.floor}`}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isFloorSelected ? 'bg-[#7A0808] text-white' : 'text-gray-400 bg-gray-100'}`}>
+                            <span className="text-[10px] font-black px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
                               {floorObj.rooms?.length || 0}
                             </span>
                           </div>
@@ -309,7 +310,7 @@ export default function BuildingManagement() {
               <div className="mt-5 pt-4 border-t border-gray-100 space-y-2">
                 <div className="px-1 flex items-center justify-between">
                   <span className="text-[11px] font-bold tracking-widest uppercase text-[#7A0808]">ASSIGNED ROOMS</span>
-                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-[#7A0808]">
+                  <span className="text-[10px] font-black px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
                     {myAssignedRooms.length}
                   </span>
                 </div>
@@ -585,22 +586,24 @@ export default function BuildingManagement() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
                           <span>Show</span>
-                          <select
-                            value={roomItemsPerPage}
-                            onChange={(e) => {
-                              setRoomItemsPerPage(Number(e.target.value));
-                              setRoomCurrentPage(1);
-                            }}
-                            className="form-input text-xs py-1 px-2.5 rounded-xl border-gray-200 bg-white font-bold cursor-pointer"
-                          >
-                            <option value={5}>5</option>
-                            <option value={10}>10</option>
-                            <option value={20}>20</option>
-                            <option value={50}>50</option>
-                          </select>
-                          <span>per page</span>
+                          <div className="w-[125px]">
+                            <CustomSelect
+                              value={`${roomItemsPerPage} per page`}
+                              onChange={(e) => {
+                                const val = Number(String(e.target.value).split(' ')[0]);
+                                if (val) setRoomItemsPerPage(val);
+                                setRoomCurrentPage(1);
+                              }}
+                              options={[
+                                { value: '5 per page', label: '5 per page' },
+                                { value: '10 per page', label: '10 per page' },
+                                { value: '20 per page', label: '20 per page' },
+                                { value: '50 per page', label: '50 per page' },
+                              ]}
+                            />
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-1">

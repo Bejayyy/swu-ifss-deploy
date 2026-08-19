@@ -10,6 +10,7 @@ import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import { TableSkeleton } from '../components/SkeletonLoader';
+import CustomSelect from '../components/ui/CustomSelect';
 
 const MAROON = '#7A0808';
 const TEXT = '#2B3235';
@@ -292,7 +293,7 @@ export default function RoomFinder() {
                   <Filter size={14} style={{ color: MAROON }} />
                   <span className="text-sm font-black" style={{ color: TEXT }}>Filters</span>
                   {activeFilterCount > 0 && (
-                    <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black" style={{ background: MAROON, color: '#fff' }}>
+                    <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] text-[10px] font-black shadow-2xs" style={{ background: '#F59E0B', color: '#FFFFFF', borderRadius: 6 }}>
                       {activeFilterCount}
                     </span>
                   )}
@@ -389,16 +390,14 @@ export default function RoomFinder() {
               {/* Floor Filter */}
               <div className="mb-4">
                 <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: TEXT, opacity: 0.5 }}>Floor</label>
-                <select
-                  className="form-input text-xs"
+                <CustomSelect
                   value={selectedFloor}
                   onChange={(e) => { setSelectedFloor(e.target.value); setPage(1); }}
-                >
-                  <option value="all">All Floors</option>
-                  {availableFloors.map(({ floor, label }) => (
-                    <option key={floor} value={floor}>{label}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: 'all', label: 'All Floors' },
+                    ...availableFloors.map(({ floor, label }) => ({ value: floor, label })),
+                  ]}
+                />
               </div>
 
               {/* Equipment / Inclusions */}
@@ -430,13 +429,12 @@ export default function RoomFinder() {
               <button
                 type="button"
                 onClick={() => setShowFilters((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-bold transition-all hover:border-[#7A0808]"
-                style={{ color: showFilters ? MAROON : TEXT, borderColor: showFilters ? MAROON : '#e2e5e8', background: showFilters ? '#FFF0F0' : '#fff' }}
+                className="btn-maroon text-xs px-3.5 py-2 flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer"
               >
                 <SlidersHorizontal size={14} />
                 {showFilters ? 'Hide Filters' : 'Show Filters'}
                 {!showFilters && activeFilterCount > 0 && (
-                  <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[10px] font-black" style={{ background: MAROON, color: '#fff' }}>
+                  <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[10px] font-black shadow-2xs bg-[#F59E0B] text-white">
                     {activeFilterCount}
                   </span>
                 )}
@@ -469,9 +467,15 @@ export default function RoomFinder() {
           ) : (
             <div className="bg-white border border-gray-100 shadow-sm overflow-hidden" style={{ borderRadius: R }}>
               {/* Table header */}
-              <div className="grid grid-cols-[minmax(100px,1.2fr)_minmax(100px,1fr)_60px_minmax(80px,1fr)_70px_minmax(120px,1.5fr)_50px] gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50/60 items-center">
-                {['Room', 'Building', 'Floor', 'Type', 'Capacity', 'Equipment', ''].map((h) => (
-                  <span key={h} className="text-[10px] font-bold uppercase tracking-wider text-center" style={{ color: TEXT, opacity: 0.45 }}>{h}</span>
+              <div className="grid grid-cols-[minmax(120px,1.2fr)_minmax(110px,1fr)_60px_minmax(90px,1fr)_70px_minmax(120px,1.5fr)_60px] gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50/60 items-center">
+                {['Room', 'Building', 'Floor', 'Type', 'Capacity', 'Equipment', ''].map((h, i) => (
+                  <span
+                    key={h}
+                    className={`text-[10px] font-bold uppercase tracking-wider ${i === 6 ? 'text-right' : 'text-left'}`}
+                    style={{ color: TEXT, opacity: 0.45 }}
+                  >
+                    {h}
+                  </span>
                 ))}
               </div>
 
@@ -483,24 +487,24 @@ export default function RoomFinder() {
                     return (
                       <div
                         key={`${room.buildingId}-${room.docId || room.id}-${idx}`}
-                        className="grid grid-cols-[minmax(100px,1.2fr)_minmax(100px,1fr)_60px_minmax(80px,1fr)_70px_minmax(120px,1.5fr)_50px] gap-4 px-5 py-3 border-b border-gray-50 hover:bg-gray-50/50 transition-colors items-center group"
+                        className="grid grid-cols-[minmax(120px,1.2fr)_minmax(110px,1fr)_60px_minmax(90px,1fr)_70px_minmax(120px,1.5fr)_60px] gap-4 px-5 py-3 border-b border-gray-50 hover:bg-gray-50/50 transition-colors items-center group"
                       >
                         {/* Room name */}
-                        <div className="flex items-center justify-center gap-2 min-w-0">
+                        <div className="flex items-center justify-start gap-2.5 min-w-0 text-left">
                           <DoorOpen size={14} className="text-gray-400 flex-shrink-0" />
                           <span className="text-xs font-bold truncate" style={{ color: TEXT }}>{room.name || room.id}</span>
                         </div>
 
                         {/* Building */}
-                        <span className="text-xs font-medium truncate text-center" style={{ color: TEXT, opacity: 0.7 }}>{room.buildingName}</span>
+                        <span className="text-xs font-medium truncate text-left" style={{ color: TEXT, opacity: 0.75 }}>{room.buildingName}</span>
 
                         {/* Floor */}
-                        <span className="text-xs font-semibold text-center" style={{ color: TEXT }}>F{room.floor}</span>
+                        <span className="text-xs font-semibold text-left" style={{ color: TEXT }}>F{room.floor}</span>
 
                         {/* Type */}
-                        <div className="flex justify-center">
+                        <div className="flex justify-start">
                           <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-full truncate inline-block"
+                            className="text-[10px] font-black px-2.5 py-0.5 rounded-full truncate inline-block"
                             style={{ background: typeColor.bg, color: typeColor.text }}
                           >
                             {room.type}
@@ -508,13 +512,13 @@ export default function RoomFinder() {
                         </div>
 
                         {/* Capacity */}
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-start gap-1">
                           <Users size={11} className="text-gray-400" />
                           <span className="text-xs font-bold" style={{ color: TEXT }}>{room.capacity || 0}</span>
                         </div>
 
                         {/* Equipment */}
-                        <div className="flex flex-wrap gap-1 min-w-0 justify-center">
+                        <div className="flex flex-wrap gap-1 min-w-0 justify-start">
                           {equipList.length === 0 ? (
                             <span className="text-[10px] text-gray-300 italic">None</span>
                           ) : equipList.length <= 2 ? (
@@ -534,7 +538,7 @@ export default function RoomFinder() {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
                             className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"

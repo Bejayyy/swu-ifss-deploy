@@ -38,6 +38,7 @@ import {
   declareNoClassDay,
   subscribeNoClassDays,
 } from '../services/noClassDayService';
+import DatePicker from '../components/ui/DatePicker';
 
 export default function SystemSettings() {
   const { profile } = useAuth();
@@ -680,7 +681,7 @@ export default function SystemSettings() {
                 <button
                   type="button"
                   onClick={() => setIsCreatingSy(true)}
-                  className="text-[11px] font-bold text-[#800000] hover:underline flex items-center gap-0.5"
+                  className="text-[11px] font-bold text-[#7A0808] hover:underline flex items-center gap-0.5"
                 >
                   <Plus size={13} /> Add
                 </button>
@@ -694,7 +695,7 @@ export default function SystemSettings() {
                   value={newSyLabel}
                   onChange={(e) => setNewSyLabel(e.target.value)}
                   placeholder="e.g. 2026-2027"
-                  className="input-field w-full text-xs font-bold"
+                  className="form-input w-full text-xs font-bold"
                   autoFocus
                 />
                 <div className="flex items-center justify-end gap-1.5">
@@ -708,7 +709,7 @@ export default function SystemSettings() {
                   <button
                     type="button"
                     onClick={handleCreateNewSy}
-                    className="px-3 py-1 bg-[#800000] text-white rounded-lg text-[11px] font-bold hover:bg-[#600000]"
+                    className="px-3 py-1 bg-[#7A0808] text-white rounded-lg text-[11px] font-bold hover:bg-[#600000]"
                   >
                     Create
                   </button>
@@ -719,7 +720,7 @@ export default function SystemSettings() {
                 <select
                   value={activeSchoolYearId || ''}
                   onChange={(e) => setActiveSchoolYearId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border-2 border-[#800000] rounded-xl text-xs font-extrabold text-[#800000] outline-none shadow-2xs appearance-none pr-9 cursor-pointer focus:ring-2 focus:ring-red-100"
+                  className="w-full px-3.5 py-2.5 bg-white border-2 border-[#7A0808] rounded-xl text-xs font-extrabold text-[#7A0808] outline-none shadow-2xs appearance-none pr-9 cursor-pointer focus:ring-2 focus:ring-red-100"
                 >
                   {schoolYears.map((sy) => (
                     <option key={sy.id} value={sy.id} className="font-bold text-gray-900">
@@ -727,7 +728,7 @@ export default function SystemSettings() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#800000] pointer-events-none" />
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7A0808] pointer-events-none" />
               </div>
             )}
           </div>
@@ -743,7 +744,7 @@ export default function SystemSettings() {
               onClick={() => setActiveTab('schoolYear')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'schoolYear'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -759,7 +760,7 @@ export default function SystemSettings() {
               onClick={() => setActiveTab('examPeriods')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'examPeriods'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -775,7 +776,7 @@ export default function SystemSettings() {
               onClick={() => setActiveTab('calendarPdf')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'calendarPdf'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -791,7 +792,7 @@ export default function SystemSettings() {
               onClick={() => setActiveTab('activities')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'activities'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -807,7 +808,7 @@ export default function SystemSettings() {
               onClick={() => setActiveTab('noClassDay')}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'noClassDay'
-                  ? 'bg-[#800000] text-white shadow-2xs'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -824,13 +825,13 @@ export default function SystemSettings() {
             <div className="bg-white rounded-2xl border border-gray-200/80 p-3 shadow-2xs space-y-1">
               <div className="px-3 pt-2 pb-2 flex items-center justify-between">
                 <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                  <Building2 size={13} className="text-[#800000]" /> College Filter
+                  <Building2 size={13} className="text-[#7A0808]" /> College Filter
                 </p>
                 {selectedCollegeFilter !== 'ALL' && (
                   <button
                     type="button"
                     onClick={() => { setSelectedCollegeFilter('ALL'); setCurrentPage(1); }}
-                    className="text-[10px] font-bold text-[#800000] hover:underline"
+                    className="text-[10px] font-bold text-[#7A0808] hover:underline"
                   >
                     Reset
                   </button>
@@ -847,13 +848,13 @@ export default function SystemSettings() {
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
                     selectedCollegeFilter === 'ALL'
-                      ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
+                      ? 'bg-red-50 text-[#7A0808] border border-red-200 font-extrabold'
                       : 'text-gray-700 hover:bg-gray-100 font-medium'
                   }`}
                 >
                   <span>All Colleges</span>
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                    selectedCollegeFilter === 'ALL' ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
+                    selectedCollegeFilter === 'ALL' ? 'bg-[#7A0808] text-white' : 'bg-gray-200 text-gray-700'
                   }`}>
                     {activities.length}
                   </span>
@@ -875,7 +876,7 @@ export default function SystemSettings() {
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
                         isSelected
-                          ? 'bg-red-50 text-[#800000] border border-red-200 font-extrabold'
+                          ? 'bg-red-50 text-[#7A0808] border border-red-200 font-extrabold'
                           : 'text-gray-700 hover:bg-gray-100 font-medium'
                       }`}
                       title={college.name}
@@ -885,7 +886,7 @@ export default function SystemSettings() {
                         <span className="text-[11px] text-gray-500 truncate">{college.name}</span>
                       </div>
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${
-                        isSelected ? 'bg-[#800000] text-white' : 'bg-gray-200 text-gray-700'
+                        isSelected ? 'bg-[#7A0808] text-white' : 'bg-gray-200 text-gray-700'
                       }`}>
                         {count}
                       </span>
@@ -905,7 +906,7 @@ export default function SystemSettings() {
               <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                    <Sliders size={18} className="text-[#800000]" />
+                    <Sliders size={18} className="text-[#7A0808]" />
                     School Year & Semester Configuration
                   </h3>
                   <p className="text-xs text-gray-500 mt-1">
@@ -920,28 +921,18 @@ export default function SystemSettings() {
                 <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
                   <h4 className="font-bold text-xs text-gray-900 flex items-center justify-between">
                     <span>Semester 1</span>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
                       Term 1
                     </span>
                   </h4>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 mb-1">Start Date</label>
-                      <input
-                        type="date"
-                        value={syForm.semester1Start}
-                        onChange={(e) => setSyForm({ ...syForm, semester1Start: e.target.value })}
-                        className="input-field w-full text-xs font-semibold"
-                      />
+                      <DatePicker value={syForm.semester1Start} onChange={(val) => setSyForm({ ...syForm, semester1Start: val })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 mb-1">End Date</label>
-                      <input
-                        type="date"
-                        value={syForm.semester1End}
-                        onChange={(e) => setSyForm({ ...syForm, semester1End: e.target.value })}
-                        className="input-field w-full text-xs font-semibold"
-                      />
+                      <DatePicker value={syForm.semester1End} onChange={(val) => setSyForm({ ...syForm, semester1End: val })} />
                     </div>
                   </div>
                 </div>
@@ -950,28 +941,18 @@ export default function SystemSettings() {
                 <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
                   <h4 className="font-bold text-xs text-gray-900 flex items-center justify-between">
                     <span>Semester 2</span>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
                       Term 2
                     </span>
                   </h4>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 mb-1">Start Date</label>
-                      <input
-                        type="date"
-                        value={syForm.semester2Start}
-                        onChange={(e) => setSyForm({ ...syForm, semester2Start: e.target.value })}
-                        className="input-field w-full text-xs font-semibold"
-                      />
+                      <DatePicker value={syForm.semester2Start} onChange={(val) => setSyForm({ ...syForm, semester2Start: val })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 mb-1">End Date</label>
-                      <input
-                        type="date"
-                        value={syForm.semester2End}
-                        onChange={(e) => setSyForm({ ...syForm, semester2End: e.target.value })}
-                        className="input-field w-full text-xs font-semibold"
-                      />
+                      <DatePicker value={syForm.semester2End} onChange={(val) => setSyForm({ ...syForm, semester2End: val })} />
                     </div>
                   </div>
                 </div>
@@ -983,7 +964,7 @@ export default function SystemSettings() {
                   type="button"
                   onClick={handleSaveSyConfig}
                   disabled={isSavingSy}
-                  className="px-6 py-2.5 rounded-xl bg-[#800000] text-white font-bold text-xs hover:bg-[#600000] shadow-2xs transition-all flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-xl bg-[#7A0808] text-white font-bold text-xs hover:bg-[#600000] shadow-2xs transition-all flex items-center gap-2"
                 >
                   {isSavingSy ? 'Saving...' : 'Save Settings'}
                 </button>
@@ -997,7 +978,7 @@ export default function SystemSettings() {
               <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                    <Clock size={18} className="text-[#800000]" />
+                    <Clock size={18} className="text-[#7A0808]" />
                     Exam Period Range Configuration
                   </h3>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1013,7 +994,7 @@ export default function SystemSettings() {
                       type="button"
                       onClick={() => setExamSemTab(t)}
                       className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        examSemTab === t ? 'bg-[#800000] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                        examSemTab === t ? 'bg-[#7A0808] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
                       Semester {t}
@@ -1036,7 +1017,7 @@ export default function SystemSettings() {
                     style={{ background: period.bg, borderColor: period.border }}
                   >
                     <h4 className="font-black text-xs text-gray-900 flex items-center gap-1.5">
-                      <FileText size={14} className="text-[#800000]" />
+                      <FileText size={14} className="text-[#7A0808]" />
                       {period.label}
                     </h4>
 
@@ -1058,7 +1039,7 @@ export default function SystemSettings() {
                             className="bg-white p-3 rounded-xl border border-gray-200/80 shadow-2xs space-y-2"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-extrabold text-[#800000]">{label}</span>
+                              <span className="text-[11px] font-extrabold text-[#7A0808]">{label}</span>
                             </div>
 
                             {rangeText && !isEditing && (
@@ -1072,21 +1053,11 @@ export default function SystemSettings() {
                                 <div className="grid grid-cols-2 gap-2">
                                   <div>
                                     <label className="block text-[9px] font-bold text-gray-500 mb-0.5">Start Date</label>
-                                    <input
-                                      type="date"
-                                      value={examDraft.start}
-                                      onChange={(e) => setExamDraft({ ...examDraft, start: e.target.value })}
-                                      className="input-field w-full text-xs font-semibold py-1 px-2"
-                                    />
+                                    <DatePicker value={examDraft.start} onChange={(val) => setExamDraft({ ...examDraft, start: val })} />
                                   </div>
                                   <div>
                                     <label className="block text-[9px] font-bold text-gray-500 mb-0.5">End Date</label>
-                                    <input
-                                      type="date"
-                                      value={examDraft.end}
-                                      onChange={(e) => setExamDraft({ ...examDraft, end: e.target.value })}
-                                      className="input-field w-full text-xs font-semibold py-1 px-2"
-                                    />
+                                    <DatePicker value={examDraft.end} onChange={(val) => setExamDraft({ ...examDraft, end: val })} />
                                   </div>
                                 </div>
                                 <div className="flex gap-1.5 justify-end pt-1">
@@ -1101,7 +1072,7 @@ export default function SystemSettings() {
                                     type="button"
                                     onClick={() => handleSaveExamRangeFor(period.key, level)}
                                     disabled={isSavingExam}
-                                    className="px-3 py-1 bg-[#800000] text-white text-[11px] font-bold rounded-lg hover:bg-[#600000] shadow-2xs"
+                                    className="px-3 py-1 bg-[#7A0808] text-white text-[11px] font-bold rounded-lg hover:bg-[#600000] shadow-2xs"
                                   >
                                     Save Range
                                   </button>
@@ -1114,7 +1085,7 @@ export default function SystemSettings() {
                                   setExamEdit({ semester: examSemTab, periodKey: period.key, level });
                                   setExamDraft({ start: data?.start || '', end: data?.end || '' });
                                 }}
-                                className="w-full py-1.5 border border-gray-200 hover:border-[#800000] hover:bg-red-50/50 rounded-lg text-[11px] font-bold text-gray-700 hover:text-[#800000] transition-all flex items-center justify-center gap-1"
+                                className="w-full py-1.5 border border-gray-200 hover:border-[#7A0808] hover:bg-red-50/50 rounded-lg text-[11px] font-bold text-gray-700 hover:text-[#7A0808] transition-all flex items-center justify-center gap-1"
                               >
                                 <Plus size={12} />
                                 {rangeText ? 'Edit Dates' : 'Set Dates'}
@@ -1136,7 +1107,7 @@ export default function SystemSettings() {
               <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                    <BookOpen size={18} className="text-[#800000]" />
+                    <BookOpen size={18} className="text-[#7A0808]" />
                     Official School Calendar (PDF Copy)
                   </h3>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1152,7 +1123,7 @@ export default function SystemSettings() {
                 onDrop={handlePdfDrop}
                 className={`p-8 border-2 border-dashed rounded-2xl transition-all text-center ${
                   isDraggingPdf
-                    ? 'border-[#800000] bg-red-50/80 ring-4 ring-[#800000]/15 scale-[1.01]'
+                    ? 'border-[#7A0808] bg-red-50/80 ring-4 ring-[#7A0808]/15 scale-[1.01]'
                     : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
                 }`}
               >
@@ -1170,7 +1141,7 @@ export default function SystemSettings() {
 
                 <label htmlFor="pdf-upload-input" className="cursor-pointer flex flex-col items-center justify-center space-y-3">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
-                    isDraggingPdf ? 'bg-[#800000] text-white scale-110' : 'bg-red-50 text-[#800000]'
+                    isDraggingPdf ? 'bg-[#7A0808] text-white scale-110' : 'bg-red-50 text-[#7A0808]'
                   }`}>
                     <FileUp size={28} />
                   </div>
@@ -1230,7 +1201,7 @@ export default function SystemSettings() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-1">
                     <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                      <Eye size={14} className="text-[#800000]" /> Live PDF Document Preview
+                      <Eye size={14} className="text-[#7A0808]" /> Live PDF Document Preview
                     </span>
                   </div>
 
@@ -1259,7 +1230,7 @@ export default function SystemSettings() {
               <div className="pb-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                    <Award size={18} className="text-[#800000]" />
+                    <Award size={18} className="text-[#7A0808]" />
                     Activities Management
                   </h3>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1270,7 +1241,7 @@ export default function SystemSettings() {
                 <button
                   type="button"
                   onClick={() => handleOpenAddActivity(activityCategoryTab === 'all' ? 'academic' : activityCategoryTab)}
-                  className="px-4 py-2 bg-[#800000] text-white rounded-xl text-xs font-bold hover:bg-[#600000] transition-colors flex items-center gap-2 shadow-2xs whitespace-nowrap"
+                  className="px-4 py-2 bg-[#7A0808] text-white rounded-xl text-xs font-bold hover:bg-[#600000] transition-colors flex items-center gap-2 shadow-2xs whitespace-nowrap"
                 >
                   <Plus size={14} /> Add Activity
                 </button>
@@ -1284,7 +1255,7 @@ export default function SystemSettings() {
                     onClick={() => { setActivityCategoryTab('academic'); setCurrentPage(1); }}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
                       activityCategoryTab === 'academic'
-                        ? 'bg-[#800000] text-white shadow-2xs font-black'
+                        ? 'bg-[#7A0808] text-white shadow-2xs font-black'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -1301,7 +1272,7 @@ export default function SystemSettings() {
                     onClick={() => { setActivityCategoryTab('non-academic'); setCurrentPage(1); }}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
                       activityCategoryTab === 'non-academic'
-                        ? 'bg-[#800000] text-white shadow-2xs font-black'
+                        ? 'bg-[#7A0808] text-white shadow-2xs font-black'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -1322,7 +1293,7 @@ export default function SystemSettings() {
                     value={activitySearchQuery}
                     onChange={(e) => { setActivitySearchQuery(e.target.value); setCurrentPage(1); }}
                     placeholder="Search activities..."
-                    className="input-field w-full pl-8 py-1.5 text-xs font-medium bg-gray-50 border-gray-200"
+                    className="form-input w-full pl-8 py-1.5 text-xs font-medium bg-gray-50 border-gray-200"
                   />
                   {activitySearchQuery && (
                     <button
@@ -1350,7 +1321,7 @@ export default function SystemSettings() {
                       setActivitySearchQuery('');
                       setCurrentPage(1);
                     }}
-                    className="px-3.5 py-1.5 bg-[#800000] text-white rounded-lg text-xs font-bold hover:bg-[#600000] inline-flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 bg-[#7A0808] text-white rounded-lg text-xs font-bold hover:bg-[#600000] inline-flex items-center gap-1.5"
                   >
                     Clear All Filters
                   </button>
@@ -1397,7 +1368,7 @@ export default function SystemSettings() {
                                   return (
                                     <span
                                       key={colKey}
-                                      className="px-2 py-0.5 rounded-md bg-red-50 text-[#800000] border border-red-200 text-[10px] font-bold"
+                                      className="px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] border border-red-200 text-[10px] font-bold"
                                       title={collegeObj?.name || colKey}
                                     >
                                       {collegeObj ? collegeObj.code : colKey}
@@ -1459,7 +1430,7 @@ export default function SystemSettings() {
                           onClick={() => setCurrentPage(pageNum)}
                           className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
                             currentPage === pageNum
-                              ? 'bg-[#800000] text-white shadow-2xs font-extrabold'
+                              ? 'bg-[#7A0808] text-white shadow-2xs font-extrabold'
                               : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
                           }`}
                         >
@@ -1488,7 +1459,7 @@ export default function SystemSettings() {
                   <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
                     <div>
                       <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                        <CalendarOff size={18} className="text-[#800000]" />
+                        <CalendarOff size={18} className="text-[#7A0808]" />
                         No Class Day Declaration & Recommender
                       </h3>
                       <p className="text-xs text-gray-500 mt-1">
@@ -1509,15 +1480,9 @@ export default function SystemSettings() {
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">
                           Suspension Date
                         </label>
-                        <input
-                          type="date"
+                        <DatePicker
                           value={noClassDate}
-                          onChange={(e) => {
-                            setNoClassDate(e.target.value);
-                            setHasScanned(false);
-                            setScannedReservations([]);
-                          }}
-                          className="input-field w-full text-xs font-semibold"
+                          onChange={(val) => { setNoClassDate(val); setHasScanned(false); setScannedReservations([]); }}
                         />
                       </div>
 
@@ -1530,7 +1495,7 @@ export default function SystemSettings() {
                           value={noClassReason}
                           onChange={(e) => setNoClassReason(e.target.value)}
                           placeholder="e.g. Typhoon Signal #3, Special Holiday"
-                          className="input-field w-full text-xs font-semibold"
+                          className="form-input w-full text-xs font-semibold"
                         />
                       </div>
                     </div>
@@ -1611,7 +1576,7 @@ export default function SystemSettings() {
                   {/* Declaration History Section */}
                   <div className="pt-4 border-t border-gray-100 space-y-3">
                     <h4 className="font-bold text-xs text-gray-900 flex items-center gap-2">
-                      <Calendar size={15} className="text-[#800000]" />
+                      <Calendar size={15} className="text-[#7A0808]" />
                       No Class Day Declaration History
                     </h4>
 
@@ -1631,7 +1596,7 @@ export default function SystemSettings() {
                           <tbody className="divide-y divide-gray-100">
                             {noClassHistory.map((h) => (
                               <tr key={h.id} className="hover:bg-gray-50/50">
-                                <td className="p-3 font-bold text-[#800000]">{h.date}</td>
+                                <td className="p-3 font-bold text-[#7A0808]">{h.date}</td>
                                 <td className="p-3 font-medium text-gray-800">{h.reason}</td>
                                 <td className="p-3 text-gray-600">{h.declaredByName || 'Registrar'}</td>
                                 <td className="p-3">
@@ -1682,7 +1647,7 @@ export default function SystemSettings() {
                   onClick={() => setModalTab('individual')}
                   className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                     modalTab === 'individual'
-                      ? 'bg-white text-[#800000] shadow-2xs font-extrabold'
+                      ? 'bg-white text-[#7A0808] shadow-2xs font-extrabold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -1693,7 +1658,7 @@ export default function SystemSettings() {
                   onClick={() => setModalTab('bulk')}
                   className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                     modalTab === 'bulk'
-                      ? 'bg-white text-[#800000] shadow-2xs font-extrabold'
+                      ? 'bg-white text-[#7A0808] shadow-2xs font-extrabold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -1747,7 +1712,7 @@ export default function SystemSettings() {
                       value={activityForm.name}
                       onChange={(e) => setActivityForm({ ...activityForm, name: e.target.value })}
                       placeholder={activityCategoryTab === 'academic' ? 'e.g. Research Colloquium 2026' : 'e.g. University Sports Fest'}
-                      className="input-field w-full text-xs font-semibold"
+                      className="form-input w-full text-xs font-semibold"
                       autoFocus
                     />
                   </div>
@@ -1762,7 +1727,7 @@ export default function SystemSettings() {
                       onChange={(e) => setActivityForm({ ...activityForm, objective: e.target.value })}
                       placeholder="Enter objective and goals..."
                       rows={3}
-                      className="input-field w-full text-xs font-medium resize-none"
+                      className="form-input w-full text-xs font-medium resize-none"
                     />
                   </div>
 
@@ -1781,7 +1746,7 @@ export default function SystemSettings() {
                             setActivityForm(prev => ({ ...prev, colleges: collegesList.map(c => c.code || c.id) }));
                           }
                         }}
-                        className="text-[11px] font-bold text-[#800000] hover:underline"
+                        className="text-[11px] font-bold text-[#7A0808] hover:underline"
                       >
                         {activityForm.colleges.length === collegesList.length ? 'Deselect All' : 'Select All'}
                       </button>
@@ -1795,7 +1760,7 @@ export default function SystemSettings() {
                         value={collegeSearch}
                         onChange={(e) => setCollegeSearch(e.target.value)}
                         placeholder="Search college code or name..."
-                        className="input-field w-full pl-8 py-1.5 text-xs font-medium bg-gray-50 border-gray-200"
+                        className="form-input w-full pl-8 py-1.5 text-xs font-medium bg-gray-50 border-gray-200"
                       />
                       {collegeSearch && (
                         <button
@@ -1823,7 +1788,7 @@ export default function SystemSettings() {
                               key={college.id}
                               className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs font-semibold ${
                                 isChecked
-                                  ? 'bg-red-50 border-[#800000] text-[#800000]'
+                                  ? 'bg-red-50 border-[#7A0808] text-[#7A0808]'
                                   : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100'
                               }`}
                             >
@@ -1880,14 +1845,14 @@ export default function SystemSettings() {
                   {/* Step 1: Download Template */}
                   <div className="bg-red-50/60 border border-red-200 p-4 rounded-xl space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs font-bold text-[#800000]">
+                      <div className="flex items-center gap-2 text-xs font-bold text-[#7A0808]">
                         <FileSpreadsheet size={16} />
                         <span>Step 1: Download Excel Template</span>
                       </div>
                       <button
                         type="button"
                         onClick={() => downloadBulkActivityTemplate(collegesList)}
-                        className="px-3 py-1.5 bg-[#800000] text-white rounded-lg text-xs font-bold hover:bg-[#600000] transition-colors flex items-center gap-1.5 shadow-2xs"
+                        className="px-3 py-1.5 bg-[#7A0808] text-white rounded-lg text-xs font-bold hover:bg-[#600000] transition-colors flex items-center gap-1.5 shadow-2xs"
                       >
                         <Download size={13} /> Download (.xlsx) Template
                       </button>
@@ -1913,8 +1878,8 @@ export default function SystemSettings() {
                     }}
                     className={`border-2 border-dashed rounded-xl p-5 text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                       isDragOverBulk
-                        ? 'border-[#800000] bg-red-50/70'
-                        : 'border-gray-300 hover:border-[#800000] bg-gray-50/50'
+                        ? 'border-[#7A0808] bg-red-50/70'
+                        : 'border-gray-300 hover:border-[#7A0808] bg-gray-50/50'
                     }`}
                   >
                     <input
@@ -1925,7 +1890,7 @@ export default function SystemSettings() {
                       onChange={(e) => e.target.files && handleBulkFileUpload(e.target.files[0])}
                     />
                     <label htmlFor="bulkActivityFileInput" className="cursor-pointer flex flex-col items-center">
-                      <Upload size={22} className="text-[#800000] mb-1.5" />
+                      <Upload size={22} className="text-[#7A0808] mb-1.5" />
                       <span className="font-bold text-xs text-gray-800">
                         Step 2: Upload Excel / CSV Spreadsheet
                       </span>
@@ -1946,7 +1911,7 @@ export default function SystemSettings() {
                   {/* Loader */}
                   {isParsingBulk && (
                     <div className="p-6 text-center bg-gray-50 rounded-xl border border-gray-200">
-                      <RefreshCw size={22} className="animate-spin text-[#800000] mx-auto mb-2" />
+                      <RefreshCw size={22} className="animate-spin text-[#7A0808] mx-auto mb-2" />
                       <p className="font-bold text-xs text-gray-700">Reading activities spreadsheet...</p>
                     </div>
                   )}

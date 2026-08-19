@@ -38,16 +38,16 @@ export default function ScheduleTagReviewModal({ taggerName, buildingName, roomN
 
           <div className="space-y-2 text-sm" style={{ color: '#2B3235' }}>
             <p className="flex items-center gap-2">
-              <Clock size={16} className="flex-shrink-0 text-[#800000]" /> {item.when}
+              <Clock size={16} className="flex-shrink-0 text-[#7A0808]" /> {item.when}
             </p>
             <p className="flex items-center gap-2">
-              <User size={16} className="flex-shrink-0 text-[#800000]" /> {item.professor}
+              <User size={16} className="flex-shrink-0 text-[#7A0808]" /> {item.professor}
             </p>
             <p className="flex items-center gap-2">
-              <Building2 size={16} className="flex-shrink-0 text-[#800000]" /> {buildingName}
+              <Building2 size={16} className="flex-shrink-0 text-[#7A0808]" /> {buildingName}
             </p>
             <p className="flex items-center gap-2">
-              <Layers size={16} className="flex-shrink-0 text-[#800000]" /> {roomName}
+              <Layers size={16} className="flex-shrink-0 text-[#7A0808]" /> {roomName}
             </p>
             {item.mode && <p className="text-xs font-bold pt-2">Delivery: {item.mode}</p>}
           </div>

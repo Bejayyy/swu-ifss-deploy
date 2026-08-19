@@ -89,9 +89,15 @@ export default function BuildingDetails() {
           </div>
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
-          {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
-            <Edit2 size={14} /> Edit Building
-          </button>}
+          {canManageBuilding && (
+            <button
+              type="button"
+              className="btn-maroon flex items-center gap-2 px-4 py-2 text-xs font-bold shadow-2xs rounded-xl cursor-pointer"
+              onClick={() => setShowEditBuilding(true)}
+            >
+              <Edit2 size={14} /> Edit Building
+            </button>
+          )}
         </div>
       </div>
 
@@ -116,37 +122,39 @@ export default function BuildingDetails() {
           </div>
         ) : (
           <>
-            <div className="inline-flex w-fit flex-wrap items-center p-1 gap-1 mb-6 shadow-sm max-w-full" style={{ background: '#F9FAFB', borderRadius: 10 }}>
-              {building.floorData.map((f) => (
-                <button
-                  key={f.floorId || f.floor}
-                  type="button"
-                  onClick={() => setActiveFloor(f.floor)}
-                  className="px-5 py-2 text-sm font-bold transition-all"
-                  style={
-                    activeFloor === f.floor
-                      ? { background: '#800000', color: 'white', borderRadius: 10 }
-                      : { background: 'transparent', color: '#2B3235', borderRadius: 10 }
-                  }
-                >
-                  {f.label || `Floor ${f.floor}`}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 p-1.5 mb-6 overflow-x-auto scrollbar-thin bg-gray-100/80 rounded-2xl border border-gray-200/60 max-w-full">
+              {building.floorData.map((f) => {
+                const isSelected = activeFloor === f.floor;
+                return (
+                  <button
+                    key={f.floorId || f.floor}
+                    type="button"
+                    onClick={() => setActiveFloor(f.floor)}
+                    className={`px-4 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#7A0808] text-white shadow-xs scale-[1.02]'
+                        : 'bg-white text-[#2B3235] hover:bg-gray-50 hover:text-[#7A0808] border border-gray-200/80'
+                    }`}
+                  >
+                    Floor {f.floor}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="mb-6">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
                 <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>
-                  {floorEntry.label || `Floor ${activeFloor}`} Overview
+                  Floor {activeFloor} Overview
                 </h3>
                 {canManageBuilding && (
                   <button
                     type="button"
                     onClick={() => setEditFloor(floorEntry)}
-                    className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1.5 text-xs font-semibold"
+                    className="btn-outline-maroon px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                     title="Edit floor"
                   >
-                    <Edit2 size={14} /> Edit Floor
+                    <Edit2 size={13} /> Edit Floor
                   </button>
                 )}
               </div>
@@ -251,15 +259,15 @@ export default function BuildingDetails() {
                                   View
                                 </button>
                                 {(canManageBuilding || canEditRoom(room)) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditRoom(room)}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 flex items-center gap-1 text-xs font-semibold"
-                                    title="Edit room details and manager"
-                                  >
-                                    <Edit2 size={14} /> Edit Room
-                                  </button>
-                                )}
+                                   <button
+                                     type="button"
+                                     onClick={() => setEditRoom(room)}
+                                     className="btn-outline-maroon px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                     title="Edit room details and manager"
+                                   >
+                                     <Edit2 size={13} /> Edit Room
+                                   </button>
+                                 )}
                               </div>
                             </div>
                           </div>

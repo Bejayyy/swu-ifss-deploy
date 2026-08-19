@@ -13,6 +13,7 @@ import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessModal';
 import ResetDeanSchedulesModal from '../components/modals/ResetDeanSchedulesModal';
+import CustomSelect from '../components/ui/CustomSelect';
 import { addDays } from '../constants/scheduleGrid';
 import {
   formatDisplayDate,
@@ -713,39 +714,33 @@ export default function CourseSchedulingNew() {
       )}
 
       {/* School Year Selector - At the very top */}
-      <div className="mb-5 bg-white border-2 border-[#800000] rounded-2xl p-4 shadow-sm">
+      <div className="mb-5 bg-white border-2 border-[#7A0808] rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h3 className="font-black text-sm" style={{ color: '#800000' }}>School Year & Semester</h3>
+            <h3 className="font-black text-sm" style={{ color: '#7A0808' }}>School Year & Semester</h3>
             <p className="text-[10px] text-gray-500 mt-0.5">This affects all schedules and dates displayed below</p>
           </div>
           <div className="flex items-center gap-3">
-            <div>
+            <div className="min-w-[160px]">
               <label className="block text-[9px] font-bold uppercase text-gray-500 mb-1">School Year</label>
-              <select
+              <CustomSelect
                 value={activeSchoolYearId || ''}
                 onChange={(e) => setActiveSchoolYearId(e.target.value)}
-                className="px-3 py-2 text-sm font-bold rounded-lg border-2 border-gray-200 focus:border-[#800000] focus:outline-none"
-                style={{ color: '#2B3235' }}
-              >
-                {schoolYearOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                options={schoolYearOptions}
+                placeholder="Select school year"
+              />
             </div>
-            <div>
+            <div className="min-w-[140px]">
               <label className="block text-[9px] font-bold uppercase text-gray-500 mb-1">Semester</label>
-              <select
+              <CustomSelect
                 value={semester}
                 onChange={(e) => setSemester(e.target.value)}
-                className="px-3 py-2 text-sm font-bold rounded-lg border-2 border-gray-200 focus:border-[#800000] focus:outline-none"
-                style={{ color: '#2B3235' }}
-              >
-                <option value="1">Semester 1</option>
-                <option value="2">Semester 2</option>
-              </select>
+                options={[
+                  { value: '1', label: 'Semester 1' },
+                  { value: '2', label: 'Semester 2' },
+                ]}
+                placeholder="Select semester"
+              />
             </div>
           </div>
         </div>
@@ -783,10 +778,10 @@ export default function CourseSchedulingNew() {
                 type="button"
                 onClick={() => setShowResetSchedulesModal(true)}
                 disabled={!activeSchoolYearId || !semester}
-                className="px-4 py-2 rounded-lg text-sm font-bold bg-red-600 text-white hover:bg-red-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-delete cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Delete plotted schedules by selected deans"
               >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
                 Reset Schedules
               </button>
 
@@ -806,7 +801,7 @@ export default function CourseSchedulingNew() {
                     setShowGrantAccessModal(true);
                   }}
                   disabled={!activeSchoolYearId || !semester}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send size={16} />
                   Grant College Access
@@ -816,7 +811,7 @@ export default function CourseSchedulingNew() {
                   type="button"
                   onClick={() => setShowGrantAccessModal(true)}
                   disabled={!activeSchoolYearId || !semester}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
                   title="Edit granted colleges or reset access"
                 >
                   <Edit size={16} />
@@ -834,10 +829,10 @@ export default function CourseSchedulingNew() {
                   Current Status:
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                  <span className={`inline-flex items-center justify-center px-4 py-1.5 rounded-full text-xs font-bold leading-none ${
                     scheduleAccess.status === 'all_allowed' 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-yellow-100 text-yellow-800'
+                      ? 'bg-green-100 text-green-800 border border-green-200' 
+                      : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
                   }`}>
                     {scheduleAccess.status === 'all_allowed' 
                       ? '✅ All Colleges Can Schedule' 
@@ -853,7 +848,7 @@ export default function CourseSchedulingNew() {
                     <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
                       Granted College(s) (Currently Scheduling):
                     </p>
-                    <p className="text-sm font-black text-[#800000]">
+                    <p className="text-sm font-black text-[#7A0808]">
                       {scheduleAccess.firstCollege.name}
                     </p>
                   </div>
@@ -861,7 +856,7 @@ export default function CourseSchedulingNew() {
                   {(scheduleAccess.startDate || scheduleAccess.endDate || scheduleAccess.firstCollege?.startDate || scheduleAccess.firstCollege?.endDate) && (
                     <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-xs space-y-0.5">
                       <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
-                        <Calendar size={13} className="text-[#800000]" />
+                        <Calendar size={13} className="text-[#7A0808]" />
                         Accomplishment Window (Day Limit):
                       </p>
                       <p className="font-bold text-gray-800">
@@ -881,9 +876,9 @@ export default function CourseSchedulingNew() {
                 <button
                   type="button"
                   onClick={() => setShowGrantAccessModal(true)}
-                  className="w-full px-4 py-3 rounded-lg text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+                  className="btn-maroon w-full justify-center text-xs sm:text-sm font-bold py-3 shadow-2xs cursor-pointer flex items-center gap-2"
                 >
-                  ✅ Allow / Grant Additional Colleges Access
+                  <Send size={15} /> Allow / Grant Additional Colleges Access
                 </button>
               )}
 
@@ -978,7 +973,7 @@ export default function CourseSchedulingNew() {
                             onClick={() => handleSelectDean(dean.uid)}
                             className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-all relative ${
                               selectedDeanUid === dean.uid
-                                ? 'bg-[#800000] text-white shadow-2xs'
+                                ? 'bg-[#7A0808] text-white shadow-2xs'
                                 : 'hover:bg-gray-100'
                             }`}
                             style={selectedDeanUid === dean.uid ? {} : { color: '#2B3235' }}
@@ -1005,10 +1000,10 @@ export default function CourseSchedulingNew() {
           <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
             <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
               <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
-                <Layers size={16} className="text-[#800000]" /> Sections per Year Level
+                <Layers size={16} className="text-[#7A0808]" /> Sections per Year Level
               </h3>
               {!isDean && selectedDean && (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#800000] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
                   {selectedDean.college || selectedDean.department || selectedDean.name}
                 </span>
               )}
@@ -1023,7 +1018,7 @@ export default function CourseSchedulingNew() {
                   value={sectionSearchQuery}
                   onChange={(e) => setSectionSearchQuery(e.target.value)}
                   placeholder="Search sections..."
-                  className="w-full pl-9 pr-7 py-2 bg-gray-50/80 border border-gray-200 rounded-full text-xs font-semibold focus:bg-white focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all outline-none"
+                  className="w-full pl-9 pr-7 py-2 bg-gray-50/80 border border-gray-200 rounded-full text-xs font-semibold focus:bg-white focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] transition-all outline-none"
                 />
                 {sectionSearchQuery && (
                   <button
@@ -1068,7 +1063,7 @@ export default function CourseSchedulingNew() {
                             <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
                               {yearLevel}
                             </span>
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-[#7A0808]">
+                            <span className="text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
                               {sectionsForYear.length}
                             </span>
                           </div>
@@ -1084,10 +1079,10 @@ export default function CourseSchedulingNew() {
                           <button
                             type="button"
                             onClick={() => handleOpenAddSectionModalForYear(yearLevel)}
-                            className="w-8 h-8 rounded-xl bg-white hover:bg-red-50 border border-gray-200 hover:border-[#800000] transition-all flex items-center justify-center flex-shrink-0 shadow-2xs group"
+                            className="w-8 h-8 rounded-xl bg-white hover:bg-red-50 border border-gray-200 hover:border-[#7A0808] transition-all flex items-center justify-center flex-shrink-0 shadow-2xs group"
                             title={`Add section to ${yearLevel}`}
                           >
-                            <Plus size={15} className="text-[#800000] group-hover:scale-110 transition-transform" />
+                            <Plus size={15} className="text-[#7A0808] group-hover:scale-110 transition-transform" />
                           </button>
                         )}
                       </div>
@@ -1116,7 +1111,7 @@ export default function CourseSchedulingNew() {
                                   }}
                                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group cursor-pointer ${
                                     isSelected
-                                      ? 'bg-[#800000] text-white shadow-2xs'
+                                      ? 'bg-[#7A0808] text-white shadow-2xs'
                                       : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-100'
                                   }`}
                                 >
@@ -1156,7 +1151,7 @@ export default function CourseSchedulingNew() {
             <div className="space-y-4">
               {/* Active Section Info Header - Regular Schedule */}
               {scheduleTab === 'regular' && (
-                <div className="bg-white border border-gray-100 rounded-2xl p-4 space-y-3 shadow-2xs">
+                <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 space-y-3 shadow-2xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1164,15 +1159,15 @@ export default function CourseSchedulingNew() {
                           {selectedDean.department || selectedDean.college}
                         </h3>
                         {selectedSection && (
-                          <span className="text-xs font-bold bg-[#800000] text-white px-3 py-0.5 rounded-full">
+                          <span className="inline-flex items-center justify-center text-xs font-bold bg-[#7A0808] text-white px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
                             Section: {selectedSection}
                           </span>
                         )}
-                        <span className="text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                        <span className="inline-flex items-center justify-center text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
                           Week {currentWeekNum}
                         </span>
                       </div>
-                      <p className="text-xs font-medium text-gray-500 mt-0.5">
+                      <p className="text-xs font-medium text-gray-500 mt-2.5 flex items-center gap-1.5">
                         {selectedDean.name} · {selectedDean.email}
                       </p>
                     </div>
@@ -1182,15 +1177,13 @@ export default function CourseSchedulingNew() {
                       <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200">
                         <span className="text-xs font-bold text-gray-700 whitespace-nowrap">Class Modality:</span>
                         {canPlot ? (
-                          <select
-                            value={currentSectionObj?.modality || 'regular'}
-                            onChange={(e) => handleUpdateSectionModality(e.target.value)}
-                            className="bg-white text-xs font-bold text-[#800000] border border-gray-300 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-[#800000] transition-colors"
-                          >
-                            {MODALITY_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
+                          <div className="min-w-[220px]">
+                            <CustomSelect
+                              value={currentSectionObj?.modality || 'regular'}
+                              onChange={(e) => handleUpdateSectionModality(e.target.value)}
+                              options={MODALITY_OPTIONS}
+                            />
+                          </div>
                         ) : (
                           <span className="text-xs font-bold text-gray-800 bg-white px-2 py-1 rounded border border-gray-200">
                             {MODALITY_OPTIONS.find(m => m.value === (currentSectionObj?.modality || 'regular'))?.label}
@@ -1247,7 +1240,7 @@ export default function CourseSchedulingNew() {
                             onClick={() => setSelectedStudentCategory(category.key)}
                             className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
                               selectedStudentCategory === category.key
-                                ? 'bg-[#800000] text-white'
+                                ? 'bg-[#7A0808] text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
                           >
@@ -1273,7 +1266,7 @@ export default function CourseSchedulingNew() {
                             onClick={() => setSelectedExamPeriod(period.key)}
                             className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
                               selectedExamPeriod === period.key
-                                ? 'bg-[#800000] text-white'
+                                ? 'bg-[#7A0808] text-white'
                                 : 'bg-white text-gray-600 hover:bg-gray-100 border-2 border-gray-200'
                             }`}
                           >
@@ -1394,7 +1387,7 @@ export default function CourseSchedulingNew() {
                 <h3 className="font-black text-lg text-gray-900">
                   Add New Section
                 </h3>
-                <p className="text-xs font-semibold text-[#800000] mt-0.5">
+                <p className="text-xs font-semibold text-[#7A0808] mt-0.5">
                   Target Year: <span className="font-black">{newSectionYear}</span>
                 </p>
               </div>
@@ -1421,7 +1414,7 @@ export default function CourseSchedulingNew() {
                   value={newSectionName}
                   onChange={(e) => setNewSectionName(e.target.value)}
                   placeholder="e.g., 1A, BSIT-2, Section Alpha"
-                  className="input-field w-full"
+                  className="form-input w-full"
                   autoFocus
                 />
                 <p className="text-[10px] text-gray-500 mt-1">
@@ -1433,15 +1426,11 @@ export default function CourseSchedulingNew() {
                 <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                   Year Level <span className="text-red-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   value={newSectionYear}
                   onChange={(e) => setNewSectionYear(e.target.value)}
-                  className="input-field w-full bg-gray-50 border-gray-300 font-bold text-gray-900"
-                >
-                  {YEAR_LEVELS.map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
+                  options={YEAR_LEVELS}
+                />
                 <p className="text-[10px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
                   ✓ Pre-selected to {newSectionYear} based on the (+) button clicked.
                 </p>
@@ -1451,15 +1440,11 @@ export default function CourseSchedulingNew() {
                 <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
                   Class Modality / OJT Pattern
                 </label>
-                <select
+                <CustomSelect
                   value={newSectionModality}
                   onChange={(e) => setNewSectionModality(e.target.value)}
-                  className="input-field w-full bg-gray-50 border-gray-300 font-bold text-gray-900 text-xs"
-                >
-                  {MODALITY_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                  options={MODALITY_OPTIONS}
+                />
                 <p className="text-[10px] text-gray-500 mt-1">
                   Select if this section has alternating OJT weeks (e.g. for 3rd/4th Year students).
                 </p>

@@ -501,7 +501,7 @@ export default function SystemAdministration() {
                   placeholder="Search name, email, role, department..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-[10px] bg-white focus:outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]"
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-[10px] bg-white focus:outline-none focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808]"
                 />
               </div>
 
@@ -512,11 +512,11 @@ export default function SystemAdministration() {
               {selectedUserIds.length > 0 && (
                 <button
                   type="button"
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-[10px] transition-colors shadow-sm"
+                  className="btn-delete cursor-pointer"
                   onClick={bulkDeleteSelectedUsers}
                   title="Delete selected users"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                   <span>Delete ({selectedUserIds.length})</span>
                 </button>
               )}
@@ -528,7 +528,7 @@ export default function SystemAdministration() {
           </div>
 
           {(filter.role !== 'Any' || filter.status !== 'Any' || searchQuery.trim()) && (
-            <p className="text-xs font-semibold mb-2" style={{ color: '#800000' }}>
+            <p className="text-xs font-semibold mb-2" style={{ color: '#7A0808' }}>
               Filtered: {filter.role} · {filter.status}
               {searchQuery.trim() ? ` · Search: "${searchQuery}"` : ''} ({filteredUsers.length} shown)
             </p>
@@ -544,7 +544,7 @@ export default function SystemAdministration() {
                         type="checkbox"
                         checked={paginatedUsers.length > 0 && paginatedUsers.every((u) => selectedUserIds.includes(u.uid))}
                         onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                        className="w-4 h-4 rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
                       />
                     </th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Name</th>
@@ -572,12 +572,12 @@ export default function SystemAdministration() {
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleSelectUser(u.uid)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                              className="w-4 h-4 rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
                             />
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
-                              <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#800000', borderRadius: 10 }}>
+                              <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#7A0808', borderRadius: 10 }}>
                                 {u.initials}
                               </div>
                               <span className="font-bold" style={{ color: '#2B3235' }}>{u.name}</span>
@@ -585,7 +585,7 @@ export default function SystemAdministration() {
                           </td>
                           <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.85 }}>{u.email}</td>
                           <td className="py-3 px-4">
-                            <span className={`text-[10px] font-black px-2 py-1 uppercase ${roleStyle(u.role)}`} style={{ borderRadius: 8 }}>{u.role}</span>
+                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase rounded-full ${roleStyle(u.role)}`}>{u.role}</span>
                           </td>
                           <td className="py-3 px-4">
                             <span className="text-[10px] font-bold px-2 py-1 rounded-full border border-gray-200" style={{ color: '#2B3235' }}>
@@ -597,7 +597,7 @@ export default function SystemAdministration() {
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 type="button"
-                                className="p-1.5 text-gray-500 hover:text-[#800000] hover:bg-gray-100 rounded-lg transition-colors"
+                                className="p-1.5 text-gray-500 hover:text-[#7A0808] hover:bg-gray-100 rounded-lg transition-colors"
                                 title="View & Edit Details"
                                 onClick={() => setViewUser(u)}
                               >
@@ -628,7 +628,7 @@ export default function SystemAdministration() {
                 <span className="font-bold text-gray-800">{endIndex}</span> of{' '}
                 <span className="font-bold text-gray-800">{totalItems}</span> users
                 {selectedUserIds.length > 0 && (
-                  <span className="ml-2 text-[#800000] font-bold">({selectedUserIds.length} selected)</span>
+                  <span className="ml-2 text-[#7A0808] font-bold">({selectedUserIds.length} selected)</span>
                 )}
               </div>
 
@@ -641,7 +641,7 @@ export default function SystemAdministration() {
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-semibold focus:outline-none focus:border-[#800000]"
+                    className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-semibold focus:outline-none focus:border-[#7A0808]"
                   >
                     <option value={5}>5</option>
                     <option value={10}>10</option>
@@ -674,7 +674,7 @@ export default function SystemAdministration() {
                             onClick={() => setCurrentPage(p)}
                             className={`w-7 h-7 rounded-lg text-xs font-bold transition-colors ${
                               currentPage === p
-                                ? 'bg-[#800000] text-white'
+                                ? 'bg-[#7A0808] text-white'
                                 : 'text-gray-600 hover:bg-gray-100'
                             }`}
                           >

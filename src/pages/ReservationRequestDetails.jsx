@@ -579,7 +579,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
                     {/* Circular Badge Node Icon */}
                     <div className="flex-shrink-0 relative z-10">
                       {isApproved ? (
-                        <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-2xs ring-4 ring-emerald-100/80 transition-all">
+                        <div className="w-8 h-8 rounded-full bg-[#7A0808] text-white flex items-center justify-center shadow-2xs ring-4 ring-red-100/80 transition-all">
                           <Check size={16} strokeWidth={3} />
                         </div>
                       ) : isPending ? (
@@ -603,7 +603,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
                         {st.label} {st.name ? <span className="text-gray-500 font-normal block text-[11px]">({st.name})</span> : ''}
                       </p>
                       <p className={`text-[10px] font-extrabold tracking-wider uppercase ${
-                        isApproved ? 'text-emerald-600' : isPending ? 'text-amber-600 font-black' : isRejected ? 'text-red-600' : 'text-gray-400'
+                        isApproved ? 'text-[#7A0808]' : isPending ? 'text-amber-600 font-black' : isRejected ? 'text-red-600' : 'text-gray-400'
                       }`}>
                         {st.status}
                       </p>

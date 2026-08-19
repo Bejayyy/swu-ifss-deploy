@@ -11,7 +11,7 @@ function AuthLoading() {
       <div className="text-center">
         <div
           className="w-10 h-10 border-4 rounded-full animate-spin mx-auto mb-3"
-          style={{ borderColor: '#80000033', borderTopColor: '#800000' }}
+          style={{ borderColor: '#7A080833', borderTopColor: '#7A0808' }}
         />
         <p className="text-sm font-semibold" style={{ color: '#2B3235' }}>Verifying session…</p>
       </div>

@@ -1,17 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight, CheckSquare } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2, Eye, ChevronLeft, ChevronRight, CheckSquare, Plus } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useModal } from '../hooks/useModal';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import ProgressStatCards from '../components/ProgressStatCards';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
 import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS, isReservationActionable, filterReservationsForRole, getApproverSpecificStatus, getActivePendingRecord } from '../constants/approvalWorkflow';
 
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
+import DatePicker from '../components/ui/DatePicker';
+import CustomSelect from '../components/ui/CustomSelect';
 import { formatCollegeName } from '../constants/colleges';
 import { deleteRoomReservation } from '../services/reservationService';
 
@@ -60,8 +63,66 @@ function formatReadableTimeRange(timeStart, timeEnd) {
 export default function ApprovalManagement() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { requests, requestsLoading } = useApp();
+  const { requests, requestsLoading, buildingList = [] } = useApp();
   const { profile } = useAuth();
+
+  const handleNavigateToRoom = (req) => {
+    if (!req) return;
+
+    const rawRoomId = req.roomId || req.designatedVenueId || req.venueId || req.roomCode;
+    let targetRoom = null;
+    let targetBuildingId = req.buildingId;
+    let targetBuildingName = req.buildingName || '';
+    let targetFloor = req.floor || 1;
+    let targetFloorId = req.floorId;
+
+    const venueClean = String(req.designatedVenue || req.specificVenue || req.venue || '').trim();
+
+    if (buildingList && buildingList.length > 0) {
+      for (const b of buildingList) {
+        for (const f of b.floorData || []) {
+          for (const r of f.rooms || []) {
+            const rId = String(r.id || '').toLowerCase();
+            const rCode = String(r.roomCode || r.code || r.name || '').toLowerCase();
+            const rNumber = String(r.number || '').toLowerCase();
+            const targetStr = String(rawRoomId || '').toLowerCase();
+            const vStr = venueClean.toLowerCase();
+
+            if (
+              (targetStr && (rId === targetStr || rCode === targetStr)) ||
+              (vStr && (vStr.includes(rCode) || vStr.includes(rNumber) || rCode.includes(vStr)))
+            ) {
+              targetRoom = r;
+              targetBuildingId = b.id;
+              targetBuildingName = b.name;
+              targetFloor = f.floor;
+              targetFloorId = f.floorId;
+              break;
+            }
+          }
+          if (targetRoom) break;
+        }
+        if (targetRoom) break;
+      }
+    }
+
+    if (targetRoom) {
+      navigate(`/room/${targetRoom.id || targetRoom.roomCode}`, {
+        state: {
+          room: targetRoom,
+          buildingId: targetBuildingId,
+          buildingName: targetBuildingName,
+          floor: targetFloor,
+          floorId: targetFloorId,
+        },
+      });
+    } else if (rawRoomId) {
+      navigate(`/room/${rawRoomId}`);
+    } else {
+      const isAcademic = req.type === 'academic' || req.reservationType === 'academic';
+      navigate(isAcademic ? `/academic-request/${req.id}` : `/request/${req.id}`);
+    }
+  };
   const {
     role,
     roleLabel,
@@ -73,6 +134,7 @@ export default function ApprovalManagement() {
     isRegistrar,
   } = useRolePermissions();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
+  const { startNewReservation, modals: reservationModals } = useRoomReservationFlow();
 
   const hasApprovalPermission = isRegistrar || (typeof canApproveAny === 'function' ? canApproveAny() : false);
 
@@ -334,39 +396,56 @@ export default function ApprovalManagement() {
         <ProgressStatCards items={stats} />
       </div>
 
-      {/* Section Toggle */}
-      {hasApprovalPermission && (
-        <div className="mb-4 flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setShowSection('approvals');
-              setFilter('All');
-            }}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
-              showSection === 'approvals'
-                ? 'bg-[#7A0808] text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Requests to Approve ({actionableRoleRequests.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowSection('my-requests');
-              setFilter('All');
-            }}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
-              showSection === 'my-requests'
-                ? 'bg-[#7A0808] text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            My Requests ({myRequests.length})
-          </button>
-        </div>
-      )}
+      {/* Section Toggle & Create Request Button Bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {hasApprovalPermission ? (
+          <div className="inline-flex p-1 bg-white rounded-2xl border border-gray-200 shadow-2xs gap-1 items-center">
+            <button
+              type="button"
+              onClick={() => {
+                setShowSection('approvals');
+                setFilter('All');
+              }}
+              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                showSection === 'approvals'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
+                  : 'bg-transparent text-gray-700 hover:bg-gray-100/70'
+              }`}
+            >
+              <span>Requests to Approve</span>
+              <span className="min-w-[20px] h-[20px] px-1.5 rounded-lg bg-[#F59E0B] text-white font-black text-[10px] inline-flex items-center justify-center leading-none shadow-2xs">
+                {actionableRoleRequests.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSection('my-requests');
+                setFilter('All');
+              }}
+              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                showSection === 'my-requests'
+                  ? 'bg-[#7A0808] text-white shadow-2xs'
+                  : 'bg-transparent text-gray-700 hover:bg-gray-100/70'
+              }`}
+            >
+              <span>My Requests</span>
+              <span className="min-w-[20px] h-[20px] px-1.5 rounded-lg bg-[#F59E0B] text-white font-black text-[10px] inline-flex items-center justify-center leading-none shadow-2xs">
+                {myRequests.length}
+              </span>
+            </button>
+          </div>
+        ) : <div />}
+
+        <button
+          type="button"
+          onClick={() => startNewReservation()}
+          className="btn-maroon font-bold text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-2xs whitespace-nowrap cursor-pointer"
+        >
+          <Plus size={15} className="flex-shrink-0" />
+          <span>New Request</span>
+        </button>
+      </div>
 
       {/* Main Request Table Card */}
       <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-5">
@@ -374,9 +453,11 @@ export default function ApprovalManagement() {
           <h2 className="font-black text-base text-dark">
             {(hasApprovalPermission && showSection === 'approvals') ? 'Requests Awaiting Your Role Signature' : 'My Submitted Requests'}
           </h2>
-          <span className="text-xs font-semibold text-gray-500">
-            Showing {filteredRequests.length} of {activeCategoryRequests.length} requests
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500">
+              Showing {filteredRequests.length} of {activeCategoryRequests.length} requests
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-col gap-3 w-fit max-w-full">
@@ -393,25 +474,13 @@ export default function ApprovalManagement() {
         </div>
 
         <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex items-center gap-2">
-            <Calendar size={14} className="text-gray-400" />
-            <label className="text-xs font-bold text-gray-600">From:</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
-            />
+          <div className="flex items-center gap-1.5 min-w-[150px]">
+            <label className="text-xs font-bold text-gray-600 shrink-0">From:</label>
+            <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="dd/mm/yyyy" />
           </div>
-          <div className="flex items-center gap-2">
-            <Calendar size={14} className="text-gray-400" />
-            <label className="text-xs font-bold text-gray-600">To:</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
-            />
+          <div className="flex items-center gap-1.5 min-w-[150px]">
+            <label className="text-xs font-bold text-gray-600 shrink-0">To:</label>
+            <DatePicker value={dateTo} onChange={setDateTo} placeholder="dd/mm/yyyy" />
           </div>
           <div className="flex-1 min-w-[220px]">
             <input
@@ -419,7 +488,7 @@ export default function ApprovalManagement() {
               placeholder="Search by title, department, requestor, or venue..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3.5 py-1.5 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
+              className="w-full px-3.5 py-1.5 text-xs border border-gray-200 rounded-xl focus:border-[#7A0808] focus:bg-white focus:outline-none bg-white font-medium"
             />
           </div>
           {(dateFrom || dateTo || searchQuery) && (
@@ -507,10 +576,15 @@ export default function ApprovalManagement() {
                         <td className="py-3.5 px-4 align-top">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-extrabold text-sm text-dark">
+                              <button
+                                type="button"
+                                onClick={() => handleNavigateToRoom(req)}
+                                className="font-black text-sm text-[#7A0808] hover:underline text-left cursor-pointer transition-colors"
+                                title="Click to view reserved room details & schedule matrix"
+                              >
                                 {req.activity || req.title || 'Untitled Activity'}
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              </button>
+                              <span className={`inline-flex items-center justify-center text-[11px] font-bold px-3 py-1 rounded-full leading-none ${
                                 req.type === 'academic' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}>
                                 {req.type === 'academic' ? 'Academic' : 'Non-Academic'}
@@ -527,10 +601,15 @@ export default function ApprovalManagement() {
 
                         <td className="py-3.5 px-4 align-top">
                           <div className="space-y-1.5">
-                            <div className="flex items-center gap-1.5 font-bold text-gray-800">
-                              <MapPin size={14} className="text-red-700 flex-shrink-0" />
+                            <button
+                              type="button"
+                              onClick={() => handleNavigateToRoom(req)}
+                              className="flex items-center gap-1.5 font-bold text-gray-800 hover:text-[#7A0808] hover:underline text-left cursor-pointer transition-colors group"
+                              title="Click to view reserved room details & schedule matrix"
+                            >
+                              <MapPin size={14} className="text-red-700 group-hover:scale-110 flex-shrink-0 transition-transform" />
                               <span>{req.designatedVenue || req.specificVenue || req.venue || '—'}</span>
-                            </div>
+                            </button>
                             <div className="text-[11px] text-gray-500">
                               <span className="font-semibold text-gray-700">Participants:</span> {req.participants || req.numStudents || '—'}
                             </div>
@@ -616,9 +695,9 @@ export default function ApprovalManagement() {
                                   navigate(`/academic-request/${req.id}`, { state: { request: req } });
                                 }
                               }}
-                              className="btn-maroon text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold shadow-2xs"
+                              className="btn-table-action btn-table-action-maroon"
                             >
-                              <Eye size={14} /> View Details
+                              <Eye size={13} /> View Details
                             </button>
 
                             {canDelete && (
@@ -651,20 +730,22 @@ export default function ApprovalManagement() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
                     <span>Show</span>
-                    <select
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setCurrentPage(1);
-                      }}
-                      className="form-select text-xs py-1 px-2.5 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-[#7A0808]/20 font-bold"
-                    >
-                      <option value={5}>5</option>
-                      <option value={10}>10</option>
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                    </select>
-                    <span>per page</span>
+                    <div className="w-[125px]">
+                      <CustomSelect
+                        value={`${itemsPerPage} per page`}
+                        onChange={(e) => {
+                          const val = Number(String(e.target.value).split(' ')[0]);
+                          if (val) setItemsPerPage(val);
+                          setCurrentPage(1);
+                        }}
+                        options={[
+                          { value: '5 per page', label: '5 per page' },
+                          { value: '10 per page', label: '10 per page' },
+                          { value: '20 per page', label: '20 per page' },
+                          { value: '50 per page', label: '50 per page' },
+                        ]}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1">
@@ -719,6 +800,7 @@ export default function ApprovalManagement() {
 
       <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
+      {reservationModals}
     </Layout>
   );
 }

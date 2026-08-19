@@ -129,14 +129,14 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
                 <div className="relative rounded-xl overflow-hidden h-40 border border-gray-200 group mb-3 shadow-sm bg-gray-50">
                   <img src={form.image} alt="Building preview" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
-                    <label className="btn-maroon text-xs gap-1.5 py-1.5 px-3 cursor-pointer shadow-md">
+                    <label className="btn-maroon cursor-pointer shadow-md">
                       <Upload size={14} /> Change Photo
                       <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                     </label>
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, image: '' }))}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-md"
+                      className="btn-delete cursor-pointer shadow-md"
                     >
                       <X size={14} /> Remove
                     </button>

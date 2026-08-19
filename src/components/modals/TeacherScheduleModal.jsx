@@ -97,13 +97,13 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
             </h2>
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <User size={16} className="text-[#800000]" />
+                <User size={16} className="text-[#7A0808]" />
                 <span className="text-sm font-bold text-gray-700">
                   {teacher.name}
                 </span>
               </div>
               {collegeCode && (
-                <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#800000] text-white">
+                <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#7A0808] text-white">
                   {collegeCode}
                 </span>
               )}
@@ -125,7 +125,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                       setSelectedSection('all'); // Reset section filter when changing semester
                     }}
                     className="px-3 py-1 text-xs font-bold transition-all"
-                    style={semester === s ? { background: '#800000', color: 'white', borderRadius: 8 } : { background: 'transparent', color: '#2B3235', borderRadius: 8 }}
+                    style={semester === s ? { background: '#7A0808', color: 'white', borderRadius: 8 } : { background: 'transparent', color: '#2B3235', borderRadius: 8 }}
                   >
                     Sem {s}
                   </button>
@@ -140,7 +140,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                 <select
                   value={selectedSection}
                   onChange={(e) => setSelectedSection(e.target.value)}
-                  className="px-3 py-1 text-xs font-bold border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+                  className="px-3 py-1 text-xs font-bold border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
                   style={{ color: '#2B3235' }}
                 >
                   <option value="all">All Sections ({entries.length})</option>
@@ -225,7 +225,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                   {Object.entries(blocksBySection).map(([section, sectionEntries]) => (
                     <div key={section} className="bg-white rounded-lg p-3 border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-xs text-[#800000]">
+                        <span className="font-bold text-xs text-[#7A0808]">
                           {section}
                         </span>
                         <span className="text-[10px] font-bold text-gray-500">

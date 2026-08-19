@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { parseTimeToHour, validateScheduleHours } from '../../services/plotScheduleService';
 import { formatScheduleHour } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
+import TimePicker from '../ui/TimePicker';
 
 const TYPE_OPTIONS = ['Lecture', 'Laboratory', 'CAS', 'Exam'];
 
@@ -129,11 +130,11 @@ export default function AddPlotEntryModal({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="form-label">Start time</label>
-                  <input type="time" step="1800" className="form-input" value={form.startTime} onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))} required disabled={!!dayBlockReason || lockTimes} />
+                  <TimePicker value={form.startTime} onChange={(val) => setForm((f) => ({ ...f, startTime: val }))} required disabled={!!dayBlockReason || lockTimes} step={30} />
                 </div>
                 <div>
                   <label className="form-label">End time</label>
-                  <input type="time" step="1800" className="form-input" value={form.endTime} onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))} required disabled={!!dayBlockReason || lockTimes} />
+                  <TimePicker value={form.endTime} onChange={(val) => setForm((f) => ({ ...f, endTime: val }))} required disabled={!!dayBlockReason || lockTimes} step={30} />
                 </div>
               </div>
               {lockTimes && (

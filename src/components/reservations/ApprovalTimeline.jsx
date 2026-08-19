@@ -28,7 +28,7 @@ function stepIcon(status) {
 }
 
 function stepColor(status) {
-  if (status === APPROVAL_RECORD_STATUS.APPROVED) return 'bg-green-500';
+  if (status === APPROVAL_RECORD_STATUS.APPROVED) return 'bg-[#7A0808]';
   if (status === APPROVAL_RECORD_STATUS.REJECTED) return 'bg-red-500';
   if (status === APPROVAL_RECORD_STATUS.PENDING) return 'bg-yellow-400';
   return 'bg-gray-200';

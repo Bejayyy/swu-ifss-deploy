@@ -962,75 +962,85 @@ export async function checkReservationTimeConflict({
   const newEnd = toMinutes(timeEnd);
 
   // Check 1: Approved reservations
-  const reservationsQuery = query(
-    reservationsCollection(),
-    where('roomDocId', '==', roomDocId),
-    where('dateOfActivity', '==', dateOfActivity),
-    where('status', '==', RESERVATION_STATUS.APPROVED)
-  );
+  try {
+    const reservationsQuery = query(
+      reservationsCollection(),
+      where('roomDocId', '==', roomDocId),
+      where('dateOfActivity', '==', dateOfActivity),
+      where('status', '==', RESERVATION_STATUS.APPROVED)
+    );
 
-  const reservationsSnapshot = await getDocs(reservationsQuery);
-  const existingReservations = reservationsSnapshot.docs
-    .map(mapReservationDoc)
-    .filter(r => !excludeReservationId || r.id !== excludeReservationId);
+    const reservationsSnapshot = await getDocs(reservationsQuery);
+    const existingReservations = reservationsSnapshot.docs
+      .map(mapReservationDoc)
+      .filter(r => !excludeReservationId || r.id !== excludeReservationId);
 
-  // Check for reservation overlaps
-  for (const existing of existingReservations) {
-    const existingStart = toMinutes(existing.timeStart);
-    const existingEnd = toMinutes(existing.timeEnd);
+    // Check for reservation overlaps
+    for (const existing of existingReservations) {
+      const existingStart = toMinutes(existing.timeStart);
+      const existingEnd = toMinutes(existing.timeEnd);
 
-    // Check if times overlap
-    const hasOverlap = (newStart < existingEnd && newEnd > existingStart);
+      // Check if times overlap
+      const hasOverlap = (newStart < existingEnd && newEnd > existingStart);
 
-    if (hasOverlap) {
-      throw new Error(
-        `Time conflict: This room is already reserved from ${existing.timeStart} to ${existing.timeEnd} on this date for "${existing.activity}".`
-      );
-    }
-  }
-
-  // Check 2: Maintenance schedules
-  const maintenanceQuery = query(
-    collection(db, COLLECTIONS.MAINTENANCE_SCHEDULES),
-    where('roomId', '==', roomDocId),
-    where('status', 'in', ['scheduled', 'in-progress'])
-  );
-
-  const maintenanceSnapshot = await getDocs(maintenanceQuery);
-  const maintenanceSchedules = maintenanceSnapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
-
-  // Check for maintenance overlaps
-  for (const schedule of maintenanceSchedules) {
-    const maintStart = schedule.startDate;
-    const maintEnd = schedule.endDate;
-
-    // Check if the reservation date falls within the maintenance period
-    const dateInRange = (isoDate >= maintStart && isoDate <= maintEnd);
-
-    if (dateInRange) {
-      // If it's a quick fix (hours), check time overlap
-      if (schedule.durationType === 'hours' && schedule.isQuickFix && isoDate === maintStart) {
-        const maintStartTime = toMinutes(schedule.startTime || '08:00');
-        const maintEndTime = maintStartTime + (schedule.durationHours || 2) * 60;
-
-        const hasTimeOverlap = (newStart < maintEndTime && newEnd > maintStartTime);
-
-        if (hasTimeOverlap) {
-          const endTimeStr = `${Math.floor(maintEndTime / 60).toString().padStart(2, '0')}:${(maintEndTime % 60).toString().padStart(2, '0')}`;
-          throw new Error(
-            `Maintenance conflict: This room is scheduled for maintenance from ${schedule.startTime || '08:00'} to ${endTimeStr} on this date. Reason: "${schedule.reason}".`
-          );
-        }
-      } else {
-        // Multi-day maintenance blocks the entire day
+      if (hasOverlap) {
         throw new Error(
-          `Maintenance conflict: This room is under maintenance from ${maintStart} to ${maintEnd}. Reason: "${schedule.reason}".`
+          `Time conflict: This room is already reserved from ${existing.timeStart} to ${existing.timeEnd} on this date for "${existing.activity}".`
         );
       }
     }
+  } catch (err) {
+    if (err.message && err.message.startsWith('Time conflict:')) throw err;
+    console.warn('Note: Could not query existing reservations due to permissions:', err?.message || err);
+  }
+
+  // Check 2: Maintenance schedules
+  try {
+    const maintenanceQuery = query(
+      collection(db, COLLECTIONS.MAINTENANCE_SCHEDULES),
+      where('roomId', '==', roomDocId),
+      where('status', 'in', ['scheduled', 'in-progress'])
+    );
+
+    const maintenanceSnapshot = await getDocs(maintenanceQuery);
+    const maintenanceSchedules = maintenanceSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Check for maintenance overlaps
+    for (const schedule of maintenanceSchedules) {
+      const maintStart = schedule.startDate;
+      const maintEnd = schedule.endDate;
+
+      // Check if the reservation date falls within the maintenance period
+      const dateInRange = (isoDate >= maintStart && isoDate <= maintEnd);
+
+      if (dateInRange) {
+        // If it's a quick fix (hours), check time overlap
+        if (schedule.durationType === 'hours' && schedule.isQuickFix && isoDate === maintStart) {
+          const maintStartTime = toMinutes(schedule.startTime || '08:00');
+          const maintEndTime = maintStartTime + (schedule.durationHours || 2) * 60;
+
+          const hasTimeOverlap = (newStart < maintEndTime && newEnd > maintStartTime);
+
+          if (hasTimeOverlap) {
+            const endTimeStr = `${Math.floor(maintEndTime / 60).toString().padStart(2, '0')}:${(maintEndTime % 60).toString().padStart(2, '0')}`;
+            throw new Error(
+              `Maintenance conflict: This room is scheduled for maintenance from ${schedule.startTime || '08:00'} to ${endTimeStr} on this date. Reason: "${schedule.reason}".`
+            );
+          }
+        } else {
+          // Multi-day maintenance blocks the entire day
+          throw new Error(
+            `Maintenance conflict: This room is under maintenance from ${maintStart} to ${maintEnd}. Reason: "${schedule.reason}".`
+          );
+        }
+      }
+    }
+  } catch (err) {
+    if (err.message && err.message.startsWith('Maintenance conflict:')) throw err;
+    console.warn('Note: Could not query maintenance schedules due to permissions:', err?.message || err);
   }
 }
 

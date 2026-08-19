@@ -9,6 +9,9 @@ import { useModal } from '../../hooks/useModal';
 import { formatCollegeName } from '../../constants/colleges';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
+import DatePicker from '../ui/DatePicker';
+import TimePicker from '../ui/TimePicker';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 function formatContactInput(val) {
   if (!val) return '';
@@ -49,6 +52,7 @@ function getSavedSignature(profileUser) {
 }
 
 export default function NonAcademicRequestModal({ onClose }) {
+  useBodyScrollLock(true);
   const { addRequest, buildingList } = useApp();
   const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
@@ -159,22 +163,47 @@ export default function NonAcademicRequestModal({ onClose }) {
   const roomsInSelectedBuilding = useMemo(() => {
     if (!selectedBuilding) return [];
     return selectedBuilding.floorData.flatMap((f) =>
-      f.rooms.map((r) => ({ id: r.id, floor: f.floor }))
+      f.rooms.map((r) => ({ id: r.id, docId: r.docId || r.id, floor: f.floor, floorId: f.floorId }))
     );
   }, [selectedBuilding]);
+
+  const selectedRoomObj = useMemo(() => {
+    if (!roomsInSelectedBuilding.length || !form.room) return null;
+    return roomsInSelectedBuilding.find((r) => r.id === form.room);
+  }, [roomsInSelectedBuilding, form.room]);
 
   const handleSubmit = async (draft = false) => {
     const isDraft = draft === true;
     const rawOrg = form.nameOfOrg || userAutoOrg || 'General';
     const resolvedOrg = formatCollegeName(rawOrg);
-    const resolvedRequestedBy = profile?.displayName || profile?.email || form.requestedBy || 'Requestor';
+    const resolvedRequestedBy = profile?.displayName || profile?.name || profile?.email || form.requestedBy || 'Requestor';
     
     // Validate required fields for submission
     if (!isDraft && !form.activity.trim()) {
       showNotification({
         type: 'warning',
-        title: 'Missing information',
-        message: 'Please provide activity name.',
+        title: 'Missing Activity Name',
+        message: 'Please provide the name of the activity.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    if (!isDraft && (!form.dateOfActivity || !form.timeStart || !form.timeEnd)) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing Date or Time',
+        message: 'Please specify the Date of Activity, Start Time, and End Time.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    if (!isDraft && (!form.building || !form.room)) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing Venue',
+        message: 'Please select both Building and Room.',
         autoCloseMs: 3000,
       });
       return;
@@ -203,11 +232,11 @@ export default function NonAcademicRequestModal({ onClose }) {
     }
 
     const confirmed = await showConfirm({
-      title: isDraft ? 'Save as draft?' : 'Submit request?',
+      title: isDraft ? 'Save as draft?' : 'Submit Non-Academic Request?',
       message: isDraft 
         ? 'The request will be saved as a draft and can be submitted later.'
         : 'This will submit the non-academic request for approval.',
-      confirmText: isDraft ? 'Save Draft' : 'Submit',
+      confirmText: isDraft ? 'Save Draft' : 'Submit Request',
       cancelText: 'Cancel',
       variant: 'primary',
     });
@@ -215,43 +244,54 @@ export default function NonAcademicRequestModal({ onClose }) {
     if (!confirmed) return;
 
     setIsLoading(true);
-    setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting request...');
+    setLoadingMessage(isDraft ? 'Saving non-academic draft...' : 'Submitting non-academic request...');
 
     try {
-      await addRequest({
-        type: 'non-academic',
-        title: form.activity,
-        department: resolvedOrg,
-        nameOfOrg: resolvedOrg,
-        requestedBy: resolvedRequestedBy,
-        requestor: resolvedRequestedBy,
-        ...form,
-        contactNumber: normalizedContact || form.contactNumber,
-        requestorSignatureUrl: activeSig || null,
-        signatureUrl: activeSig || null,
-        college: profile?.college || profile?.department || resolvedOrg,
-        status: isDraft ? 'Draft' : 'Pending',
-      });
+      await addRequest(
+        {
+          type: 'non-academic',
+          title: form.activity,
+          department: resolvedOrg,
+          nameOfOrg: resolvedOrg,
+          requestedBy: resolvedRequestedBy,
+          requestor: resolvedRequestedBy,
+          requestorEmail: profile?.email || '',
+          createdByUid: profile?.uid || '',
+          ...form,
+          buildingId: selectedBuilding?.id || null,
+          roomId: selectedRoomObj?.docId || selectedRoomObj?.id || form.room || null,
+          floor: selectedRoomObj?.floor ?? null,
+          floorId: selectedRoomObj?.floorId || null,
+          contactNumber: normalizedContact || form.contactNumber,
+          requestorSignatureUrl: activeSig || null,
+          signatureUrl: activeSig || null,
+          college: profile?.college || profile?.department || resolvedOrg,
+          status: isDraft ? 'Draft' : 'Pending',
+        },
+        { draft: isDraft }
+      );
       
+      setIsLoading(false);
       showNotification({
         type: 'success',
-        title: isDraft ? 'Draft saved' : 'Request submitted',
+        title: isDraft ? 'Draft Saved Successfully' : 'Submit Successful!',
         message: isDraft 
           ? 'Your non-academic request has been saved as a draft.'
           : 'Your non-academic request has been submitted for approval.',
-        autoCloseMs: 2000,
+        autoCloseMs: 2500,
       });
       
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 2200);
     } catch (error) {
+      setIsLoading(false);
       showNotification({
         type: 'error',
-        title: isDraft ? 'Save failed' : 'Submit failed',
-        message: error.message || 'An error occurred. Please try again.',
+        title: isDraft ? 'Save Failed' : 'Submission Failed',
+        message: error.message || 'An error occurred while submitting your request. Please check details and try again.',
         autoCloseMs: 0,
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -292,7 +332,7 @@ export default function NonAcademicRequestModal({ onClose }) {
               <label className="form-label">
                 Date of Activity <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="date" value={form.dateOfActivity} onChange={e => set('dateOfActivity', e.target.value)} required />
+              <DatePicker value={form.dateOfActivity} onChange={val => set('dateOfActivity', val)} required />
             </div>
             <div>
               <label className="form-label">
@@ -304,13 +344,13 @@ export default function NonAcademicRequestModal({ onClose }) {
               <label className="form-label">
                 Time Start <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="time" value={form.timeStart} onChange={e => set('timeStart', e.target.value)} required />
+              <TimePicker value={form.timeStart} onChange={(val) => set('timeStart', val)} required />
             </div>
             <div>
               <label className="form-label">
                 Time End <span className="text-red-600">*</span>
               </label>
-              <input className="form-input" type="time" value={form.timeEnd} onChange={e => set('timeEnd', e.target.value)} required />
+              <TimePicker value={form.timeEnd} onChange={(val) => set('timeEnd', val)} required />
             </div>
             <div className="col-span-2">
               <label className="form-label">
@@ -404,7 +444,7 @@ export default function NonAcademicRequestModal({ onClose }) {
                       approvalSteps: defaultNonAcademicSteps(checked),
                     }));
                   }}
-                  className="accent-[#800000]"
+                  className="accent-[#7A0808]"
                 />
                 Utility is under Medicine (adds Medicine approver before GSD)
               </label>

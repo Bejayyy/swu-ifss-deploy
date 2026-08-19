@@ -56,14 +56,14 @@ export default function AcademicCalendar() {
             <div className="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-red-50 text-[#800000] flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-red-50 text-[#7A0808] flex items-center justify-center">
                     <CalendarDays size={18} />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-gray-900">
                       School Year Configuration
                     </h3>
-                    <p className="text-xs font-semibold text-[#800000] mt-0.5">
+                    <p className="text-xs font-semibold text-[#7A0808] mt-0.5">
                       {displaySchoolYear}
                     </p>
                   </div>
@@ -77,7 +77,7 @@ export default function AcademicCalendar() {
                       <select
                         value={activeSchoolYearId || ''}
                         onChange={(e) => setActiveSchoolYearId(e.target.value || null)}
-                        className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
+                        className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#7A0808]"
                       >
                         {schoolYears.map((sy) => (
                           <option key={sy.id} value={sy.id}>
@@ -97,7 +97,7 @@ export default function AcademicCalendar() {
                         onClick={() => setExamSemTab(sem)}
                         className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
                           examSemTab === sem
-                            ? 'bg-[#800000] text-white shadow-2xs'
+                            ? 'bg-[#7A0808] text-white shadow-2xs'
                             : 'text-gray-600 hover:text-gray-900'
                         }`}
                       >
@@ -110,10 +110,10 @@ export default function AcademicCalendar() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Semester 1 Dates */}
-                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '1' ? 'border-[#800000] bg-amber-50/30 ring-1 ring-[#800000]/20' : 'border-gray-200 bg-gray-50/50'}`}>
+                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '1' ? 'border-[#7A0808] bg-amber-50/30 ring-1 ring-[#7A0808]/20' : 'border-gray-200 bg-gray-50/50'}`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-black text-gray-900">Semester 1</span>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-100 text-amber-800">Term 1</span>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">Term 1</span>
                   </div>
                   <p className="text-xs font-bold text-gray-700">
                     {config?.semester1Start ? formatDisplayDate(config.semester1Start) : 'Not set'} — {config?.semester1End ? formatDisplayDate(config.semester1End) : 'Not set'}
@@ -121,10 +121,10 @@ export default function AcademicCalendar() {
                 </div>
 
                 {/* Semester 2 Dates */}
-                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '2' ? 'border-[#800000] bg-blue-50/30 ring-1 ring-[#800000]/20' : 'border-gray-200 bg-gray-50/50'}`}>
+                <div className={`p-4 rounded-xl border transition-all space-y-1 ${examSemTab === '2' ? 'border-[#7A0808] bg-blue-50/30 ring-1 ring-[#7A0808]/20' : 'border-gray-200 bg-gray-50/50'}`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-black text-gray-900">Semester 2</span>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-800">Term 2</span>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">Term 2</span>
                   </div>
                   <p className="text-xs font-bold text-gray-700">
                     {config?.semester2Start ? formatDisplayDate(config.semester2Start) : 'Not set'} — {config?.semester2End ? formatDisplayDate(config.semester2End) : 'Not set'}
@@ -137,12 +137,12 @@ export default function AcademicCalendar() {
             <div className="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-2xs space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-red-50 text-[#800000] flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-red-50 text-[#7A0808] flex items-center justify-center">
                     <Clock size={18} />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-gray-900">
-                      Exam Period Ranges <span className="text-xs font-extrabold text-[#800000]">(Semester {examSemTab})</span>
+                      Exam Period Ranges <span className="text-xs font-extrabold text-[#7A0808]">(Semester {examSemTab})</span>
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
                       Scheduled dates for Freshmen and Upperclassmen
@@ -164,7 +164,7 @@ export default function AcademicCalendar() {
                     style={{ background: period.bg, borderColor: period.border }}
                   >
                     <h4 className="font-black text-xs text-gray-900 flex items-center gap-1.5">
-                      <FileText size={14} className="text-[#800000]" />
+                      <FileText size={14} className="text-[#7A0808]" />
                       {period.label}
                     </h4>
 
@@ -181,7 +181,7 @@ export default function AcademicCalendar() {
                             key={level}
                             className="bg-white p-3 rounded-xl border border-gray-200/80 shadow-2xs space-y-1"
                           >
-                            <p className="text-[10px] font-extrabold text-[#800000]">{label}</p>
+                            <p className="text-[10px] font-extrabold text-[#7A0808]">{label}</p>
                             <p className="text-xs font-bold text-gray-800">
                               {rangeText || 'Dates not set'}
                             </p>
@@ -200,7 +200,7 @@ export default function AcademicCalendar() {
         <div className="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-red-50 text-[#800000] flex items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-red-50 text-[#7A0808] flex items-center justify-center">
                 <BookOpen size={18} />
               </div>
               <div>
@@ -217,7 +217,7 @@ export default function AcademicCalendar() {
               <a
                 href={calendarPdfData.pdfUrl}
                 download={calendarPdfData.pdfFileName || 'School_Calendar.pdf'}
-                className="px-4 py-2 rounded-xl bg-[#800000] text-white text-xs font-bold hover:bg-[#600000] transition-all flex items-center gap-2 shadow-2xs"
+                className="px-4 py-2 rounded-xl bg-[#7A0808] text-white text-xs font-bold hover:bg-[#600000] transition-all flex items-center gap-2 shadow-2xs"
               >
                 <Download size={14} /> Download PDF
               </a>

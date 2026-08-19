@@ -18,7 +18,7 @@ export default function RegistrarActionsModal({
           <X size={20} />
         </button>
         <div className="p-8 pt-10">
-          <h2 className="font-black text-lg mb-1" style={{ color: '#800000' }}>{registrar.displayName}</h2>
+          <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>{registrar.displayName}</h2>
           <p className="text-xs font-medium mb-6" style={{ color: '#2B3235', opacity: 0.65 }}>{registrar.email}</p>
 
           <div className="space-y-2">

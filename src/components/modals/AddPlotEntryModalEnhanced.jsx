@@ -523,7 +523,7 @@ export default function AddPlotEntryModalEnhanced({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
                 <div>
                   <div className="flex items-center gap-2">
-                    <BookOpen size={20} className="text-[#800000]" />
+                    <BookOpen size={20} className="text-[#7A0808]" />
                     <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                       Select a Course
                     </h3>
@@ -593,12 +593,12 @@ export default function AddPlotEntryModalEnhanced({
                         }}
                         className={`text-left px-3.5 py-2.5 rounded-xl border transition-all ${
                           isSelected
-                            ? 'border-[#800000] bg-red-50/80 shadow-2xs'
-                            : 'border-gray-200 hover:border-[#800000] hover:bg-gray-50'
+                            ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                            : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-black text-xs text-[#800000]">{course.code}</span>
+                          <span className="font-black text-xs text-[#7A0808]">{course.code}</span>
                           <span
                             className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
                               course.type === 'lecture'
@@ -625,7 +625,7 @@ export default function AddPlotEntryModalEnhanced({
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <User size={20} className="text-[#800000]" />
+                  <User size={20} className="text-[#7A0808]" />
                   <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                     Select Teacher / Instructor
                   </h3>
@@ -677,14 +677,14 @@ export default function AddPlotEntryModalEnhanced({
                         onClick={() => setSelectedTeacher(teacher)}
                         className={`text-left px-3.5 py-2.5 rounded-xl border transition-all ${
                           isSelected
-                            ? 'border-[#800000] bg-red-50/80 shadow-2xs'
-                            : 'border-gray-200 hover:border-[#800000] hover:bg-gray-50'
+                            ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                            : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <div
                             className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-                            style={{ background: '#800000' }}
+                            style={{ background: '#7A0808' }}
                           >
                             {teacher.name?.charAt(0)?.toUpperCase() || 'T'}
                           </div>
@@ -705,7 +705,7 @@ export default function AddPlotEntryModalEnhanced({
           {step === 3 && (
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <Clock size={20} className="text-[#800000]" />
+                <Clock size={20} className="text-[#7A0808]" />
                 <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                   Select Course Type
                 </h3>
@@ -723,11 +723,11 @@ export default function AddPlotEntryModalEnhanced({
                     }}
                     className={`p-6 rounded-xl border-2 transition-all text-center ${
                       selectedType === type
-                        ? 'border-[#800000] bg-red-50'
-                        : 'border-gray-200 hover:border-[#800000] hover:bg-gray-50'
+                        ? 'border-[#7A0808] bg-red-50'
+                        : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                     }`}
                   >
-                    <p className="font-black text-lg text-[#800000] mb-1">{type}</p>
+                    <p className="font-black text-lg text-[#7A0808] mb-1">{type}</p>
                     <p className="text-xs text-gray-500">
                       {type === 'Lecture'
                         ? 'Regular classroom lecture session'
@@ -748,7 +748,7 @@ export default function AddPlotEntryModalEnhanced({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <Building2 size={20} className="text-[#800000]" />
+                        <Building2 size={20} className="text-[#7A0808]" />
                         <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                           Select Building
                         </h3>
@@ -808,10 +808,10 @@ export default function AddPlotEntryModalEnhanced({
                             setSelectedBuilding(building);
                             setSelectedRoom(null); // Reset room when building changes
                           }}
-                          className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#800000] hover:bg-red-50/50 transition-all shadow-2xs group"
+                          className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#7A0808] hover:bg-red-50/50 transition-all shadow-2xs group"
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-black text-sm text-[#800000] truncate group-hover:text-[#600000]">
+                            <span className="font-black text-sm text-[#7A0808] truncate group-hover:text-[#600000]">
                               {building.name}
                             </span>
                             <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 flex-shrink-0">
@@ -844,7 +844,7 @@ export default function AddPlotEntryModalEnhanced({
                       </button>
                       <span className="text-gray-400">|</span>
                       <h4 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
-                        <Building2 size={16} className="text-[#800000]" />
+                        <Building2 size={16} className="text-[#7A0808]" />
                         <span>{selectedBuilding.name} ({selectedBuilding.code})</span>
                       </h4>
                     </div>
@@ -862,7 +862,7 @@ export default function AddPlotEntryModalEnhanced({
                     <div className="w-full lg:w-[30%] space-y-3">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                          <Layers size={14} className="text-[#800000]" /> Floors & Rooms ({selectedType})
+                          <Layers size={14} className="text-[#7A0808]" /> Floors & Rooms ({selectedType})
                         </h4>
                         <span className="text-[10px] text-gray-400 font-semibold">Click room to view grid</span>
                       </div>
@@ -904,7 +904,7 @@ export default function AddPlotEntryModalEnhanced({
                                       {floorData.rooms.length} room(s)
                                     </span>
                                     {isOpen ? (
-                                      <ChevronDown size={15} className="text-[#800000] transition-transform" />
+                                      <ChevronDown size={15} className="text-[#7A0808] transition-transform" />
                                     ) : (
                                       <ChevronRight size={15} className="text-gray-400 transition-transform" />
                                     )}
@@ -928,12 +928,12 @@ export default function AddPlotEntryModalEnhanced({
                                             onClick={() => setSelectedRoom(room)}
                                             className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between ${
                                               isSelected
-                                                ? 'border-[#800000] bg-red-50 shadow-2xs'
-                                                : 'border-gray-100 hover:border-[#800000] hover:bg-gray-50'
+                                                ? 'border-[#7A0808] bg-red-50 shadow-2xs'
+                                                : 'border-gray-100 hover:border-[#7A0808] hover:bg-gray-50'
                                             }`}
                                           >
                                             <div>
-                                              <p className="font-black text-xs text-[#800000]">
+                                              <p className="font-black text-xs text-[#7A0808]">
                                                 {room.roomCode}
                                               </p>
                                               <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
@@ -953,7 +953,7 @@ export default function AddPlotEntryModalEnhanced({
                                                      floorName: floorData.name,
                                                    });
                                                  }}
-                                                 className="p-1 rounded-md text-gray-400 hover:text-[#800000] hover:bg-red-100/60 transition-colors"
+                                                 className="p-1 rounded-md text-gray-400 hover:text-[#7A0808] hover:bg-red-100/60 transition-colors"
                                                >
                                                  <Eye size={13} />
                                                </button>
@@ -989,11 +989,11 @@ export default function AddPlotEntryModalEnhanced({
                           {/* Live Interactive Time & Day Control Bar */}
                           <div className="p-3 bg-red-50/60 border border-red-200/80 rounded-xl space-y-2.5">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-black text-[#800000] flex items-center gap-1.5">
+                              <span className="text-xs font-black text-[#7A0808] flex items-center gap-1.5">
                                 <Clock size={14} /> Selected Schedule Time & Day:
                               </span>
                               {startTime && endTime && selectedDayIndex !== undefined ? (
-                                <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#800000] text-white shadow-2xs">
+                                <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#7A0808] text-white shadow-2xs">
                                   {SCHEDULE_DAYS[selectedDayIndex]} {formatScheduleHour(parseTimeToHour(startTime))} – {formatScheduleHour(parseTimeToHour(endTime))} ({Math.round(Math.max(0, parseTimeToHour(endTime) - parseTimeToHour(startTime)) * 10) / 10} hrs)
                                 </span>
                               ) : (
@@ -1012,7 +1012,7 @@ export default function AddPlotEntryModalEnhanced({
                                 <select
                                   value={selectedDayIndex !== undefined ? selectedDayIndex : 0}
                                   onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
                                 >
                                   {SCHEDULE_DAYS.map((d, idx) => (
                                     <option key={d} value={idx}>{d}</option>
@@ -1035,7 +1035,7 @@ export default function AddPlotEntryModalEnhanced({
                                       setEndTime(hourToTimeInput(startH + 1.5));
                                     }
                                   }}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
                                 >
                                   <option value="" disabled>Select start time...</option>
                                   {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
@@ -1058,7 +1058,7 @@ export default function AddPlotEntryModalEnhanced({
                                 <select
                                   value={endTime || ''}
                                   onChange={(e) => setEndTime(e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#800000]"
+                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
                                 >
                                   <option value="" disabled>Select end time...</option>
                                   {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
@@ -1120,7 +1120,7 @@ export default function AddPlotEntryModalEnhanced({
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 size={20} className="text-[#800000]" />
+                  <CheckCircle2 size={20} className="text-[#7A0808]" />
                   <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                     Schedule Plot Summary
                   </h3>
@@ -1164,7 +1164,7 @@ export default function AddPlotEntryModalEnhanced({
                   <div className="flex items-center gap-3">
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-xs"
-                      style={{ background: '#800000' }}
+                      style={{ background: '#7A0808' }}
                     >
                       {selectedTeacher?.name?.charAt(0)?.toUpperCase() || 'T'}
                     </div>
@@ -1268,7 +1268,7 @@ export default function AddPlotEntryModalEnhanced({
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-50 text-[#800000] flex items-center justify-center flex-shrink-0 border border-red-100">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-[#7A0808] flex items-center justify-center flex-shrink-0 border border-red-100">
                   <DoorOpen size={20} />
                 </div>
                 <div>
@@ -1298,7 +1298,7 @@ export default function AddPlotEntryModalEnhanced({
                     ROOM TYPE
                   </span>
                   <p className="font-extrabold text-sm text-gray-900 flex items-center gap-1.5">
-                    <Layers size={14} className="text-[#800000]" />
+                    <Layers size={14} className="text-[#7A0808]" />
                     {viewDetailsRoom.type || viewDetailsRoom.roomType || 'Classroom'}
                   </p>
                 </div>

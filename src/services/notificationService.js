@@ -18,22 +18,30 @@ const NOTIFICATIONS_COLLECTION = 'notifications';
  * Real-time subscription to user notifications
  */
 export function subscribeUserNotifications(user, onData, onError) {
-  if (!user || (!user.uid && !user.email)) {
+  if (!user || (!user.uid && !user.id && !user.email)) {
     onData([]);
     return () => {};
   }
 
-  const userId = user.uid;
-  const userEmail = (user.email || '').trim().toLowerCase();
+  const userKeys = [
+    user.uid,
+    user.id,
+    user.email,
+    user.email?.toLowerCase(),
+  ].filter(Boolean);
 
   const ref = collection(db, NOTIFICATIONS_COLLECTION);
-  const q = query(ref, where('userId', '==', userId));
 
   return onSnapshot(
-    q,
+    ref,
     (snap) => {
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((item) => {
+          const itemUserId = String(item.userId || item.recipientId || '').toLowerCase();
+          const isTarget = userKeys.some((k) => String(k).toLowerCase() === itemUserId) || !item.userId;
+          return isTarget;
+        })
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);

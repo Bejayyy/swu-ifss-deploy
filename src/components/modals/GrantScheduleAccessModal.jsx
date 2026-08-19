@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, ChevronDown, Search, Trash2, Calendar, Mail } from 'lucide-react';
+import DatePicker from '../ui/DatePicker';
 import { subscribeColleges } from '../../services/collegeService';
 import { grantFirstCollegeAccess } from '../../services/scheduleAccessService';
 import { useAuth } from '../../context/AuthContext';
@@ -205,11 +206,11 @@ export default function GrantScheduleAccessModal({
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-3 shadow-2xs">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                  <Calendar size={14} className="text-[#800000]" />
+                  <Calendar size={14} className="text-[#7A0808]" />
                   Accomplishment Window (Day Limit) <span className="text-red-500">*</span>
                 </label>
                 {getDurationDays() !== null && (
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#800000] text-white shadow-2xs">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#7A0808] text-white shadow-2xs">
                     {getDurationDays()} Day Limit
                   </span>
                 )}
@@ -220,23 +221,13 @@ export default function GrantScheduleAccessModal({
                   <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
                     Start Date
                   </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
-                  />
+                  <DatePicker value={startDate} onChange={setStartDate} />
                 </div>
                 <div>
                   <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
                     End Date (Deadline)
                   </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-[#800000]"
-                  />
+                  <DatePicker value={endDate} onChange={setEndDate} />
                 </div>
               </div>
 
@@ -246,10 +237,10 @@ export default function GrantScheduleAccessModal({
                   type="checkbox"
                   checked={sendEmailNotification}
                   onChange={(e) => setSendEmailNotification(e.target.checked)}
-                  className="rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                  className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
                 />
                 <span className="text-xs font-bold text-gray-800 flex items-center gap-1">
-                  <Mail size={13} className="text-[#800000]" />
+                  <Mail size={13} className="text-[#7A0808]" />
                   Notify Granted Deans via Email & Portal Alert
                 </span>
               </label>
@@ -263,7 +254,7 @@ export default function GrantScheduleAccessModal({
                   <button
                     type="button"
                     onClick={() => setSelectedCollegeCodes([])}
-                    className="text-[#800000] hover:underline font-bold"
+                    className="text-[#7A0808] hover:underline font-bold"
                   >
                     Clear All
                   </button>
@@ -274,13 +265,13 @@ export default function GrantScheduleAccessModal({
                     .map((c) => (
                       <span
                         key={c.code}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-[#800000] border border-red-100 text-xs font-bold shadow-2xs"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-[#7A0808] border border-red-100 text-xs font-bold shadow-2xs"
                       >
                         <span>{c.name} ({c.code})</span>
                         <button
                           type="button"
                           onClick={() => toggleCollegeCode(c.code)}
-                          className="text-[#800000] hover:text-red-900 p-0.5 rounded-full hover:bg-red-100 transition-colors ml-0.5"
+                          className="text-[#7A0808] hover:text-red-900 p-0.5 rounded-full hover:bg-red-100 transition-colors ml-0.5"
                           title="Remove college"
                         >
                           <X size={12} />
@@ -298,7 +289,7 @@ export default function GrantScheduleAccessModal({
               </label>
 
               {loading ? (
-                <div className="input-field w-full text-gray-400 py-2.5">Loading colleges...</div>
+                <div className="form-input w-full text-gray-400 py-2.5">Loading colleges...</div>
               ) : (
                 <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-2.5 space-y-2 shadow-2xs">
                   {/* Trigger / Summary Bar */}
@@ -315,7 +306,7 @@ export default function GrantScheduleAccessModal({
                     </span>
                     <ChevronDown
                       size={16}
-                      className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180 text-[#800000]' : ''}`}
+                      className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180 text-[#7A0808]' : ''}`}
                     />
                   </div>
 
@@ -331,7 +322,7 @@ export default function GrantScheduleAccessModal({
                             value={collegeSearch}
                             onChange={(e) => setCollegeSearch(e.target.value)}
                             placeholder="Filter colleges by code or name..."
-                            className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 outline-none focus:border-[#800000] focus:bg-white"
+                            className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 outline-none focus:border-[#7A0808] focus:bg-white"
                           />
                         </div>
 
@@ -343,7 +334,7 @@ export default function GrantScheduleAccessModal({
                             type="checkbox"
                             checked={isAllSelected}
                             onChange={() => {}}
-                            className="rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
+                            className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer"
                           />
                           <span>Select All Colleges ({colleges.length})</span>
                         </div>
@@ -362,7 +353,7 @@ export default function GrantScheduleAccessModal({
                                 onClick={() => toggleCollegeCode(college.code)}
                                 className={`flex items-center justify-between px-2.5 py-2.5 rounded-lg cursor-pointer text-xs transition-all ${
                                   isSelected
-                                    ? 'bg-red-50 text-[#800000] font-bold border border-red-100/80 shadow-2xs'
+                                    ? 'bg-red-50 text-[#7A0808] font-bold border border-red-100/80 shadow-2xs'
                                     : 'text-gray-700 hover:bg-gray-50 font-medium'
                                 }`}
                               >
@@ -371,7 +362,7 @@ export default function GrantScheduleAccessModal({
                                     type="checkbox"
                                     checked={isSelected}
                                     onChange={() => {}}
-                                    className="rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer flex-shrink-0"
+                                    className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer flex-shrink-0"
                                   />
                                   <span className="truncate">{college.name}</span>
                                 </div>
@@ -401,7 +392,7 @@ export default function GrantScheduleAccessModal({
                 type="button"
                 onClick={onReset}
                 disabled={submitting}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors flex items-center gap-1.5"
+                className="btn-delete cursor-pointer"
                 title="Reset access control to start fresh"
               >
                 <Trash2 size={14} /> Reset Access
@@ -422,7 +413,7 @@ export default function GrantScheduleAccessModal({
               <button
                 type="submit"
                 disabled={submitting || loading || selectedCollegeCodes.length === 0}
-                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2 shadow-2xs"
+                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-colors disabled:opacity-50 flex items-center gap-2 shadow-2xs"
               >
                 <Send size={15} />
                 {submitting

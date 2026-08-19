@@ -1,10 +1,18 @@
 import React from 'react';
+import { CheckCircle, XCircle, Clock, Filter, Layers } from 'lucide-react';
 
-const MAROON = '#800000';
+const MAROON = '#7A0808';
 const TEXT = '#2B3235';
-const BADGE = '#800000';
+const BADGE = '#7A0808';
 const CONTAINER_BG = '#F9FAFB';
 const R = 10;
+
+const STATUS_ICONS = {
+  All: <Filter size={13} />,
+  Pending: <Clock size={13} />,
+  Approved: <CheckCircle size={13} />,
+  Rejected: <XCircle size={13} />,
+};
 
 /**
  * Primary category switcher — shrink-wrapped container, 10px radii (not pills).
@@ -24,10 +32,7 @@ export function CategoryFilterTabs({
   ].filter((item) => !item.hidden);
 
   return (
-    <div
-      className="inline-flex w-fit flex-wrap items-center p-1 gap-0.5 shadow-sm max-w-full"
-      style={{ background: CONTAINER_BG, borderRadius: R }}
-    >
+    <div className="inline-flex w-fit flex-wrap items-center p-1 gap-1 bg-white border border-gray-200 rounded-2xl shadow-2xs max-w-full">
       {items.map(({ key, label, count }) => {
         const active = value === key;
         return (
@@ -35,18 +40,15 @@ export function CategoryFilterTabs({
             key={key}
             type="button"
             onClick={() => onChange(key)}
-            className="px-4 py-2 text-sm font-bold flex items-center gap-2 transition-all"
-            style={{
-              borderRadius: R,
-              background: active ? MAROON : 'transparent',
-              color: active ? '#fff' : TEXT,
-              boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-            }}
+            className={`px-4 py-2 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer rounded-xl ${
+              active
+                ? 'bg-[#7A0808] text-white shadow-2xs'
+                : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
+            }`}
           >
-            {label}
+            <span>{label}</span>
             <span
-              className="min-w-[22px] h-[22px] px-1 flex items-center justify-center text-[11px] font-black text-white"
-              style={{ background: BADGE, borderRadius: 6 }}
+              className="min-w-[20px] h-[20px] px-1.5 flex items-center justify-center text-[10px] font-black text-white rounded-lg bg-[#F59E0B] shadow-2xs leading-none"
             >
               {count}
             </span>
@@ -58,29 +60,28 @@ export function CategoryFilterTabs({
 }
 
 /**
- * Status row — shrink-wrapped, #F9FAFB container, 10px button radius.
+ * Status row — shrink-wrapped, clean white container, uniform 12px button radius with theme icons.
  */
 export function StatusFilterRow({ value, onChange, options = ['All', 'Pending', 'Approved', 'Rejected'] }) {
   return (
-    <div
-      className="inline-flex w-fit flex-wrap items-center p-1 gap-1 shadow-sm max-w-full"
-      style={{ background: CONTAINER_BG, borderRadius: R }}
-    >
+    <div className="inline-flex w-fit flex-wrap items-center p-1 gap-1 bg-white border border-gray-200 rounded-2xl shadow-2xs max-w-full">
       {options.map((opt) => {
         const active = value === opt;
+        const icon = STATUS_ICONS[opt];
+
         return (
           <button
             key={opt}
             type="button"
             onClick={() => onChange(opt)}
-            className="px-4 py-2 text-sm font-semibold transition-all"
-            style={{
-              borderRadius: R,
-              background: active ? MAROON : 'transparent',
-              color: active ? '#fff' : TEXT,
-            }}
+            className={`px-3.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer rounded-xl ${
+              active
+                ? 'bg-[#7A0808] text-white shadow-2xs'
+                : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
+            }`}
           >
-            {opt}
+            {icon && <span style={{ opacity: active ? 1 : 0.7 }}>{icon}</span>}
+            <span>{opt}</span>
           </button>
         );
       })}
@@ -104,12 +105,12 @@ export function PillFilterRow({ options, value, onChange, variant = 'filled' }) 
               key={key}
               type="button"
               onClick={() => onChange(key)}
-              className={`px-4 py-2 text-sm font-bold transition-all border ${
-                active ? '' : 'hover:bg-[#800000] hover:text-white hover:border-[#800000]'
+              className={`px-4 py-2 text-xs font-bold transition-all border cursor-pointer ${
+                active ? '' : 'hover:bg-[#7A0808] hover:text-white hover:border-[#7A0808]'
               }`}
               style={{
                 borderRadius: R,
-                background: active ? '#800000' : '#fff',
+                background: active ? '#7A0808' : '#fff',
                 color: active ? '#fff' : TEXT,
                 borderColor: active ? MAROON : '#E5E7EB',
               }}
@@ -123,8 +124,8 @@ export function PillFilterRow({ options, value, onChange, variant = 'filled' }) 
             key={key}
             type="button"
             onClick={() => onChange(key)}
-            className={`px-4 py-2 text-sm font-bold transition-all ${
-              active ? '' : 'hover:bg-[#800000] hover:text-white hover:border-[#800000]'
+            className={`px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              active ? '' : 'hover:bg-[#7A0808] hover:text-white hover:border-[#7A0808]'
             }`}
             style={{
               borderRadius: R,

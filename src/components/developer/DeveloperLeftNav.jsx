@@ -39,7 +39,7 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
             <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
           ) : null}
           <div className="min-w-0">
-            <p className="font-bold text-xl leading-tight truncate" style={{ color: '#800000' }}>SWU-IFSS</p>
+            <p className="font-bold text-xl leading-tight truncate" style={{ color: '#7A0808' }}>SWU-IFSS</p>
             <p className="text-[11px] font-medium leading-tight truncate" style={{ color: '#2B3235', opacity: 0.75 }}>
               Developer Portal
             </p>
@@ -60,12 +60,12 @@ export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onC
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 mb-1 rounded-lg transition-colors"
                 style={{
                   background: active ? '#FFF0F0' : 'transparent',
-                  color: active ? '#800000' : '#2B3235',
+                  color: active ? '#7A0808' : '#2B3235',
                 }}
               >
-                <Icon size={17} style={{ color: active ? '#800000' : undefined }} />
+                <Icon size={17} style={{ color: active ? '#7A0808' : undefined }} />
                 <span className="text-[13px] font-semibold">{label}</span>
-                {active && <Shield size={12} className="ml-auto text-[#800000]" />}
+                {active && <Shield size={12} className="ml-auto text-[#7A0808]" />}
               </button>
             );
           })}

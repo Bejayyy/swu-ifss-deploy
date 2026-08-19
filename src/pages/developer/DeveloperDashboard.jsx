@@ -134,10 +134,10 @@ export default function DeveloperDashboard() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button type="button" className="btn-outline-maroon gap-2" style={{ borderRadius: 10, borderColor: '#800000', color: '#800000' }} onClick={() => setShowFilter(true)}>
+        <button type="button" className="btn-outline-maroon gap-2" style={{ borderRadius: 10, borderColor: '#7A0808', color: '#7A0808' }} onClick={() => setShowFilter(true)}>
           <Filter size={16} /> Filter
         </button>
-        <button type="button" className="gap-2 text-white font-semibold px-5 py-2 rounded-[10px] flex items-center" style={{ background: '#800000' }} onClick={() => setShowCreate(true)}>
+        <button type="button" className="gap-2 text-white font-semibold px-5 py-2 rounded-[10px] flex items-center" style={{ background: '#7A0808' }} onClick={() => setShowCreate(true)}>
           <Plus size={16} /> Create Registrar
         </button>
       </div>
@@ -147,7 +147,7 @@ export default function DeveloperDashboard() {
       )}
 
       {filter.status !== 'any' && (
-        <p className="text-xs font-semibold mb-2" style={{ color: '#800000' }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: '#7A0808' }}>
           Status filter: {filter.status} ({filtered.length} shown)
         </p>
       )}
@@ -173,7 +173,7 @@ export default function DeveloperDashboard() {
                 <tr key={r.uid} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#800000', borderRadius: 10 }}>
+                      <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#7A0808', borderRadius: 10 }}>
                         {r.initials || 'R'}
                       </div>
                       <span className="font-bold">{r.displayName}</span>

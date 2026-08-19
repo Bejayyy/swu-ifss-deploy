@@ -15,10 +15,13 @@ import LoadingModal from '../components/modals/LoadingModal';
 import ScheduleMaintenanceModal from '../components/modals/ScheduleMaintenanceModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 
+import ProgressStatCards from '../components/ProgressStatCards';
+import CustomSelect from '../components/ui/CustomSelect';
+
 export default function MaintenanceDashboard() {
   const navigate = useNavigate();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
-  
+
   const [activeTab, setActiveTab] = useState('reports'); // 'reports' or 'schedules'
   const [schedules, setSchedules] = useState([]);
   const [reports, setReports] = useState([]);
@@ -93,20 +96,34 @@ export default function MaintenanceDashboard() {
   const endIndex = Math.min(currentPage * itemsPerPage, totalItems);
 
   // Stats
-  const reportStats = {
+  const reportStats = useMemo(() => ({
     total: reports.length,
     pending: reports.filter(r => r.status === 'pending').length,
     acknowledged: reports.filter(r => r.status === 'acknowledged').length,
     inProgress: reports.filter(r => r.status === 'in-progress').length,
     resolved: reports.filter(r => r.status === 'resolved').length,
-  };
+  }), [reports]);
 
-  const scheduleStats = {
+  const scheduleStats = useMemo(() => ({
     total: schedules.length,
     scheduled: schedules.filter(s => s.status === 'scheduled').length,
     inProgress: schedules.filter(s => s.status === 'in-progress').length,
     completed: schedules.filter(s => s.status === 'completed').length,
-  };
+  }), [schedules]);
+
+  const reportStatItems = useMemo(() => [
+    { label: 'Total Reports', value: reportStats.total, icon: AlertTriangle, color: 'maroon' },
+    { label: 'Pending', value: reportStats.pending, icon: Clock, color: 'amber' },
+    { label: 'In Progress', value: reportStats.inProgress, icon: Wrench, color: 'blue' },
+    { label: 'Resolved', value: reportStats.resolved, icon: CheckCircle, color: 'emerald' },
+  ], [reportStats]);
+
+  const scheduleStatItems = useMemo(() => [
+    { label: 'Total Schedules', value: scheduleStats.total, icon: Calendar, color: 'maroon' },
+    { label: 'Scheduled', value: scheduleStats.scheduled, icon: Clock, color: 'amber' },
+    { label: 'In Progress', value: scheduleStats.inProgress, icon: Wrench, color: 'blue' },
+    { label: 'Completed', value: scheduleStats.completed, icon: CheckCircle, color: 'emerald' },
+  ], [scheduleStats]);
 
   // Handlers
   const handleScheduleFromReport = (report) => {
@@ -158,6 +175,15 @@ export default function MaintenanceDashboard() {
   };
 
   const handleStartProgress = async (reportId) => {
+    const confirmed = await showConfirm({
+      title: 'Start Repair Work?',
+      message: 'This will update the maintenance report status to In Progress.',
+      confirmText: 'Start Repair',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
     setIsLoading(true);
     setLoadingMessage('Updating status...');
 
@@ -275,99 +301,33 @@ export default function MaintenanceDashboard() {
       subtitle="GSD - Manage room maintenance schedules and reports"
     >
       {/* Header Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {activeTab === 'reports' ? (
-          <>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Total Reports</p>
-                <p className="text-3xl font-black text-[#2B3235]">{reportStats.total}</p>
-              </div>
-              <div className="stat-icon-box"><AlertTriangle size={18} /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Pending</p>
-                <p className="text-3xl font-black text-yellow-600">{reportStats.pending}</p>
-              </div>
-              <div className="stat-icon-box bg-yellow-50"><Clock size={18} className="text-yellow-600" /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">In Progress</p>
-                <p className="text-3xl font-black text-blue-600">{reportStats.inProgress}</p>
-              </div>
-              <div className="stat-icon-box bg-blue-50"><Wrench size={18} className="text-blue-600" /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Resolved</p>
-                <p className="text-3xl font-black text-green-600">{reportStats.resolved}</p>
-              </div>
-              <div className="stat-icon-box bg-green-50"><CheckCircle size={18} className="text-green-600" /></div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Total Schedules</p>
-                <p className="text-3xl font-black text-[#2B3235]">{scheduleStats.total}</p>
-              </div>
-              <div className="stat-icon-box"><Calendar size={18} /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Scheduled</p>
-                <p className="text-3xl font-black text-yellow-600">{scheduleStats.scheduled}</p>
-              </div>
-              <div className="stat-icon-box bg-yellow-50"><Clock size={18} className="text-yellow-600" /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">In Progress</p>
-                <p className="text-3xl font-black text-blue-600">{scheduleStats.inProgress}</p>
-              </div>
-              <div className="stat-icon-box bg-blue-50"><Wrench size={18} className="text-blue-600" /></div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Completed</p>
-                <p className="text-3xl font-black text-green-600">{scheduleStats.completed}</p>
-              </div>
-              <div className="stat-icon-box bg-green-50"><CheckCircle size={18} className="text-green-600" /></div>
-            </div>
-          </>
-        )}
-      </div>
+      <ProgressStatCards items={activeTab === 'reports' ? reportStatItems : scheduleStatItems} />
 
       {/* Tabs */}
       <div className="mb-6">
-        <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 10 }}>
+        <div className="inline-flex w-fit items-center p-1 gap-1 bg-white rounded-2xl border border-gray-200 shadow-2xs">
           <button
             type="button"
             onClick={() => setActiveTab('reports')}
-            className={`px-6 py-2.5 text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-5 py-2 text-xs font-bold transition-all flex items-center gap-2 rounded-xl cursor-pointer ${
               activeTab === 'reports'
-                ? 'bg-[#800000] text-white'
-                : 'bg-transparent text-[#2B3235] hover:bg-gray-100'
+                ? 'bg-[#7A0808] text-white shadow-2xs'
+                : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
             }`}
-            style={{ borderRadius: 10 }}
           >
-            <AlertTriangle size={16} />
+            <AlertTriangle size={15} />
             Maintenance Reports ({reports.length})
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('schedules')}
-            className={`px-6 py-2.5 text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-5 py-2 text-xs font-bold transition-all flex items-center gap-2 rounded-xl cursor-pointer ${
               activeTab === 'schedules'
-                ? 'bg-[#800000] text-white'
-                : 'bg-transparent text-[#2B3235] hover:bg-gray-100'
+                ? 'bg-[#7A0808] text-white shadow-2xs'
+                : 'bg-transparent text-[#2B3235] hover:bg-gray-100/70'
             }`}
-            style={{ borderRadius: 10 }}
           >
-            <Calendar size={16} />
+            <Calendar size={15} />
             Maintenance Schedules ({schedules.length})
           </button>
         </div>
@@ -378,27 +338,27 @@ export default function MaintenanceDashboard() {
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2">
             <Filter size={16} className="text-gray-400" />
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
-            >
-              <option value="all">All Status</option>
-              {activeTab === 'reports' ? (
-                <>
-                  <option value="pending">Pending</option>
-                  <option value="acknowledged">Acknowledged</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="resolved">Resolved</option>
-                </>
-              ) : (
-                <>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                </>
-              )}
-            </select>
+            <div className="min-w-[160px]">
+              <CustomSelect
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                options={
+                  activeTab === 'reports'
+                    ? [
+                        { value: 'all', label: 'All Status' },
+                        { value: 'pending', label: 'Pending' },
+                        { value: 'acknowledged', label: 'Acknowledged' },
+                        { value: 'in-progress', label: 'In Progress' },
+                        { value: 'resolved', label: 'Resolved' },
+                      ]
+                    : [
+                        { value: 'all', label: 'All Status' },
+                        { value: 'scheduled', label: 'Scheduled' },
+                        { value: 'completed', label: 'Completed' },
+                      ]
+                }
+              />
+            </div>
           </div>
           <div className="flex-1 min-w-[250px]">
             <div className="relative">
@@ -408,7 +368,7 @@ export default function MaintenanceDashboard() {
                 placeholder="Search by room, building, or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
               />
             </div>
           </div>
@@ -416,7 +376,7 @@ export default function MaintenanceDashboard() {
             <button
               type="button"
               onClick={() => { setFilterStatus('all'); setSearchQuery(''); }}
-              className="px-3 py-2 text-xs font-bold text-[#800000] hover:bg-red-50 rounded-lg transition-colors"
+              className="px-3 py-2 text-xs font-bold text-[#7A0808] hover:bg-red-50 rounded-lg transition-colors"
             >
               Clear Filters
             </button>
@@ -503,14 +463,14 @@ export default function MaintenanceDashboard() {
                                 <button
                                   type="button"
                                   onClick={() => handleAcknowledge(report.id)}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-600 text-green-700 hover:bg-green-50 transition-colors"
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100 transition-colors shadow-2xs cursor-pointer"
                                 >
                                   Acknowledge
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleScheduleFromReport(report)}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-colors shadow-2xs cursor-pointer"
                                 >
                                   📅 Schedule
                                 </button>
@@ -520,7 +480,7 @@ export default function MaintenanceDashboard() {
                               <button
                                 type="button"
                                 onClick={() => handleScheduleFromReport(report)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#7A0808] text-white hover:bg-[#600000] transition-colors shadow-2xs cursor-pointer"
                               >
                                 📅 Schedule
                               </button>
@@ -529,7 +489,7 @@ export default function MaintenanceDashboard() {
                               <button
                                 type="button"
                                 onClick={() => handleStartProgress(report.id)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-2xs cursor-pointer"
                               >
                                 🔧 Start Repair
                               </button>
@@ -538,7 +498,7 @@ export default function MaintenanceDashboard() {
                               <button
                                 type="button"
                                 onClick={() => handleResolve(report.id)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition-colors"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer"
                               >
                                 ✓ Resolve
                               </button>
@@ -570,7 +530,7 @@ export default function MaintenanceDashboard() {
                       <tr key={schedule.id} className="hover:bg-gray-50/80 transition-colors">
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className={getStatusBadge(schedule.status)}>
-                            {schedule.status?.replace('-', ' ').toUpperCase() || 'SCHEDULED'}
+                            {schedule.status?.toUpperCase() || 'SCHEDULED'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
@@ -589,7 +549,7 @@ export default function MaintenanceDashboard() {
                             <button
                               type="button"
                               onClick={() => handleCompleteSchedule(schedule.id)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#800000] text-white hover:bg-[#600000] transition-colors"
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer"
                             >
                               Complete Maintenance
                             </button>
@@ -654,7 +614,7 @@ export default function MaintenanceDashboard() {
                             onClick={() => setCurrentPage(p)}
                             className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
                               currentPage === p
-                                ? 'bg-[#800000] text-white shadow-xs'
+                                ? 'bg-[#7A0808] text-white shadow-xs'
                                 : 'text-gray-600 hover:bg-gray-100 border border-gray-200'
                             }`}
                           >

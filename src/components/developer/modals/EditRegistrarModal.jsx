@@ -40,7 +40,7 @@ export default function EditRegistrarModal({ registrar, onClose, onSave, saving 
           <X size={20} />
         </button>
         <form onSubmit={submit} className="p-8 pt-10">
-          <h2 className="font-black text-lg mb-1" style={{ color: '#800000' }}>Edit Registrar</h2>
+          <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Edit Registrar</h2>
           <p className="text-xs text-gray-500 mb-4">{registrar.email}</p>
           {error && <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">{error}</p>}
           <div className="space-y-3">
@@ -79,7 +79,7 @@ export default function EditRegistrarModal({ registrar, onClose, onSave, saving 
           </div>
           <div className="flex gap-2 mt-8">
             <button type="button" className="btn-outline-maroon flex-1 justify-center py-2.5" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="submit" className="flex-1 justify-center py-2.5 rounded-[10px] text-white font-semibold text-sm disabled:opacity-60" style={{ background: '#800000' }} disabled={saving}>
+            <button type="submit" className="flex-1 justify-center py-2.5 rounded-[10px] text-white font-semibold text-sm disabled:opacity-60" style={{ background: '#7A0808' }} disabled={saving}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
           </div>
