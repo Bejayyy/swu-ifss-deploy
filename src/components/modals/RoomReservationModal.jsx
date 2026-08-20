@@ -425,10 +425,11 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
       if (!m.startDate || !m.endDate) return;
 
       if (formDateNorm >= m.startDate && formDateNorm <= m.endDate) {
-        const isQuickFix = m.durationType === 'hours' && m.isQuickFix;
-        if (isQuickFix && formDateNorm === m.startDate) {
+        const isQuickFix = m.durationType === 'hours' || Boolean(m.isQuickFix) || m.maintenanceType === 'quick_fix';
+        if (isQuickFix && (formDateNorm === m.startDate || m.startDate === m.endDate)) {
           const mStart = timeStringToHour(m.startTime) || 8;
-          const mEnd = timeStringToHour(m.endTime) || (mStart + (m.estimatedDurationHours || 2));
+          const mDuration = parseFloat(m.durationHours || m.estimatedDurationHours) || 2;
+          const mEnd = timeStringToHour(m.endTime) || (mStart + mDuration);
           if (mStart < reqEnd && reqStart < mEnd) {
             conflicts.push({
               type: 'Maintenance',

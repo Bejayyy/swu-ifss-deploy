@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getInitialWeekStart, getSemesterForDate, getMondayOfWeek, getSemesterWeekNumber, isScheduleActiveOnWeek } from '../utils/academicCalendarUtils';
-import { addDays } from '../constants/scheduleGrid';
+import { addDays, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../constants/scheduleGrid';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar as CalendarIcon, AlertTriangle, ChevronDown } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -284,9 +284,10 @@ export default function RoomDetails() {
 
   // Subscribe to maintenance schedules for this room
   useEffect(() => {
-    if (!displayRoom?.docId) return;
+    const targetRoomId = displayRoom?.docId || displayRoom?.id;
+    if (!targetRoomId) return;
     
-    console.log('[RoomDetails] Subscribing to maintenance schedules');
+    console.log('[RoomDetails] Subscribing to maintenance schedules for room:', targetRoomId);
     
     const unsubscribe = subscribeMaintenanceSchedules(
       (schedules) => {
@@ -295,13 +296,13 @@ export default function RoomDetails() {
       },
       (error) => console.error('Error loading maintenance schedules:', error),
       { 
-        roomId: displayRoom.docId,
+        roomId: targetRoomId,
         // No semester filter - maintenance is date-based, not semester-based
       }
     );
 
     return () => unsubscribe();
-  }, [displayRoom?.docId]);
+  }, [displayRoom?.docId, displayRoom?.id]);
 
   const configuredSemesters = useMemo(() => {
     if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
@@ -493,7 +494,8 @@ export default function RoomDetails() {
       }
 
       const startDate = schedule.startDate; // YYYY-MM-DD
-      const endDate = schedule.endDate; // YYYY-MM-DD
+      const endDate = schedule.endDate || schedule.startDate; // YYYY-MM-DD
+      if (!startDate) return;
 
       console.log('[RoomDetails] Maintenance dates:', { startDate, endDate, weekStartDate, weekDates });
 
@@ -505,45 +507,63 @@ export default function RoomDetails() {
         return;
       }
 
+      // Check if this schedule is a quick fix (hours-based)
+      const isQuickFix = schedule.durationType === 'hours' || Boolean(schedule.isQuickFix) || schedule.maintenanceType === 'quick_fix';
+
       // Check each day of the week
       weekDates.forEach((dateStr, dayIndex) => {
         if (dateStr >= startDate && dateStr <= endDate) {
-          if (schedule.maintenanceType === 'general' || schedule.isFullDay) {
+          if (isQuickFix) {
+            // For quick fix maintenance, render on matching dates (typically startDate)
+            if (dateStr === startDate || startDate === endDate) {
+              const parseMaintHour = (timeStr, defaultHour = 8) => {
+                if (!timeStr && timeStr !== 0) return defaultHour;
+                if (typeof timeStr === 'number') return timeStr;
+                let str = String(timeStr).trim();
+                const isPM = str.toLowerCase().includes('pm');
+                const isAM = str.toLowerCase().includes('am');
+                str = str.replace(/[^\d:]/g, '');
+                const [hStr, mStr] = str.split(':');
+                let h = Number(hStr) || 0;
+                const m = Number(mStr) || 0;
+                if (isPM && h < 12) h += 12;
+                if (isAM && h === 12) h = 0;
+                return h + (isNaN(m) ? 0 : m / 60);
+              };
+
+              const startHour = parseMaintHour(schedule.startTime, 8);
+              const duration = parseFloat(schedule.durationHours || schedule.estimatedDurationHours) || 2;
+              const endHour = schedule.endTime ? parseMaintHour(schedule.endTime, startHour + duration) : (startHour + duration);
+
+              console.log(`[RoomDetails] Adding quick fix maintenance block for ${dateStr} at day ${dayIndex}, startHour=${startHour}, endHour=${endHour}`);
+              blocks.push({
+                id: `maintenance-${schedule.id}-${dateStr}`,
+                day: dayIndex,
+                title: schedule.title || '🔧 UNDER MAINTENANCE',
+                course: schedule.reason || schedule.issueType || 'Scheduled maintenance',
+                instructor: schedule.assignedTechnicianName || schedule.technicianName || (schedule.scheduledByName ? `Scheduled by ${schedule.scheduledByName}` : `Quick Fix (${duration}h)`),
+                start: Math.max(SCHEDULE_START_HOUR, startHour),
+                end: Math.min(SCHEDULE_END_HOUR, Math.max(startHour + 0.5, endHour)),
+                type: 'Maintenance',
+                roomCode: displayRoom.id || displayRoom.roomCode,
+                isMaintenance: true,
+                maintenanceData: schedule,
+              });
+            }
+          } else {
             console.log(`[RoomDetails] Adding full day maintenance block for ${dateStr} at day ${dayIndex}`);
             blocks.push({
-              id: `maintenance-${schedule.id}-${dayIndex}`,
+              id: `maintenance-${schedule.id}-${dateStr}`,
               day: dayIndex,
-              title: '🔧 UNDER MAINTENANCE',
-              course: schedule.reason || 'Room unavailable',
-              instructor: schedule.maintenanceType === 'general' ? 'General Maintenance' : 'Scheduled Maintenance',
-              start: 7.5, // 7:30 AM (SCHEDULE_START_HOUR)
-              end: 20, // 8:00 PM (SCHEDULE_END_HOUR)
+              title: schedule.title || '🔧 UNDER MAINTENANCE',
+              course: schedule.reason || schedule.issueType || 'Room unavailable',
+              instructor: schedule.assignedTechnicianName || schedule.technicianName || (schedule.scheduledByName ? `Scheduled by ${schedule.scheduledByName}` : 'Multi-day maintenance'),
+              start: SCHEDULE_START_HOUR, // 6 AM
+              end: SCHEDULE_END_HOUR, // 8 PM (20)
               type: 'Maintenance',
               roomCode: displayRoom.id || displayRoom.roomCode,
               isMaintenance: true,
-            });
-          } else if (schedule.maintenanceType === 'quick_fix') {
-            const timeToHour = (timeStr) => {
-              if (!timeStr) return 8; // Default 8 AM
-              const [hours, minutes] = timeStr.split(':').map(Number);
-              return hours + minutes / 60;
-            };
-
-            const startHour = timeToHour(schedule.startTime || '08:00');
-            const endHour = startHour + (schedule.durationHours || 2);
-
-            console.log(`[RoomDetails] Adding quick fix maintenance block for ${dateStr} at day ${dayIndex}, startHour=${startHour}, endHour=${endHour}`);
-            blocks.push({
-              id: `maintenance-${schedule.id}-${dayIndex}`,
-              day: dayIndex,
-              title: '🔧 MAINTENANCE',
-              course: schedule.reason || 'Scheduled maintenance',
-              instructor: `Quick Fix (${schedule.durationHours || 2}h)`,
-              start: startHour,
-              end: Math.min(endHour, 20), // Cap at 8 PM (SCHEDULE_END_HOUR)
-              type: 'Maintenance',
-              roomCode: displayRoom.id || displayRoom.roomCode,
-              isMaintenance: true,
+              maintenanceData: schedule,
             });
           }
         }
@@ -1077,8 +1097,8 @@ export default function RoomDetails() {
         showLegend={true}
         roomType={displayRoom.type || 'Lecture Room'}
         emptyMessage={
-          courseSchedules.length === 0 && approvedReservations.length === 0
-            ? "No course schedules or reservations for this room"
+          courseSchedules.length === 0 && approvedReservations.length === 0 && maintenanceSchedules.length === 0
+            ? "No course schedules, reservations, or maintenance for this room"
             : "Navigate through weeks to see schedules and reservations"
         }
       />

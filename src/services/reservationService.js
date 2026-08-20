@@ -1018,9 +1018,11 @@ export async function checkReservationTimeConflict({
 
       if (dateInRange) {
         // If it's a quick fix (hours), check time overlap
-        if (schedule.durationType === 'hours' && schedule.isQuickFix && isoDate === maintStart) {
+        const isQuickFix = schedule.durationType === 'hours' || Boolean(schedule.isQuickFix) || schedule.maintenanceType === 'quick_fix';
+        if (isQuickFix && (isoDate === maintStart || maintStart === maintEnd)) {
           const maintStartTime = toMinutes(schedule.startTime || '08:00');
-          const maintEndTime = maintStartTime + (schedule.durationHours || 2) * 60;
+          const durationH = parseFloat(schedule.durationHours || schedule.estimatedDurationHours) || 2;
+          const maintEndTime = maintStartTime + durationH * 60;
 
           const hasTimeOverlap = (newStart < maintEndTime && newEnd > maintStartTime);
 

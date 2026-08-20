@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck, MessageSquare, MessageCircle, LogOut,
+  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck, MessageSquare, MessageCircle, LogOut, Wrench, CheckCircle,
 } from 'lucide-react';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import { useAuth } from '../context/AuthContext';
@@ -185,8 +185,14 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
       if (!computedLink || computedLink.includes('undefined')) {
         if (resId && resId !== 'undefined') {
           computedLink = resType === 'academic' ? `/academic-request/${resId}` : `/request/${resId}`;
-        } else {
+        } else if (n.type === 'access_granted' || n.type === 'course_scheduling') {
+          computedLink = '/course-scheduling';
+        } else if (n.type === 'maintenance' && isGsd) {
+          computedLink = '/maintenance-dashboard';
+        } else if (n.type === 'approval' || n.notificationType === 'approval') {
           computedLink = '/approvals';
+        } else {
+          computedLink = null;
         }
       }
 
@@ -681,28 +687,85 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                 </div>
               ) : (
                 notifItems.map((n) => {
-                  const isMaintenance = n.notificationType === 'maintenance';
+                  const isMaintenanceReport = n.notificationType === 'maintenance' && isGsd;
+                  const isMaintenanceAcknowledged = n.notificationType === 'report_acknowledged' || n.type === 'report_acknowledged' || n.rawItem?.type === 'report_acknowledged' || n.title?.toLowerCase().includes('maintenance report acknowledged');
+                  const isMaintenanceResolved = n.notificationType === 'maintenance_resolved' || n.type === 'maintenance_resolved';
+                  const isMaintenanceScheduled = n.notificationType === 'maintenance_scheduled' || n.type === 'maintenance_scheduled';
+                  const isMaintenanceInfo = isMaintenanceAcknowledged || isMaintenanceResolved || isMaintenanceScheduled || (!isGsd && (n.notificationType === 'maintenance' || n.type === 'report_acknowledged' || n.title?.toLowerCase().includes('maintenance')));
+                  const isMaintenance = isMaintenanceReport || isMaintenanceInfo || n.notificationType === 'maintenance' || n.type === 'maintenance';
+
                   const isUrgent = n.priority === 'urgent' || n.priority === 'high';
                   const isUnread = n.unread;
+
+                  let badgeLabel = 'Pending Approval';
+                  let badgeStyle = { color: '#7A0808', background: '#FEE2E2' };
+
+                  if (isMaintenanceAcknowledged) {
+                    badgeLabel = '✓ Maintenance Acknowledged';
+                    badgeStyle = { color: '#065F46', background: '#D1FAE5' };
+                  } else if (isMaintenanceResolved) {
+                    badgeLabel = '✓ Maintenance Resolved';
+                    badgeStyle = { color: '#065F46', background: '#D1FAE5' };
+                  } else if (isMaintenanceScheduled) {
+                    badgeLabel = '📅 Maintenance Scheduled';
+                    badgeStyle = { color: '#9A3412', background: '#FFEDD5' };
+                  } else if (isMaintenanceReport) {
+                    badgeLabel = isUrgent ? '⚠️ URGENT MAINTENANCE' : 'Maintenance Report';
+                    badgeStyle = { color: isUrgent ? '#991B1B' : '#9A3412', background: isUrgent ? '#FEE2E2' : '#FFEDD5' };
+                  } else if (n.notificationType === 'access_granted') {
+                    badgeLabel = '📋 Course Scheduling Access';
+                    badgeStyle = { color: '#1E40AF', background: '#DBEAFE' };
+                  } else if (n.notificationType === 'reservation_approved') {
+                    badgeLabel = '✓ Reservation Approved';
+                    badgeStyle = { color: '#065F46', background: '#D1FAE5' };
+                  } else if (n.notificationType === 'reservation_rejected') {
+                    badgeLabel = '✕ Reservation Rejected';
+                    badgeStyle = { color: '#991B1B', background: '#FEE2E2' };
+                  } else if (n.notificationType === 'reservation_cancelled') {
+                    badgeLabel = '✕ Reservation Cancelled';
+                    badgeStyle = { color: '#6B7280', background: '#F3F4F6' };
+                  } else if (n.notificationType === 'no_class_day') {
+                    badgeLabel = '📢 School Notice';
+                    badgeStyle = { color: '#1E40AF', background: '#DBEAFE' };
+                  }
                   
                   return (
                     <div 
                       key={n.id} 
-                      className={`p-4 transition-all cursor-pointer rounded-2xl border ${
+                      className={`p-4 transition-all ${isMaintenanceInfo ? 'cursor-default' : 'cursor-pointer'} rounded-2xl border ${
                         isUnread
                           ? isMaintenance
-                            ? (isUrgent ? 'bg-red-50/90 hover:bg-red-100/90 border-red-300 shadow-sm' : 'bg-orange-50/90 hover:bg-orange-100/90 border-orange-300 shadow-sm')
+                            ? (isUrgent ? 'bg-red-50/90 hover:bg-red-100/90 border-red-300 shadow-sm' : isMaintenanceAcknowledged || isMaintenanceResolved ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-emerald-300 shadow-sm' : 'bg-orange-50/90 hover:bg-orange-100/90 border-orange-300 shadow-sm')
                             : 'bg-white hover:bg-red-50/40 border-red-200 shadow-sm ring-1 ring-red-100'
                           : 'bg-white hover:bg-slate-100/80 border-slate-200/80 text-gray-600'
                       }`}
-                      onClick={() => handleViewRequest(n)}
+                      onClick={() => {
+                        if (isMaintenanceInfo) {
+                          if (n.id) markNotifIdAsRead(n.id);
+                          if (n.isDbNotif && (n.rawItem?.id || n.id)) {
+                            markNotificationAsRead(n.rawItem?.id || n.id);
+                          }
+                        } else {
+                          handleViewRequest(n);
+                        }
+                      }}
                     >
                       <div className="flex items-start gap-3.5">
                         {isMaintenance ? (
                           <div className={`p-2.5 rounded-xl flex-shrink-0 ${
-                            isUrgent ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'
+                            isMaintenanceAcknowledged || isMaintenanceResolved
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : isUrgent
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-orange-100 text-orange-800'
                           }`}>
-                            <AlertTriangle size={18} className={isUrgent ? 'text-red-700' : 'text-orange-700'} />
+                            {isMaintenanceAcknowledged || isMaintenanceResolved ? (
+                              <CheckCircle size={18} className="text-emerald-700" />
+                            ) : isUrgent ? (
+                              <AlertTriangle size={18} className="text-red-700" />
+                            ) : (
+                              <Wrench size={18} className="text-orange-700" />
+                            )}
                           </div>
                         ) : (
                           <div className={`p-2.5 rounded-xl flex-shrink-0 ${
@@ -717,15 +780,11 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                             <span
                               className="inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-md"
                               style={{
-                                color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#7A0808',
-                                background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEE2E2',
+                                color: badgeStyle.color,
+                                background: badgeStyle.background,
                               }}
                             >
-                              {isMaintenance
-                                ? (isUrgent ? '⚠️ URGENT MAINTENANCE' : 'Maintenance Report')
-                                : n.notificationType === 'access_granted'
-                                  ? '📋 Course Scheduling Access'
-                                  : 'Pending Approval'}
+                              {badgeLabel}
                             </span>
 
                             {isUnread ? (
@@ -768,22 +827,24 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                               <Clock3 size={12} /> {n.submittedAt || n.time}
                             </span>
 
-                            <button 
-                              type="button" 
-                              className={`text-xs py-1.5 px-3 font-bold rounded-xl transition-all ${
-                                isUnread ? 'bg-[#7A0808] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleViewRequest(n);
-                              }}
-                            >
-                              {n.notificationType === 'access_granted'
-                                ? 'Open Course Scheduling'
-                                : isMaintenance
-                                  ? 'View Maintenance Report'
-                                  : 'View Details'}
-                            </button>
+                            {!isMaintenanceInfo && (
+                              <button 
+                                type="button" 
+                                className={`text-xs py-1.5 px-3 font-bold rounded-xl transition-all ${
+                                  isUnread ? 'bg-[#7A0808] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewRequest(n);
+                                }}
+                              >
+                                {n.notificationType === 'access_granted'
+                                  ? 'Open Course Scheduling'
+                                  : isMaintenanceReport && isGsd
+                                    ? 'View Maintenance Report'
+                                    : 'View Details'}
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

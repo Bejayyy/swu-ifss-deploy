@@ -7,7 +7,7 @@ import { subscribeApprovedReservationsForRoom } from '../../services/reservation
 import { RESERVATION_STATUS } from '../../constants/approvalWorkflow';
 import { subscribeMaintenanceSchedules } from '../../services/maintenanceService';
 import WeeklyScheduleGrid from '../scheduling/WeeklyScheduleGrid';
-import { addDays } from '../../constants/scheduleGrid';
+import { addDays, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
 import { getMondayOfWeek, getSemesterWeekNumber, isScheduleActiveOnWeek } from '../../utils/academicCalendarUtils';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
@@ -288,46 +288,63 @@ export default function RoomWeeklyScheduleModal({
       if (schedule.status === 'cancelled' || schedule.status === 'completed') return;
 
       const startDate = schedule.startDate;
-      const endDate = schedule.endDate;
-      if (!startDate || !endDate) return;
+      const endDate = schedule.endDate || schedule.startDate;
+      if (!startDate) return;
+
+      const isQuickFix = schedule.durationType === 'hours' || Boolean(schedule.isQuickFix) || schedule.maintenanceType === 'quick_fix';
+
+      const parseMaintHour = (timeStr, defaultHour = 8) => {
+        if (!timeStr && timeStr !== 0) return defaultHour;
+        if (typeof timeStr === 'number') return timeStr;
+        let str = String(timeStr).trim();
+        const isPM = str.toLowerCase().includes('pm');
+        const isAM = str.toLowerCase().includes('am');
+        str = str.replace(/[^\d:]/g, '');
+        const [hStr, mStr] = str.split(':');
+        let h = Number(hStr) || 0;
+        const m = Number(mStr) || 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h + (isNaN(m) ? 0 : m / 60);
+      };
 
       weekDates.forEach((dateStr, dayIndex) => {
         const isInPeriod = dateStr >= startDate && dateStr <= endDate;
         if (isInPeriod) {
-          const isQuickFix = schedule.durationType === 'hours' && schedule.isQuickFix;
-          if (isQuickFix && dateStr === startDate) {
-            const timeToHour = (tStr) => {
-              if (!tStr) return 0;
-              const [h, m] = tStr.split(':').map(Number);
-              return h + m / 60;
-            };
-            const sHour = timeToHour(schedule.startTime) || 8;
-            const eHour = timeToHour(schedule.endTime) || (sHour + (schedule.estimatedDurationHours || 2));
-            blocks.push({
-              id: `maintenance-${schedule.id}-${dateStr}`,
-              day: dayIndex,
-              title: `🔧 Maintenance: ${schedule.title || schedule.issueType || 'Maintenance'}`,
-              course: schedule.assignedTechnicianName || 'Facility Maintenance',
-              instructor: schedule.priority ? `Priority: ${schedule.priority}` : '',
-              start: sHour,
-              end: eHour,
-              type: 'Maintenance',
-              roomCode: roomCode,
-              isMaintenance: true,
-            });
+          if (isQuickFix) {
+            if (dateStr === startDate || startDate === endDate) {
+              const startHour = parseMaintHour(schedule.startTime, 8);
+              const duration = parseFloat(schedule.durationHours || schedule.estimatedDurationHours) || 2;
+              const endHour = schedule.endTime ? parseMaintHour(schedule.endTime, startHour + duration) : (startHour + duration);
+
+              blocks.push({
+                id: `maintenance-${schedule.id}-${dateStr}`,
+                day: dayIndex,
+                title: schedule.title || '🔧 UNDER MAINTENANCE',
+                course: schedule.reason || schedule.issueType || 'Scheduled maintenance',
+                instructor: schedule.assignedTechnicianName || schedule.technicianName || (schedule.scheduledByName ? `Scheduled by ${schedule.scheduledByName}` : `Quick Fix (${duration}h)`),
+                start: Math.max(SCHEDULE_START_HOUR, startHour),
+                end: Math.min(SCHEDULE_END_HOUR, Math.max(startHour + 0.5, endHour)),
+                type: 'Maintenance',
+                roomCode: roomCode,
+                isMaintenance: true,
+                maintenanceData: schedule,
+              });
+            }
           } else {
             // Full Day
             blocks.push({
               id: `maintenance-${schedule.id}-${dateStr}`,
               day: dayIndex,
-              title: `🔧 Maintenance: ${schedule.title || schedule.issueType || 'Maintenance'}`,
-              course: schedule.assignedTechnicianName || 'Facility Maintenance',
-              instructor: `Priority: ${schedule.priority || 'Normal'} (Whole Day)`,
-              start: 6,
-              end: 20,
+              title: schedule.title || '🔧 UNDER MAINTENANCE',
+              course: schedule.reason || schedule.issueType || 'Room unavailable',
+              instructor: schedule.assignedTechnicianName || schedule.technicianName || (schedule.scheduledByName ? `Scheduled by ${schedule.scheduledByName}` : 'Multi-day maintenance'),
+              start: SCHEDULE_START_HOUR,
+              end: SCHEDULE_END_HOUR,
               type: 'Maintenance',
               roomCode: roomCode,
               isMaintenance: true,
+              maintenanceData: schedule,
             });
           }
         }
