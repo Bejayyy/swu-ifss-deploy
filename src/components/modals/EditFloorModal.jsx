@@ -6,6 +6,7 @@ import { updateFloorRecord, updateAllRoomsOnFloor, updateRoomRecord } from '../.
 import { collection, getDocs, doc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function EditFloorModal({ buildingId, floor, onClose }) {
   const { profile } = useAuth();
@@ -172,20 +173,16 @@ export default function EditFloorModal({ buildingId, floor, onClose }) {
           </div>
           {isRegistrar && (
             <div>
-              <label className="form-label font-bold text-xs" style={{ color: '#2B3235' }}>Floor Manager (Dean)</label>
-              <select
-                className="form-input text-sm rounded-xl py-2.5 px-3 border-gray-200 mt-1"
+              <label className="form-label font-bold text-xs mb-1" style={{ color: '#2B3235' }}>Floor Manager (Dean)</label>
+              <CustomSelect
                 value={form.managedBy}
                 onChange={handleManagerChange}
-                style={{ color: '#2B3235' }}
-              >
-                <option value="" style={{ color: '#2B3235' }}>No manager (registrar managed)</option>
-                {getActiveDeans().map((dean) => (
-                  <option key={dean.uid} value={dean.uid} style={{ color: '#2B3235' }}>
-                    {dean.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'No manager (registrar managed)' },
+                  ...getActiveDeans().map((dean) => ({ value: dean.uid, label: dean.name })),
+                ]}
+                placeholder="Select floor manager"
+              />
               <p className="text-xs text-gray-400 mt-1.5 font-medium">
                 Rooms on this floor will inherit this manager by default
               </p>

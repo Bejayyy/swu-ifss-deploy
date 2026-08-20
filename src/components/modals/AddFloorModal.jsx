@@ -3,6 +3,7 @@ import { X, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
 import { updateAllRoomsOnFloor } from '../../services/buildingService';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function AddFloorModal({ buildingId, buildingName, onClose }) {
   const { addFloor, currentUser } = useApp();
@@ -84,20 +85,18 @@ export default function AddFloorModal({ buildingId, buildingName, onClose }) {
                 <User size={14} />
                 Floor Manager (Optional)
               </label>
-              <select
-                className="form-input"
+              <CustomSelect
                 value={managedBy}
                 onChange={(e) => setManagedBy(e.target.value)}
-              >
-                <option value="">Managed by Registrar (Default)</option>
-                <optgroup label="Delegate to Dean">
-                  {deans.map((dean) => (
-                    <option key={dean.uid} value={dean.uid}>
-                      {dean.name} {dean.department ? `(${dean.department})` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+                options={[
+                  { value: '', label: 'Managed by Registrar (Default)' },
+                  ...deans.map((dean) => ({
+                    value: dean.uid,
+                    label: `${dean.name}${dean.department ? ` (${dean.department})` : ''}`,
+                  })),
+                ]}
+                placeholder="Select Floor Manager"
+              />
               <p className="text-[10px] text-gray-500 mt-1">
                 If a dean is assigned, room reservations on this floor will be approved by that dean instead of the registrar.
               </p>

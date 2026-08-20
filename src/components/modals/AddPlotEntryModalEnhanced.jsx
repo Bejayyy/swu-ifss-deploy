@@ -28,6 +28,7 @@ import { subscribeCollegeCourses } from '../../services/courseService';
 import { subscribeToBuildings } from '../../services/buildingService';
 import { subscribeStaffUsers } from '../../services/systemUserService';
 import RoomScheduleViewer from '../scheduling/RoomScheduleViewer';
+import CustomSelect from '../ui/CustomSelect';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
 
@@ -662,23 +663,22 @@ export default function AddPlotEntryModalEnhanced({
                       Courses for {activeYearLevel === 'All' ? 'All Years' : activeYearLevel} ({semesterDisplay})
                     </p>
                     {deanSections.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-xl">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 min-w-[170px]">
                         <span>Section:</span>
-                        <select
+                        <CustomSelect
+                          size="sm"
                           value={selectedSection}
                           onChange={(e) => {
                             setSelectedSection(e.target.value);
                             const sec = deanSections.find(s => s.name === e.target.value);
                             if (sec?.yearLevel) setActiveYearLevel(sec.yearLevel);
                           }}
-                          className="bg-transparent font-black text-[#7A0808] outline-none cursor-pointer"
-                        >
-                          {deanSections.map((s) => (
-                            <option key={s.id || s.name} value={s.name}>
-                              {s.name} {s.yearLevel ? `(${s.yearLevel})` : ''}
-                            </option>
-                          ))}
-                        </select>
+                          options={deanSections.map((s) => ({
+                            value: s.name,
+                            label: `${s.name}${s.yearLevel ? ` (${s.yearLevel})` : ''}`,
+                          }))}
+                          placeholder="Section"
+                        />
                       </div>
                     )}
                   </div>
@@ -1185,15 +1185,13 @@ export default function AddPlotEntryModalEnhanced({
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
                                   Day
                                 </label>
-                                <select
+                                <CustomSelect
+                                  size="sm"
                                   value={selectedDayIndex !== undefined ? selectedDayIndex : 0}
                                   onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
-                                >
-                                  {SCHEDULE_DAYS.map((d, idx) => (
-                                    <option key={d} value={idx}>{d}</option>
-                                  ))}
-                                </select>
+                                  options={SCHEDULE_DAYS.map((d, idx) => ({ value: idx, label: d }))}
+                                  placeholder="Select day"
+                                />
                               </div>
 
                               {/* Start Time */}
@@ -1201,7 +1199,8 @@ export default function AddPlotEntryModalEnhanced({
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
                                   Start Time
                                 </label>
-                                <select
+                                <CustomSelect
+                                  size="sm"
                                   value={startTime || ''}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -1211,19 +1210,16 @@ export default function AddPlotEntryModalEnhanced({
                                       setEndTime(hourToTimeInput(startH + 1.5));
                                     }
                                   }}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
-                                >
-                                  <option value="" disabled>Select start time...</option>
-                                  {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
+                                  options={Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
                                     const h = SCHEDULE_START_HOUR + i * 0.5;
                                     const timeStr = hourToTimeInput(h);
-                                    return (
-                                      <option key={timeStr} value={timeStr}>
-                                        {formatScheduleHour(h)}
-                                      </option>
-                                    );
+                                    return {
+                                      value: timeStr,
+                                      label: formatScheduleHour(h),
+                                    };
                                   })}
-                                </select>
+                                  placeholder="Select start time..."
+                                />
                               </div>
 
                               {/* End Time */}
@@ -1231,22 +1227,20 @@ export default function AddPlotEntryModalEnhanced({
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
                                   End Time
                                 </label>
-                                <select
+                                <CustomSelect
+                                  size="sm"
                                   value={endTime || ''}
                                   onChange={(e) => setEndTime(e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-900 outline-none focus:border-[#7A0808]"
-                                >
-                                  <option value="" disabled>Select end time...</option>
-                                  {Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
+                                  options={Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
                                     const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
                                     const timeStr = hourToTimeInput(h);
-                                    return (
-                                      <option key={timeStr} value={timeStr}>
-                                        {formatScheduleHour(h)}
-                                      </option>
-                                    );
+                                    return {
+                                      value: timeStr,
+                                      label: formatScheduleHour(h),
+                                    };
                                   })}
-                                </select>
+                                  placeholder="Select end time..."
+                                />
                               </div>
                             </div>
                           </div>

@@ -273,18 +273,15 @@ export default function CreateScheduleSessionModal({
               {/* Add Participant Dropdown */}
               {availableParticipants.length > 0 && (
                 <div className="mb-3">
-                  <select
+                  <CustomSelect
                     onChange={(e) => handleAddParticipant(e.target.value)}
                     value=""
-                    className="input-field w-full text-sm"
-                  >
-                    <option value="">+ Add participant...</option>
-                    {availableParticipants.map((dean) => (
-                      <option key={dean.uid} value={dean.uid}>
-                        {dean.name} - {dean.collegeName}
-                      </option>
-                    ))}
-                  </select>
+                    options={availableParticipants.map((dean) => ({
+                      value: dean.uid,
+                      label: `${dean.name} - ${dean.collegeName}`,
+                    }))}
+                    placeholder="+ Add participant..."
+                  />
                 </div>
               )}
 

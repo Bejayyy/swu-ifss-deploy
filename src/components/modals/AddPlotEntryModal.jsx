@@ -4,6 +4,7 @@ import { parseTimeToHour, validateScheduleHours } from '../../services/plotSched
 import { formatScheduleHour } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
 import TimePicker from '../ui/TimePicker';
+import CustomSelect from '../ui/CustomSelect';
 
 const TYPE_OPTIONS = ['Lecture', 'Laboratory', 'CAS', 'Exam'];
 
@@ -145,17 +146,25 @@ export default function AddPlotEntryModal({
             </div>
             <div>
               <label className="form-label">Type</label>
-              <select className="form-input" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} disabled={!!dayBlockReason}>
-                {TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <CustomSelect
+                value={form.type}
+                onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                disabled={!!dayBlockReason}
+                options={TYPE_OPTIONS}
+                placeholder="Select Type"
+              />
             </div>
             {restrictRooms && (
               <div>
                 <label className="form-label">Room</label>
-                <select className="form-input" value={form.roomCode} onChange={(e) => setForm((f) => ({ ...f, roomCode: e.target.value }))} required disabled={!!dayBlockReason}>
-                  <option value="">Select room</option>
-                  {roomOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                <CustomSelect
+                  value={form.roomCode}
+                  onChange={(e) => setForm((f) => ({ ...f, roomCode: e.target.value }))}
+                  required
+                  disabled={!!dayBlockReason}
+                  options={roomOptions}
+                  placeholder="Select room"
+                />
               </div>
             )}
             {!restrictRooms && (

@@ -10,6 +10,7 @@ import { useRolePermissions } from '../hooks/useRolePermissions';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
 import PageSkeleton from '../components/SkeletonLoader';
+import CustomSelect from '../components/ui/CustomSelect';
 
 const statusBadge = {
   Available: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -138,23 +139,21 @@ export default function AssignedRoomsManagement() {
         <div className="flex items-center gap-3 flex-wrap">
           {/* Building Filter */}
           {assignedData.buildings.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-gray-600">Building:</label>
-              <select
+            <div className="flex items-center gap-2 min-w-[200px]">
+              <label className="text-xs font-bold text-gray-600 shrink-0">Building:</label>
+              <CustomSelect
+                size="sm"
                 value={selectedBuildingId}
                 onChange={(e) => {
                   setSelectedBuildingId(e.target.value);
                   setSelectedFloor('all');
                 }}
-                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#7A0808]"
-              >
-                <option value="all">All Buildings ({assignedData.buildings.length})</option>
-                {assignedData.buildings.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: 'all', label: `All Buildings (${assignedData.buildings.length})` },
+                  ...assignedData.buildings.map((b) => ({ value: b.id, label: b.name })),
+                ]}
+                placeholder="Building"
+              />
             </div>
           )}
         </div>

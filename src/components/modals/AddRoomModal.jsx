@@ -3,6 +3,7 @@ import { X, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
 import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
+import CustomSelect from '../ui/CustomSelect';
 
 const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'Conference Room', 'Gymnasium'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
@@ -148,17 +149,13 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
             <label className="form-label font-bold text-gray-700">
               Room Type <span className="text-red-500">*</span>
             </label>
-            <select
-              className="form-input font-bold bg-white"
+            <CustomSelect
               value={form.type}
               onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+              options={types}
+              placeholder="Select room type"
               required
-            >
-              <option value="">Select room type</option>
-              {types.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>
@@ -177,15 +174,12 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
 
           <div>
             <label className="form-label font-bold text-gray-700">Status</label>
-            <select
-              className="form-input font-bold bg-white"
+            <CustomSelect
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-            >
-              {statuses.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              options={statuses}
+              placeholder="Select status"
+            />
           </div>
 
           {/* Equipment Checkbox Selector */}
@@ -234,18 +228,15 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
 
           <div>
             <label className="form-label font-bold text-gray-700">Room Manager (Dean)</label>
-            <select
-              className="form-input font-bold bg-white"
+            <CustomSelect
               value={form.managedBy}
               onChange={(e) => setForm((f) => ({ ...f, managedBy: e.target.value }))}
-            >
-              <option value="">No manager (registrar managed)</option>
-              {deans.map((dean) => (
-                <option key={dean.uid} value={dean.uid}>
-                  {dean.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'No manager (registrar managed)' },
+                ...deans.map((dean) => ({ value: dean.uid, label: dean.name })),
+              ]}
+              placeholder="Select room manager"
+            />
           </div>
 
           <div className="flex gap-3 pt-2">

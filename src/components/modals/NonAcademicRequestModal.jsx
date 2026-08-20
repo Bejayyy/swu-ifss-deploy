@@ -11,6 +11,7 @@ import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 import DatePicker from '../ui/DatePicker';
 import TimePicker from '../ui/TimePicker';
+import CustomSelect from '../ui/CustomSelect';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 function formatContactInput(val) {
@@ -356,25 +357,22 @@ export default function NonAcademicRequestModal({ onClose }) {
               <label className="form-label">
                 Building <span className="text-red-600">*</span>
               </label>
-              <select
-                className="form-input"
+              <CustomSelect
                 value={form.building}
                 onChange={(e) => {
                   const value = e.target.value;
                   setForm((f) => ({ ...f, building: value, room: '', designatedVenue: '' }));
                 }}
+                options={buildingList.map((b) => ({ value: b.name, label: b.name }))}
+                placeholder="Select Building"
                 required
-              >
-                <option value="">Select Building</option>
-                {buildingList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-              </select>
+              />
             </div>
             <div className="col-span-2">
               <label className="form-label">
                 Room <span className="text-red-600">*</span>
               </label>
-              <select
-                className="form-input"
+              <CustomSelect
                 value={form.room}
                 onChange={(e) => {
                   const selectedRoom = roomsInSelectedBuilding.find((r) => r.id === e.target.value);
@@ -384,14 +382,14 @@ export default function NonAcademicRequestModal({ onClose }) {
                     designatedVenue: selectedRoom ? `${e.target.value}, ${f.building} Floor ${selectedRoom.floor}` : '',
                   }));
                 }}
+                options={roomsInSelectedBuilding.map((r) => ({
+                  value: r.id,
+                  label: `${r.id} (Floor ${r.floor})`,
+                }))}
                 disabled={!form.building}
+                placeholder={form.building ? 'Select Room' : 'Select building first'}
                 required
-              >
-                <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
-                {roomsInSelectedBuilding.map((r) => (
-                  <option key={r.id} value={r.id}>{`${r.id} (Floor ${r.floor})`}</option>
-                ))}
-              </select>
+              />
             </div>
             <div className="col-span-2">
               <label className="form-label">

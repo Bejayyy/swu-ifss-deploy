@@ -19,6 +19,7 @@ import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
 import DatePicker from '../ui/DatePicker';
 import TimePicker from '../ui/TimePicker';
+import CustomSelect from '../ui/CustomSelect';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const emptyForm = {
@@ -798,27 +799,22 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                   <label className="form-label">
                     Building <span className="text-red-600">*</span>
                   </label>
-                  <select
-                    className="form-input"
+                  <CustomSelect
                     value={form.building}
                     onChange={(e) => {
                       const value = e.target.value;
                       setForm((f) => ({ ...f, building: value, room: '', designatedVenue: '' }));
                     }}
+                    options={buildingList.map((b) => ({ value: b.name, label: b.name }))}
+                    placeholder="Select Building"
                     required
-                  >
-                    <option value="">Select Building</option>
-                    {buildingList.map((b) => (
-                      <option key={b.id} value={b.name}>{b.name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div className="col-span-2">
                   <label className="form-label">
                     Room <span className="text-red-600">*</span>
                   </label>
-                  <select
-                    className="form-input"
+                  <CustomSelect
                     value={form.room}
                     onChange={(e) => {
                       const room = roomsInBuilding.find((r) => r.id === e.target.value);
@@ -828,14 +824,14 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
                         designatedVenue: room ? `${e.target.value}, ${f.building} Floor ${room.floor}` : f.designatedVenue,
                       }));
                     }}
+                    options={roomsInBuilding.map((r) => ({
+                      value: r.id,
+                      label: `${r.name || r.id} (Floor ${r.floor})`,
+                    }))}
                     disabled={!form.building}
+                    placeholder={form.building ? 'Select Room' : 'Select building first'}
                     required
-                  >
-                    <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
-                    {roomsInBuilding.map((r) => (
-                      <option key={r.id} value={r.id}>{`${r.name || r.id} (Floor ${r.floor})`}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </>
             )}

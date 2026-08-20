@@ -21,6 +21,7 @@ import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
 import AddRoleModal from './AddRoleModal';
 import AddCollegeModal from './AddCollegeModal';
+import CustomSelect from '../ui/CustomSelect';
 import { downloadBulkUserTemplate, parseBulkUserSpreadsheet } from '../../utils/excelTemplate';
 
 const createEmptyUser = (defaultRole = 'dean', roleDefinitions = {}) => {
@@ -553,18 +554,14 @@ export default function AddUserModal({
                               User Role <span className="text-red-500">*</span>
                             </label>
                             <div className="flex items-center gap-2">
-                              <div className="relative flex-1">
-                                <select
-                                  className="form-input w-full pr-8 appearance-none bg-white cursor-pointer"
+                              <div className="flex-1">
+                                <CustomSelect
                                   value={form.role}
                                   onChange={(e) => updateUserField(index, 'role', e.target.value)}
+                                  options={roles}
+                                  placeholder="Select Role"
                                   required
-                                >
-                                  {roles.map((r) => (
-                                    <option key={r.value} value={r.value}>{r.label}</option>
-                                  ))}
-                                </select>
-                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                />
                               </div>
                               <button
                                 type="button"
@@ -586,21 +583,17 @@ export default function AddUserModal({
                                 College <span className="text-red-500">*</span>
                               </label>
                               <div className="flex items-center gap-2">
-                                <div className="relative flex-1">
-                                  <select
-                                    className="form-input w-full pr-8 appearance-none bg-white cursor-pointer"
+                                <div className="flex-1">
+                                  <CustomSelect
                                     value={form.college}
                                     onChange={(e) => updateUserField(index, 'college', e.target.value)}
+                                    options={colleges.map((c) => ({
+                                      value: c.code,
+                                      label: `${c.name} (${c.code})`,
+                                    }))}
+                                    placeholder="Select College"
                                     required
-                                  >
-                                    <option value="">Select College</option>
-                                    {colleges.map((c) => (
-                                      <option key={c.id} value={c.code}>
-                                        {c.name} ({c.code})
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  />
                                 </div>
                                 <button
                                   type="button"
@@ -851,37 +844,29 @@ export default function AddUserModal({
                                 </td>
 
                                 {/* Role Selector */}
-                                <td className="p-1.5">
-                                  <select
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-xs font-medium bg-white cursor-pointer"
+                                <td className="p-1.5 min-w-[130px]">
+                                  <CustomSelect
+                                    size="sm"
                                     value={row.role}
                                     onChange={(e) => updateBulkRowField(idx, 'role', e.target.value)}
-                                  >
-                                    {roles.map((r) => (
-                                      <option key={r.value} value={r.value}>
-                                        {r.label}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    options={roles}
+                                    placeholder="Select Role"
+                                  />
                                 </td>
 
                                 {/* College Selector */}
-                                <td className="p-1.5">
+                                <td className="p-1.5 min-w-[130px]">
                                   {showCollege ? (
-                                    <select
-                                      className={`w-full px-2 py-1.5 border rounded-md text-xs font-medium bg-white cursor-pointer ${
-                                        !row.college ? 'border-red-300 bg-red-50/50' : 'border-gray-300'
-                                      }`}
+                                    <CustomSelect
+                                      size="sm"
                                       value={row.college}
                                       onChange={(e) => updateBulkRowField(idx, 'college', e.target.value)}
-                                    >
-                                      <option value="">Select College</option>
-                                      {colleges.map((c) => (
-                                        <option key={c.id || c.code} value={c.code}>
-                                          {c.code}
-                                        </option>
-                                      ))}
-                                    </select>
+                                      options={colleges.map((c) => ({
+                                        value: c.code,
+                                        label: c.code,
+                                      }))}
+                                      placeholder="Select College"
+                                    />
                                   ) : (
                                     <span className="text-gray-400 italic text-[11px] px-2">N/A</span>
                                   )}

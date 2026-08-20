@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { subscribeStaffUsers } from '../../services/systemUserService';
 import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
 import ConfirmModal from './ConfirmModal';
+import CustomSelect from '../ui/CustomSelect';
 
 const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'Conference Room', 'Gymnasium'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
@@ -185,17 +186,13 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
               <label className="form-label font-bold text-gray-700">
                 Room type <span className="text-red-500">*</span>
               </label>
-              <select
-                className="form-input font-bold bg-white"
+              <CustomSelect
                 value={form.type}
                 onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                options={roomTypes}
+                placeholder="Select type"
                 required
-              >
-                <option value="">Select type</option>
-                {roomTypes.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+              />
             </div>
 
             <div>
@@ -214,15 +211,12 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
 
             <div>
               <label className="form-label font-bold text-gray-700">Status</label>
-              <select
-                className="form-input font-bold bg-white"
+              <CustomSelect
                 value={form.status}
                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              >
-                {statuses.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                options={statuses}
+                placeholder="Select status"
+              />
             </div>
 
             {/* Equipment / Facilities Checkbox Selector */}
@@ -292,19 +286,15 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
                     />
                   </>
                 ) : (
-                  <select
-                    className="form-input font-bold bg-white"
+                  <CustomSelect
                     value={form.managedBy}
                     onChange={handleManagerChange}
-                    style={{ color: '#2B3235' }}
-                  >
-                    <option value="" style={{ color: '#2B3235' }}>No manager (registrar managed)</option>
-                    {getActiveDeans().map((dean) => (
-                      <option key={dean.uid} value={dean.uid} style={{ color: '#2B3235' }}>
-                        {dean.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: 'No manager (registrar managed)' },
+                      ...getActiveDeans().map((dean) => ({ value: dean.uid, label: dean.name })),
+                    ]}
+                    placeholder="Select room manager"
+                  />
                 )}
               </div>
             )}

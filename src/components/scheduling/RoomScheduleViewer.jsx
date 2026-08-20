@@ -101,7 +101,7 @@ export default function RoomScheduleViewer({
     const minSlot = Math.min(startSlot, endSlot);
     const maxSlot = Math.max(startSlot, endSlot);
     const startHour = slotIndexToHour(minSlot);
-    const endHour = slotIndexToHour(maxSlot) + 0.5;
+    const endHour = minSlot === maxSlot ? slotIndexToHour(maxSlot) + 0.5 : slotIndexToHour(maxSlot);
     
     onTimeSelect(dayIndex, startHour, endHour);
   }, [onTimeSelect]);
@@ -124,7 +124,8 @@ export default function RoomScheduleViewer({
     if (!drag?.active || drag.dayIndex !== dayIndex) return false;
     const min = Math.min(drag.startSlot, drag.endSlot);
     const max = Math.max(drag.startSlot, drag.endSlot);
-    return slotIndex >= min && slotIndex <= max;
+    if (min === max) return slotIndex === min;
+    return slotIndex >= min && slotIndex < max;
   };
 
   // Check if slot is part of proposed time

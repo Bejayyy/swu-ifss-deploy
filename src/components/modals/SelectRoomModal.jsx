@@ -4,6 +4,7 @@ import {
   CheckCircle, XCircle, Clock, RotateCcw, ChevronRight, Layers, Sparkles
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import CustomSelect from '../ui/CustomSelect';
 
 const MAROON = '#7A0808';
 
@@ -182,52 +183,47 @@ export default function SelectRoomModal({ isOpen, onClose, onSelectRoom }) {
             </div>
 
             {/* Building Filter */}
-            <div className="relative flex items-center">
-              <Building2 size={14} className="absolute left-3 text-[#7A0808] pointer-events-none z-10" />
-              <select
+            <div>
+              <CustomSelect
+                size="sm"
                 value={selectedBuildingId}
                 onChange={(e) => setSelectedBuildingId(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 font-bold text-gray-700 cursor-pointer shadow-2xs appearance-none"
-              >
-                <option value="all">All Buildings ({buildingList?.length || 0})</option>
-                {buildingList?.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: 'all', label: `All Buildings (${buildingList?.length || 0})` },
+                  ...(buildingList || []).map((b) => ({ value: b.id, label: b.name })),
+                ]}
+                placeholder="Select Building"
+              />
             </div>
 
             {/* Room Type Filter */}
-            <div className="relative flex items-center">
-              <DoorOpen size={14} className="absolute left-3 text-[#7A0808] pointer-events-none z-10" />
-              <select
+            <div>
+              <CustomSelect
+                size="sm"
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 font-bold text-gray-700 cursor-pointer shadow-2xs appearance-none"
-              >
-                <option value="all">All Room Types</option>
-                {roomTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: 'all', label: 'All Room Types' },
+                  ...roomTypes.map((t) => ({ value: t, label: t })),
+                ]}
+                placeholder="Select Room Type"
+              />
             </div>
 
             {/* Status Filter matching System Status Container aesthetic */}
-            <div className="relative flex items-center">
-              <Filter size={14} className="absolute left-3 text-[#7A0808] pointer-events-none z-10" />
-              <select
+            <div>
+              <CustomSelect
+                size="sm"
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 font-bold text-gray-700 cursor-pointer shadow-2xs appearance-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="available">Available Rooms</option>
-                <option value="occupied">Occupied Rooms</option>
-                <option value="under-maintenance">Under Maintenance</option>
-              </select>
+                options={[
+                  { value: 'all', label: 'All Statuses' },
+                  { value: 'available', label: 'Available Rooms' },
+                  { value: 'occupied', label: 'Occupied Rooms' },
+                  { value: 'under-maintenance', label: 'Under Maintenance' },
+                ]}
+                placeholder="Select Status"
+              />
             </div>
           </div>
 

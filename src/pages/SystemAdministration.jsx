@@ -10,6 +10,7 @@ import ViewUserModal from '../components/modals/ViewUserModal';
 import RoleAccessModal from '../components/modals/RoleAccessModal';
 import AddRoleModal from '../components/modals/AddRoleModal';
 import LoadingModal from '../components/modals/LoadingModal';
+import CustomSelect from '../components/ui/CustomSelect';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAuth } from '../context/AuthContext';
 import { useRoleConfig } from '../context/RoleConfigContext';
@@ -633,21 +634,23 @@ export default function SystemAdministration() {
               </div>
 
               <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-[120px]">
                   <span>Rows per page:</span>
-                  <select
+                  <CustomSelect
+                    size="sm"
                     value={itemsPerPage}
                     onChange={(e) => {
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="border border-gray-200 rounded-lg px-2 py-1 bg-white font-semibold focus:outline-none focus:border-[#7A0808]"
-                  >
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                  </select>
+                    options={[
+                      { value: 5, label: '5' },
+                      { value: 10, label: '10' },
+                      { value: 20, label: '20' },
+                      { value: 50, label: '50' },
+                    ]}
+                    placeholder="Rows"
+                  />
                 </div>
 
                 <div className="flex items-center gap-1">

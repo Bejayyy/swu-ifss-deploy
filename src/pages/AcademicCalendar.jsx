@@ -3,6 +3,7 @@ import {
   CalendarDays, Clock, BookOpen, Download, FileText
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import {
@@ -88,19 +89,18 @@ export default function AcademicCalendar() {
                 {/* Controls: Switch SY & Semester Filter */}
                 <div className="flex flex-wrap items-center gap-3">
                   {schoolYears.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-bold text-gray-600">Switch SY:</label>
-                      <select
+                    <div className="flex items-center gap-2 min-w-[200px]">
+                      <label className="text-xs font-bold text-gray-600 shrink-0">Switch SY:</label>
+                      <CustomSelect
+                        size="sm"
                         value={activeSchoolYearId || ''}
                         onChange={(e) => setActiveSchoolYearId(e.target.value || null)}
-                        className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#7A0808]"
-                      >
-                        {schoolYears.map((sy) => (
-                          <option key={sy.id} value={sy.id}>
-                            {sy.displayLabel || `SY ${sy.label}`}
-                          </option>
-                        ))}
-                      </select>
+                        options={schoolYears.map((sy) => ({
+                          value: sy.id,
+                          label: sy.displayLabel || `SY ${sy.label}`,
+                        }))}
+                        placeholder="School Year"
+                      />
                     </div>
                   )}
 

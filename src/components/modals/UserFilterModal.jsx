@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { STAFF_ROLE_OPTIONS } from '../../services/systemUserService';
+import CustomSelect from '../ui/CustomSelect';
 
 const R = 10;
 const STATUSES = ['Any', 'Active', 'Inactive'];
@@ -46,19 +47,21 @@ export default function UserFilterModal({
         <div className="p-5 space-y-4">
           <div>
             <label className="form-label">Role</label>
-            <select className="form-input" value={role} onChange={(e) => setRole(e.target.value)}>
-              {roles.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
+            <CustomSelect
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              options={roles}
+              placeholder="Select Role"
+            />
           </div>
           <div>
             <label className="form-label">Status</label>
-            <select className="form-input" value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <CustomSelect
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              options={STATUSES}
+              placeholder="Select Status"
+            />
           </div>
         </div>
         <div className="px-5 pb-5 flex gap-2">

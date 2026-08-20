@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { REGISTRAR_PERMISSION_CATALOG, USER_STATUS } from '../../../firebase/constants';
+import CustomSelect from '../../ui/CustomSelect';
 
 export default function EditRegistrarModal({ registrar, onClose, onSave, saving }) {
   const [form, setForm] = useState({
@@ -60,10 +61,15 @@ export default function EditRegistrarModal({ registrar, onClose, onSave, saving 
             </div>
             <div>
               <label className="form-label">Status</label>
-              <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value)}>
-                <option value={USER_STATUS.ACTIVE}>Active</option>
-                <option value={USER_STATUS.INACTIVE}>Inactive</option>
-              </select>
+              <CustomSelect
+                value={form.status}
+                onChange={(e) => set('status', e.target.value)}
+                options={[
+                  { value: USER_STATUS.ACTIVE, label: 'Active' },
+                  { value: USER_STATUS.INACTIVE, label: 'Inactive' },
+                ]}
+                placeholder="Select status"
+              />
             </div>
             <div>
               <label className="form-label">Permissions</label>

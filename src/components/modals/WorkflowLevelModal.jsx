@@ -5,6 +5,7 @@ import {
   formatRoleOptionLabel,
   subscribeAssignableRoles,
 } from '../../services/roleService';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function WorkflowLevelModal({
   onClose,
@@ -98,17 +99,18 @@ export default function WorkflowLevelModal({
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="form-label">Approval Type</label>
-            <select
-              className="form-input"
+            <CustomSelect
               value={form.approvalType}
               onChange={(e) => setForm((f) => ({ ...f, approvalType: e.target.value }))}
               disabled={Boolean(initial) || Boolean(approvalType)}
-            >
-              <option value={APPROVAL_TYPES.ACADEMIC}>Academic</option>
-              <option value={APPROVAL_TYPES.NON_ACADEMIC}>Non-Academic</option>
-              <option value={APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC}>Dean-Managed Academic</option>
-              <option value={APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC}>Dean-Managed Non-Academic</option>
-            </select>
+              options={[
+                { value: APPROVAL_TYPES.ACADEMIC, label: 'Academic' },
+                { value: APPROVAL_TYPES.NON_ACADEMIC, label: 'Non-Academic' },
+                { value: APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC, label: 'Dean-Managed Academic' },
+                { value: APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC, label: 'Dean-Managed Non-Academic' },
+              ]}
+              placeholder="Select Approval Type"
+            />
           </div>
           <div>
             <label className="form-label">Role</label>
@@ -119,17 +121,15 @@ export default function WorkflowLevelModal({
                 No roles available yet. Add users in System Administration first.
               </p>
             ) : (
-              <select
-                className="form-input"
+              <CustomSelect
                 value={form.roleId}
                 onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-              >
-                {selectableRoles.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {formatRoleOptionLabel(role)}
-                  </option>
-                ))}
-              </select>
+                options={selectableRoles.map((role) => ({
+                  value: role.value,
+                  label: formatRoleOptionLabel(role),
+                }))}
+                placeholder="Select Role"
+              />
             )}
           </div>
           <div>

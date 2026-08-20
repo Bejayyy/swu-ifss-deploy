@@ -5,6 +5,7 @@ import { requiresCollege } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
+import CustomSelect from '../ui/CustomSelect';
 
 const R = 12;
 
@@ -336,8 +337,7 @@ export default function ViewUserModal({
               <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-4`}>
                 <div>
                   <label className="form-label">User role</label>
-                  <select
-                    className="form-input"
+                  <CustomSelect
                     value={form.roleValue}
                     onChange={(e) => {
                       const newRole = e.target.value;
@@ -347,43 +347,39 @@ export default function ViewUserModal({
                         set('department', '');
                       }
                     }}
-                  >
-                    {roleOptions.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
+                    options={roleOptions}
+                    placeholder="Select Role"
+                  />
                 </div>
 
                 {showCollegeField && (
                   <div>
                     <label className="form-label">College <span className="text-red-600">*</span></label>
-                    <select
-                      className="form-input"
+                    <CustomSelect
                       value={form.college}
                       onChange={(e) => set('college', e.target.value)}
+                      options={colleges.map((college) => ({
+                        value: college.code,
+                        label: `${college.name} (${college.code})`,
+                      }))}
+                      placeholder="Select College"
                       required
-                    >
-                      <option value="">Select College</option>
-                      {colleges.map((college) => (
-                        <option key={college.id} value={college.code}>
-                          {college.name} ({college.code})
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 )}
               </div>
 
               <div>
                 <label className="form-label">Account status</label>
-                <select
-                  className="form-input"
+                <CustomSelect
                   value={form.status}
                   onChange={(e) => set('status', e.target.value)}
-                >
-                  <option value={USER_STATUS.ACTIVE}>Active</option>
-                  <option value={USER_STATUS.INACTIVE}>Inactive</option>
-                </select>
+                  options={[
+                    { value: USER_STATUS.ACTIVE, label: 'Active' },
+                    { value: USER_STATUS.INACTIVE, label: 'Inactive' },
+                  ]}
+                  placeholder="Select Status"
+                />
               </div>
 
               <div className="pt-2 border-t border-gray-100">

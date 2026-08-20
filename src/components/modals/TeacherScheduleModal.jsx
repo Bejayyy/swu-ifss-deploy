@@ -4,6 +4,7 @@ import WeeklyScheduleGrid from '../scheduling/WeeklyScheduleGrid';
 import { subscribePlotEntriesForTeacher } from '../../services/plotScheduleService';
 import { entriesToGridBlocks } from '../../services/plotScheduleService';
 import { useAcademicCalendar } from '../../hooks/useAcademicCalendar';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function TeacherScheduleModal({ teacher, onClose, initialSemester = '1', collegeCode }) {
   const { calendarData } = useAcademicCalendar();
@@ -151,24 +152,21 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
 
             {/* Section Filter */}
             {sections.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Filter size={14} className="text-gray-400" />
-                <select
+              <div className="flex items-center gap-2 min-w-[180px]">
+                <Filter size={14} className="text-gray-400 shrink-0" />
+                <CustomSelect
+                  size="sm"
                   value={selectedSection}
                   onChange={(e) => setSelectedSection(e.target.value)}
-                  className="px-3 py-1 text-xs font-bold border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20"
-                  style={{ color: '#2B3235' }}
-                >
-                  <option value="all">All Sections ({entries.length})</option>
-                  {sections.map(section => {
-                    const count = entries.filter(e => e.section === section).length;
-                    return (
-                      <option key={section} value={section}>
-                        {section} ({count})
-                      </option>
-                    );
-                  })}
-                </select>
+                  options={[
+                    { value: 'all', label: `All Sections (${entries.length})` },
+                    ...sections.map((section) => ({
+                      value: section,
+                      label: `${section} (${entries.filter(e => e.section === section).length})`,
+                    })),
+                  ]}
+                  placeholder="Select section"
+                />
               </div>
             )}
           </div>

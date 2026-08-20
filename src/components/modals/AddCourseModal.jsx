@@ -17,6 +17,7 @@ import {
   toTitleCase,
 } from '../../utils/excelTemplate';
 import { addCourse, updateCourse } from '../../services/courseService';
+import CustomSelect from '../ui/CustomSelect';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -353,34 +354,24 @@ export default function AddCourseModal({
                   <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
                     Year Level <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={individualForm.yearLevel}
                     onChange={(e) => setIndividualForm({ ...individualForm, yearLevel: e.target.value })}
-                    className="form-input w-full font-bold bg-white cursor-pointer"
-                  >
-                    {YEAR_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>
-                        {lvl}
-                      </option>
-                    ))}
-                  </select>
+                    options={YEAR_LEVELS}
+                    placeholder="Select Year Level"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
                     Semester <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={individualForm.semester}
                     onChange={(e) => setIndividualForm({ ...individualForm, semester: e.target.value })}
-                    className="form-input w-full font-bold bg-white cursor-pointer text-[#7A0808]"
-                  >
-                    {SEMESTERS.map((sem) => (
-                      <option key={sem} value={sem}>
-                        {sem}
-                      </option>
-                    ))}
-                  </select>
+                    options={SEMESTERS}
+                    placeholder="Select Semester"
+                  />
                 </div>
               </div>
 
@@ -404,17 +395,12 @@ export default function AddCourseModal({
                   <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
                     Course Type <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={individualForm.type}
                     onChange={(e) => setIndividualForm({ ...individualForm, type: e.target.value })}
-                    className="form-input w-full font-bold bg-white cursor-pointer"
-                  >
-                    {COURSE_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={COURSE_TYPES}
+                    placeholder="Select Course Type"
+                  />
                 </div>
               </div>
 
@@ -567,31 +553,23 @@ export default function AddCourseModal({
                                 onChange={(e) => updateParsedRow(row.id, 'title', e.target.value)}
                               />
                             </td>
-                            <td className="p-2">
-                              <select
-                                className="form-input bg-white text-xs font-semibold py-1"
+                            <td className="p-2 min-w-[130px]">
+                              <CustomSelect
+                                size="sm"
                                 value={row.yearLevel}
                                 onChange={(e) => updateParsedRow(row.id, 'yearLevel', e.target.value)}
-                              >
-                                {YEAR_LEVELS.map((y) => (
-                                  <option key={y} value={y}>
-                                    {y}
-                                  </option>
-                                ))}
-                              </select>
+                                options={YEAR_LEVELS}
+                                placeholder="Year Level"
+                              />
                             </td>
-                            <td className="p-2">
-                              <select
-                                className="form-input bg-white text-xs font-semibold py-1 text-[#7A0808]"
+                            <td className="p-2 min-w-[140px]">
+                              <CustomSelect
+                                size="sm"
                                 value={row.semester}
                                 onChange={(e) => updateParsedRow(row.id, 'semester', e.target.value)}
-                              >
-                                {SEMESTERS.map((s) => (
-                                  <option key={s} value={s}>
-                                    {s}
-                                  </option>
-                                ))}
-                              </select>
+                                options={SEMESTERS}
+                                placeholder="Semester"
+                              />
                             </td>
                             <td className="p-2 text-center min-w-[70px]">
                               <input
@@ -603,18 +581,14 @@ export default function AddCourseModal({
                                 placeholder="3"
                               />
                             </td>
-                            <td className="p-2">
-                              <select
-                                className="form-input bg-white text-xs font-semibold py-1 capitalize"
+                            <td className="p-2 min-w-[150px]">
+                              <CustomSelect
+                                size="sm"
                                 value={row.type}
                                 onChange={(e) => updateParsedRow(row.id, 'type', e.target.value)}
-                              >
-                                {COURSE_TYPES.map((t) => (
-                                  <option key={t.value} value={t.value}>
-                                    {t.value}
-                                  </option>
-                                ))}
-                              </select>
+                                options={COURSE_TYPES}
+                                placeholder="Course Type"
+                              />
                             </td>
                             <td className="p-2">
                               {row.isValid ? (

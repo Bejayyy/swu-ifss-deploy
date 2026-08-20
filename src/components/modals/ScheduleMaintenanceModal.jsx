@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoadingModal from './LoadingModal';
 import DatePicker from '../ui/DatePicker';
 import TimePicker from '../ui/TimePicker';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function ScheduleMaintenanceModal({ 
   isOpen, 
@@ -243,20 +244,21 @@ export default function ScheduleMaintenanceModal({
                   <label className="block text-xs font-bold text-gray-700 mb-2">
                     Estimated Duration (hours) <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={durationHours}
                     onChange={(e) => setDurationHours(e.target.value)}
-                    required
+                    options={[
+                      { value: '1', label: '1 hour' },
+                      { value: '2', label: '2 hours' },
+                      { value: '3', label: '3 hours' },
+                      { value: '4', label: '4 hours' },
+                      { value: '6', label: '6 hours' },
+                      { value: '8', label: '8 hours (full work day)' },
+                    ]}
                     disabled={isLoading}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0808]/20 disabled:opacity-50"
-                  >
-                    <option value="1">1 hour</option>
-                    <option value="2">2 hours</option>
-                    <option value="3">3 hours</option>
-                    <option value="4">4 hours</option>
-                    <option value="6">6 hours</option>
-                    <option value="8">8 hours (full work day)</option>
-                  </select>
+                    placeholder="Select duration"
+                    required
+                  />
                   {startDate && startTime && durationHours && (
                     <p className="text-[10px] text-blue-600 mt-1.5 font-semibold">
                       ⏱️ Estimated completion: {new Date(new Date(`${startDate}T${startTime}`).getTime() + parseInt(durationHours) * 60 * 60 * 1000).toLocaleString()}

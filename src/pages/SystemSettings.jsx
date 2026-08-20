@@ -11,6 +11,7 @@ import { useModal } from '../hooks/useModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import PrintRoomScheduleTab from '../components/settings/PrintRoomScheduleTab';
+import CustomSelect from '../components/ui/CustomSelect';
 import {
   buildSchoolYearId,
   saveSchoolYearConfig,
@@ -824,20 +825,15 @@ export default function SystemSettings() {
                 </div>
               </div>
             ) : (
-              <div className="relative">
-                <select
-                  value={activeSchoolYearId || ''}
-                  onChange={(e) => setActiveSchoolYearId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border-2 border-[#7A0808] rounded-xl text-xs font-extrabold text-[#7A0808] outline-none shadow-2xs appearance-none pr-9 cursor-pointer focus:ring-2 focus:ring-red-100"
-                >
-                  {schoolYears.map((sy) => (
-                    <option key={sy.id} value={sy.id} className="font-bold text-gray-900">
-                      {sy.displayLabel || `SY ${sy.label}`}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7A0808] pointer-events-none" />
-              </div>
+              <CustomSelect
+                value={activeSchoolYearId || ''}
+                onChange={(e) => setActiveSchoolYearId(e.target.value)}
+                options={schoolYears.map((sy) => ({
+                  value: sy.id,
+                  label: sy.displayLabel || `SY ${sy.label}`,
+                }))}
+                placeholder="Select School Year"
+              />
             )}
           </div>
 

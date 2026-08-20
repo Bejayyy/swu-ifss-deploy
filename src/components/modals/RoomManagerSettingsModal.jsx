@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, User, AlertCircle } from 'lucide-react';
 import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
 import { updateRoomRecord } from '../../services/buildingService';
+import CustomSelect from '../ui/CustomSelect';
 
 export default function RoomManagerSettingsModal({ room, buildingId, floorId, floorManagedBy, onClose, onSuccess }) {
   const [managedBy, setManagedBy] = useState(room.managedBy || '');
@@ -93,24 +94,23 @@ export default function RoomManagerSettingsModal({ room, buildingId, floorId, fl
               <User size={14} />
               Assign Room Manager
             </label>
-            <select
-              className="form-input"
+            <CustomSelect
               value={managedBy}
               onChange={(e) => setManagedBy(e.target.value)}
-            >
-              <option value="">
-                {floorManagedBy 
-                  ? `Inherit from Floor (${deans.find(d => d.uid === floorManagedBy)?.name || 'Assigned Dean'})` 
-                  : 'Managed by Registrar (Default)'}
-              </option>
-              <optgroup label="Delegate to Specific Dean">
-                {deans.map((dean) => (
-                  <option key={dean.uid} value={dean.uid}>
-                    {dean.name} {dean.department ? `(${dean.department})` : ''}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
+              options={[
+                {
+                  value: '',
+                  label: floorManagedBy
+                    ? `Inherit from Floor (${deans.find(d => d.uid === floorManagedBy)?.name || 'Assigned Dean'})`
+                    : 'Managed by Registrar (Default)',
+                },
+                ...deans.map((dean) => ({
+                  value: dean.uid,
+                  label: `${dean.name}${dean.department ? ` (${dean.department})` : ''}`,
+                })),
+              ]}
+              placeholder="Select Room Manager"
+            />
             <p className="text-[10px] text-gray-500 mt-2">
               Room reservations will be routed to this manager for approval instead of the default workflow.
             </p>

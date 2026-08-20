@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { USER_STATUS } from '../../../firebase/constants';
+import CustomSelect from '../../ui/CustomSelect';
 
 export default function RegistrarFilterModal({ onClose, onApply, initialStatus = 'any' }) {
   const [status, setStatus] = useState(initialStatus);
@@ -13,12 +14,19 @@ export default function RegistrarFilterModal({ onClose, onApply, initialStatus =
         </button>
         <div className="p-8 pt-10">
           <h2 className="font-black text-lg mb-4" style={{ color: '#7A0808' }}>Filter registrars</h2>
-          <label className="form-label">Status</label>
-          <select className="form-input mb-6" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="any">Any status</option>
-            <option value={USER_STATUS.ACTIVE}>Active</option>
-            <option value={USER_STATUS.INACTIVE}>Inactive</option>
-          </select>
+          <div className="mb-6">
+            <label className="form-label">Status</label>
+            <CustomSelect
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              options={[
+                { value: 'any', label: 'Any status' },
+                { value: USER_STATUS.ACTIVE, label: 'Active' },
+                { value: USER_STATUS.INACTIVE, label: 'Inactive' },
+              ]}
+              placeholder="Select status"
+            />
+          </div>
           <div className="flex gap-2">
             <button type="button" className="btn-outline-maroon flex-1 justify-center py-2.5" onClick={onClose}>Cancel</button>
             <button

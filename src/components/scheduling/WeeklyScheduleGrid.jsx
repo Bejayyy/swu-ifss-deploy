@@ -78,7 +78,7 @@ export default function WeeklyScheduleGrid({
     const minSlot = Math.min(startSlot, endSlot);
     const maxSlot = Math.max(startSlot, endSlot);
     const startHour = slotIndexToHour(minSlot);
-    const endHour = slotIndexToHour(maxSlot) + 0.5;
+    const endHour = minSlot === maxSlot ? slotIndexToHour(maxSlot) + 0.5 : slotIndexToHour(maxSlot);
     onSlotSelect({
       dayIndex,
       date,
@@ -106,7 +106,8 @@ export default function WeeklyScheduleGrid({
     if (!drag?.active || drag.dayIndex !== dayIndex) return false;
     const min = Math.min(drag.startSlot, drag.endSlot);
     const max = Math.max(drag.startSlot, drag.endSlot);
-    return slotIndex >= min && slotIndex <= max;
+    if (min === max) return slotIndex === min;
+    return slotIndex >= min && slotIndex < max;
   };
 
   const handleSlotMouseDown = (dayIndex, slotIndex, disabled, date) => {
@@ -269,11 +270,16 @@ export default function WeeklyScheduleGrid({
       {showControls && (
         <div className="flex items-center gap-3 mb-3 flex-wrap print:hidden">
           {schoolYearOptions.length > 0 && onSchoolYearChange ? (
-            <select className="form-input w-40 text-sm" value={schoolYearLabel} onChange={(e) => onSchoolYearChange(e.target.value)} disabled>
-              {schoolYearOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <div className="w-44">
+              <CustomSelect
+                size="sm"
+                value={schoolYearLabel}
+                onChange={(e) => onSchoolYearChange(e.target.value)}
+                options={schoolYearOptions}
+                placeholder="School Year"
+                disabled
+              />
+            </div>
           ) : (
             <span className="text-xs font-bold px-3 py-2 rounded-lg border border-gray-200" style={{ color: '#2B3235' }}>{schoolYearLabel}</span>
           )}

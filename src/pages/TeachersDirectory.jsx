@@ -358,37 +358,37 @@ export default function TeachersDirectory() {
 
           {/* Department Filter */}
           {!isDean && departmentList.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
-              <Filter size={14} className="text-gray-400" />
+            <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold min-w-[200px]">
+              <Filter size={14} className="text-gray-400 shrink-0" />
               <span>Department:</span>
-              <select
+              <CustomSelect
+                size="sm"
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
-                className="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-bold cursor-pointer text-[#7A0808]"
-              >
-                <option value="All">All Departments</option>
-                {departmentList.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: 'All', label: 'All Departments' },
+                  ...departmentList.map((d) => ({ value: d, label: d })),
+                ]}
+                placeholder="Department"
+              />
             </div>
           )}
 
           {/* Rows Per Page */}
-          <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
+          <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold min-w-[150px]">
             <span>Show:</span>
-            <select
+            <CustomSelect
+              size="sm"
               value={itemsPerPage}
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
-              className="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-bold cursor-pointer"
-            >
-              <option value={5}>5 per page</option>
-              <option value={10}>10 per page</option>
-              <option value={20}>20 per page</option>
-              <option value={50}>50 per page</option>
-            </select>
+              options={[
+                { value: 5, label: '5 per page' },
+                { value: 10, label: '10 per page' },
+                { value: 20, label: '20 per page' },
+                { value: 50, label: '50 per page' },
+              ]}
+              placeholder="Per page"
+            />
           </div>
         </div>
       </div>

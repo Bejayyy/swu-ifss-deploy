@@ -53,12 +53,9 @@ export function blockTopPx(startHour) {
 
 export function blockHeightPx(startHour, endHour) {
   // Calculate the number of 30-minute slots needed
-  const hours = endHour - startHour;
+  const hours = Math.max(0.5, endHour - startHour);
   const slots = hours * 2; // 2 slots per hour
-  
-  // Add one full slot height (48px) to make blocks reach the end time
-  // This accounts for the visual offset between slot boundaries and time labels
-  const heightPx = slots * SCHEDULE_CELL_HEIGHT + SCHEDULE_CELL_HEIGHT;
+  const heightPx = slots * SCHEDULE_CELL_HEIGHT;
   
   return Math.max(heightPx, SCHEDULE_CELL_HEIGHT / 2);
 }

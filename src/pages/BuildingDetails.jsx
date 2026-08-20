@@ -12,6 +12,7 @@ import EditRoomModal from '../components/modals/EditRoomModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
 import { buildingSchedulesById } from '../data/mockSchedules';
 import ProgressStatCards from '../components/ProgressStatCards';
+import CustomSelect from '../components/ui/CustomSelect';
 
 const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', Maintenance: 'badge-maintenance' };
 
@@ -283,20 +284,22 @@ export default function BuildingDetails() {
                           </div>
 
                           <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-[130px]">
                               <span>Show</span>
-                              <select
+                              <CustomSelect
+                                size="sm"
                                 value={roomItemsPerPage}
                                 onChange={(e) => {
                                   setRoomItemsPerPage(Number(e.target.value));
                                   setRoomCurrentPage(1);
                                 }}
-                                className="form-input text-xs py-1 px-2.5 rounded-xl border-gray-200 bg-white font-bold cursor-pointer"
-                              >
-                                <option value={5}>5</option>
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                              </select>
+                                options={[
+                                  { value: 5, label: '5' },
+                                  { value: 10, label: '10' },
+                                  { value: 20, label: '20' },
+                                ]}
+                                placeholder="Rows"
+                              />
                               <span>per page</span>
                             </div>
 

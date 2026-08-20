@@ -11,6 +11,7 @@ import {
 } from '../../services/systemUserService';
 import { createAndSendPlotRequest } from '../../services/plotScheduleService';
 import { isCasDepartment } from '../../constants/plotScheduling';
+import CustomSelect from '../ui/CustomSelect';
 
 const EMPTY_RECIPIENT = { assignType: 'by_name', uid: '', department: '' };
 
@@ -235,55 +236,51 @@ export default function CreatePlotScheduleModal({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wide opacity-50 mb-1 block">Assign by</label>
-            <select
-              className="form-input text-sm"
+            <CustomSelect
+              size="sm"
               value={rcp.assignType}
               onChange={(e) => updateRecipient(idx, {
                 assignType: e.target.value,
                 uid: '',
                 department: '',
               })}
-            >
-              <option value="by_name">Dean name (from System Administration)</option>
-              <option value="by_department">Dean department / college</option>
-            </select>
+              options={[
+                { value: 'by_name', label: 'Dean name (from System Administration)' },
+                { value: 'by_department', label: 'Dean department / college' },
+              ]}
+              placeholder="Select assignment type"
+            />
           </div>
 
           {rcp.assignType === 'by_name' ? (
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wide opacity-50 mb-1 block">Dean</label>
-              <select
-                className="form-input text-sm"
+              <CustomSelect
+                size="sm"
                 value={rcp.uid}
                 onChange={(e) => updateRecipient(idx, { uid: e.target.value })}
+                options={deanUsers.map((u) => ({
+                  value: u.uid,
+                  label: formatDeanOptionLabel(u),
+                }))}
+                placeholder="Select dean"
                 required
-              >
-                <option value="">Select dean</option>
-                {deanUsers.map((u) => (
-                  <option key={u.uid} value={u.uid}>
-                    {formatDeanOptionLabel(u)}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           ) : (
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wide opacity-50 mb-1 block">Department / college</label>
-              <select
-                className="form-input text-sm"
+              <CustomSelect
+                size="sm"
                 value={rcp.department}
                 onChange={(e) => updateRecipient(idx, { department: e.target.value, uid: '' })}
+                options={departmentOptions.map((opt) => ({
+                  value: opt.department,
+                  label: `${opt.department}${isCasDepartment(opt.department) ? ' · plots first' : ''}${opt.deans.length > 1 ? ` · ${opt.deans.length} deans` : ''}`,
+                }))}
+                placeholder="Select department"
                 required
-              >
-                <option value="">Select department</option>
-                {departmentOptions.map((opt) => (
-                  <option key={opt.key} value={opt.department}>
-                    {opt.department}
-                    {isCasDepartment(opt.department) ? ' · plots first' : ''}
-                    {opt.deans.length > 1 ? ` · ${opt.deans.length} deans` : ''}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           )}
         </div>
@@ -291,19 +288,17 @@ export default function CreatePlotScheduleModal({
         {rcp.assignType === 'by_department' && rcp.department && deptDeans.length > 1 && (
           <div className="mt-2">
             <label className="text-[10px] font-bold uppercase tracking-wide opacity-50 mb-1 block">Dean in this department</label>
-            <select
-              className="form-input text-sm"
+            <CustomSelect
+              size="sm"
               value={rcp.uid}
               onChange={(e) => updateRecipient(idx, { uid: e.target.value })}
+              options={deptDeans.map((u) => ({
+                value: u.uid,
+                label: formatDeanOptionLabel(u),
+              }))}
+              placeholder="Select dean"
               required
-            >
-              <option value="">Select dean</option>
-              {deptDeans.map((u) => (
-                <option key={u.uid} value={u.uid}>
-                  {formatDeanOptionLabel(u)}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         )}
 
@@ -374,31 +369,25 @@ export default function CreatePlotScheduleModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="form-label">School year</label>
-                <select
-                  className="form-input"
+                <CustomSelect
                   value={form.schoolYearId}
                   onChange={(e) => setForm((f) => ({ ...f, schoolYearId: e.target.value }))}
+                  options={schoolYears.map((sy) => ({
+                    value: sy.id,
+                    label: sy.displayLabel || `SY ${sy.label}`,
+                  }))}
+                  placeholder="Select school year"
                   required
-                >
-                  <option value="">Select school year</option>
-                  {schoolYears.map((sy) => (
-                    <option key={sy.id} value={sy.id}>{sy.displayLabel || `SY ${sy.label}`}</option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="form-label">Semester</label>
-                <select
-                  className="form-input"
+                <CustomSelect
                   value={form.semester}
                   onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value }))}
-                >
-                  {semesterOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  options={semesterOptions}
+                  placeholder="Select semester"
+                />
               </div>
             </div>
 

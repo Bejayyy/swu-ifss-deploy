@@ -5,6 +5,7 @@ import { requiresCollege, requiresDepartment } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
+import CustomSelect from '../ui/CustomSelect';
 
 const parseFullName = (nameStr = '') => {
   const parts = nameStr.trim().split(/\s+/).filter(Boolean);
@@ -217,9 +218,8 @@ export default function EditUserModal({
             <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-4`}>
               <div>
                 <label className="form-label">User role</label>
-                <select 
-                  className="form-input" 
-                  value={form.roleValue} 
+                <CustomSelect
+                  value={form.roleValue}
                   onChange={(e) => {
                     const newRole = e.target.value;
                     set('roleValue', newRole);
@@ -228,24 +228,24 @@ export default function EditUserModal({
                       set('department', '');
                     }
                   }}
-                >
-                  {roleOptions.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
+                  options={roleOptions}
+                  placeholder="Select Role"
+                />
               </div>
 
             {showCollegeField && (
               <div>
                 <label className="form-label">College <span className="text-red-600">*</span></label>
-                <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
-                  <option value="">Select College</option>
-                  {colleges.map((college) => (
-                    <option key={college.id} value={college.code}>
-                      {college.name} ({college.code})
-                    </option>
-                  ))}
-                </select>
+                <CustomSelect
+                  value={form.college}
+                  onChange={(e) => set('college', e.target.value)}
+                  options={colleges.map((college) => ({
+                    value: college.code,
+                    label: `${college.name} (${college.code})`,
+                  }))}
+                  placeholder="Select College"
+                  required
+                />
                 <p className="text-xs text-gray-500 mt-1">
                   {colleges.length === 0 ? (
                     <span className="text-orange-600">⚠️ No colleges available. Add colleges in College Inventory first.</span>
@@ -260,10 +260,15 @@ export default function EditUserModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="form-label">Status</label>
-                <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value)}>
-                  <option value={USER_STATUS.ACTIVE}>Active</option>
-                  <option value={USER_STATUS.INACTIVE}>Inactive</option>
-                </select>
+                <CustomSelect
+                  value={form.status}
+                  onChange={(e) => set('status', e.target.value)}
+                  options={[
+                    { value: USER_STATUS.ACTIVE, label: 'Active' },
+                    { value: USER_STATUS.INACTIVE, label: 'Inactive' },
+                  ]}
+                  placeholder="Select Status"
+                />
               </div>
             </div>
 

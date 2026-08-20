@@ -7,6 +7,7 @@ import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 import DatePicker from '../ui/DatePicker';
 import TimePicker from '../ui/TimePicker';
+import CustomSelect from '../ui/CustomSelect';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const academicTypes = [
@@ -195,10 +196,12 @@ export default function AcademicRequestModal({ onClose }) {
             <h3 className="font-bold text-base mb-3 text-dark">Request Type</h3>
             <div>
               <label className="form-label">Type of Request <span className="text-red-500">*</span></label>
-              <select className="form-input" value={form.reqType} onChange={e => set('reqType', e.target.value)}>
-                <option value="">Select type of academic request</option>
-                {academicTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              <CustomSelect
+                value={form.reqType}
+                onChange={e => set('reqType', e.target.value)}
+                options={academicTypes}
+                placeholder="Select type of academic request"
+              />
             </div>
           </div>
 
@@ -222,13 +225,12 @@ export default function AcademicRequestModal({ onClose }) {
                   </div>
                   <div>
                     <label className="form-label">Semester</label>
-                    <select className="form-input" value={form.semester} onChange={e => set('semester', e.target.value)}>
-                      <option value="">Select semester</option>
-                      <option>1st Semester</option>
-                      <option>2nd Semester</option>
-                      <option>Summer</option>
-                      <option>Midyear</option>
-                    </select>
+                    <CustomSelect
+                      value={form.semester}
+                      onChange={e => set('semester', e.target.value)}
+                      options={['1st Semester', '2nd Semester', 'Summer', 'Midyear']}
+                      placeholder="Select semester"
+                    />
                   </div>
                   <div className="col-span-2">
                     <label className="form-label">Number of Students</label>
@@ -269,22 +271,19 @@ export default function AcademicRequestModal({ onClose }) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="form-label">Building</label>
-                    <select
-                      className="form-input"
+                    <CustomSelect
                       value={form.building}
                       onChange={(e) => {
                         const value = e.target.value;
                         setForm((f) => ({ ...f, building: value, floor: '', room: '' }));
                       }}
-                    >
-                      <option value="">Select Building</option>
-                      {buildingList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                    </select>
+                      options={buildingList.map((b) => ({ value: b.name, label: b.name }))}
+                      placeholder="Select Building"
+                    />
                   </div>
                   <div>
                     <label className="form-label">Floor & Room</label>
-                    <select
-                      className="form-input"
+                    <CustomSelect
                       value={form.room}
                       onChange={(e) => {
                         const selectedRoom = roomsInSelectedBuilding.find((r) => r.id === e.target.value);
@@ -294,13 +293,13 @@ export default function AcademicRequestModal({ onClose }) {
                           floor: selectedRoom ? `Floor ${selectedRoom.floor}` : '',
                         }));
                       }}
+                      options={roomsInSelectedBuilding.map((r) => ({
+                        value: r.id,
+                        label: `${r.id} (Floor ${r.floor})`,
+                      }))}
                       disabled={!form.building}
-                    >
-                      <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
-                      {roomsInSelectedBuilding.map((r) => (
-                        <option key={r.id} value={r.id}>{`${r.id} (Floor ${r.floor})`}</option>
-                      ))}
-                    </select>
+                      placeholder={form.building ? 'Select Room' : 'Select building first'}
+                    />
                   </div>
                   <div>
                     <label className="form-label">Date of Activity</label>

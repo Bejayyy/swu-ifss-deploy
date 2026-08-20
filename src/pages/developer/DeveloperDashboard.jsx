@@ -156,56 +156,56 @@ export default function DeveloperDashboard() {
         <TableSkeleton rows={5} cols={5} />
       ) : (
         <div className="bg-white rounded-[10px] shadow-md border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/80">
-                <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Name</th>
-                <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Email</th>
-                <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Department</th>
-                <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Permissions</th>
-                <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Status</th>
-                <th className="w-12" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => (
-                <tr key={r.uid} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#7A0808', borderRadius: 10 }}>
-                        {r.initials || 'R'}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/80">
+                  <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Name</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Email</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Department</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Permissions</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider">Status</th>
+                  <th className="w-12" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.uid} className="border-b border-gray-50 hover:bg-gray-50/50">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background: '#7A0808', borderRadius: 10 }}>
+                          {r.initials || 'R'}
+                        </div>
+                        <span className="font-bold">{r.displayName}</span>
                       </div>
-                      <span className="font-bold">{r.displayName}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 font-medium opacity-85">{r.email}</td>
-                  <td className="py-3 px-4 font-medium opacity-80">{r.department || '—'}</td>
-                  <td className="py-3 px-4 text-xs font-semibold opacity-75">{(r.permissions || []).length} assigned</td>
-                  <td className="py-3 px-4">
-                    <span className="flex items-center gap-1.5 text-xs font-bold">
-                      <span className={`w-2 h-2 rounded-full ${r.status === USER_STATUS.ACTIVE ? 'bg-green-500' : 'bg-red-500'}`} />
-                      {r.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg" onClick={() => setActionRegistrar(r)}>
-                      <MoreVertical size={16} className="opacity-55" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {!filtered.length && (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-sm font-medium text-gray-500">
-                    No registrar accounts match your search. Create one to allow login.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </td>
+                    <td className="py-3 px-4 font-medium opacity-85">{r.email}</td>
+                    <td className="py-3 px-4 font-medium opacity-80">{r.department || '—'}</td>
+                    <td className="py-3 px-4 text-xs font-semibold opacity-75">{(r.permissions || []).length} assigned</td>
+                    <td className="py-3 px-4">
+                      <span className="flex items-center gap-1.5 text-xs font-bold">
+                        <span className={`w-2 h-2 rounded-full ${r.status === USER_STATUS.ACTIVE ? 'bg-green-500' : 'bg-red-500'}`} />
+                        {r.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg" onClick={() => setActionRegistrar(r)}>
+                        <MoreVertical size={16} className="opacity-55" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!filtered.length && (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-sm font-medium text-gray-500">
+                      No registrar accounts match your search. Create one to allow login.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
       )}
 
       {showCreate && <CreateRegistrarModal onClose={() => setShowCreate(false)} onSave={handleCreate} saving={busy} />}

@@ -19,6 +19,7 @@ import {
   parseBulkCourseSpreadsheet,
   toTitleCase,
 } from '../../utils/excelTemplate';
+import CustomSelect from '../ui/CustomSelect';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -577,31 +578,23 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                   </div>
 
                                   <div className="sm:col-span-2">
-                                    <select
-                                      className="form-input bg-white text-xs font-semibold"
+                                    <CustomSelect
+                                      size="sm"
                                       value={crs.yearLevel}
                                       onChange={(e) => updateCourseField(pIdx, cIdx, 'yearLevel', e.target.value)}
-                                    >
-                                      {YEAR_LEVELS.map((y) => (
-                                        <option key={y} value={y}>
-                                          {y}
-                                        </option>
-                                      ))}
-                                    </select>
+                                      options={YEAR_LEVELS}
+                                      placeholder="Year Level"
+                                    />
                                   </div>
 
                                   <div className="sm:col-span-2">
-                                    <select
-                                      className="form-input bg-white text-xs font-semibold text-[#7A0808]"
+                                    <CustomSelect
+                                      size="sm"
                                       value={crs.semester}
                                       onChange={(e) => updateCourseField(pIdx, cIdx, 'semester', e.target.value)}
-                                    >
-                                      {SEMESTERS.map((s) => (
-                                        <option key={s} value={s}>
-                                          {s}
-                                        </option>
-                                      ))}
-                                    </select>
+                                      options={SEMESTERS}
+                                      placeholder="Semester"
+                                    />
                                   </div>
 
                                   <div className="sm:col-span-1">
