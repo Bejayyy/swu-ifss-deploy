@@ -1,20 +1,22 @@
 # SWU-IFSS — Integrated Facility Scheduling System
 
-An integrated web-based facility and scheduling management system for **St. Wealth University (SWU)**, built as a Capstone project.
+An integrated web-based facility and scheduling management system for **Southwestern University PHINMA (SWU)**, built as a Capstone project.
 
 ---
 
 ## Project Description
 
-SWU-IFSS centralizes academic scheduling, room reservations, maintenance management, and user administration into a single platform. It is designed for:
+SWU-IFSS centralizes academic scheduling, room reservations, maintenance management, and user administration into a single platform. It is designed for the following roles:
 
-- **Administrators & Registrars** — manage school years, semesters, room assignments, and user accounts.
-- **Faculty (Teachers)** — view personal course schedules and room availability.
-- **Deans & Department Heads** — oversee course offerings and teacher workloads.
-- **Facility Staff** — handle room maintenance requests and track their status.
-- **Students & General Users** — find available rooms and submit reservation requests.
+- **Developer** — full system access; manages developer-level configurations and registrar accounts.
+- **Registrar / Super Admin** — manages school years, semesters, college/course inventory, user accounts, roles & permissions, and approval workflows.
+- **Dean** — submits and oversees course schedules for their college; manages assigned rooms and endorses reservation requests.
+- **Teacher** — views personal course schedules and room availability; submits room reservation requests.
+- **GSD Head / Facility Manager** — approves room activity requests and oversees maintenance scheduling across buildings.
+- **Student Life** — reviews and approves student organization activity requests.
+- **Student / General User** — finds available rooms and submits room reservation requests.
 
-Core features include weekly schedule grids with drag-and-drop, a real-time chatbot assistant, approval workflows for reservations and maintenance, college/course inventory management, and a multi-role access control system backed by Firebase.
+Core features include weekly schedule grids with drag-and-drop, a real-time AI chatbot assistant, multi-tier approval workflows for reservations and maintenance, college/course inventory management, and a granular role-based access control system backed by Firebase.
 
 ---
 
@@ -128,6 +130,8 @@ firebase deploy --only hosting
 | Name | Role | Contact |
 |------|------|---------|
 | **Bejayyy** | Lead Developer | GitHub: [@Bejayyy](https://github.com/Bejayyy) |
+| **nshriki** | Developer | GitHub: [@nshriki](https://github.com/nshriki) |
+| **johnmarksomogod** | Developer | GitHub: [@johnmarksomogod](https://github.com/johnmarksomogod) |
 
 For questions, bug reports, or contributions, open an issue on the [GitHub repository](https://github.com/Bejayyy/swu-ifss-deploy).
 
