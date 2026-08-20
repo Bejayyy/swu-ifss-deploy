@@ -6,7 +6,25 @@ An integrated web-based facility and scheduling management system for **Southwes
 
 ## Project Description
 
-SWU-IFSS centralizes academic scheduling, room reservations, maintenance management, and user administration into a single platform. It is designed for the following roles:
+SWU-IFSS is a web-based **Integrated Facility Scheduling System** for Southwestern University PHINMA. Its primary feature is **Course Scheduling** — enabling academic departments to plot, manage, and publish class schedules across rooms and time slots for each semester.
+
+### Main Feature — Course Scheduling
+- Drag-and-drop weekly schedule grid per room and per teacher
+- Semester and school year management
+- Conflict detection and schedule locking workflows
+- Dean and department-level schedule submission and approval
+- Schedule history and room schedule viewer
+
+### Sub-Features
+- **Room Reservations** — submit, endorse, and approve room booking requests through a multi-tier approval workflow
+- **Maintenance Management** — schedule and track room/facility maintenance requests with GSD staff notifications
+- **Room Finder** — search and filter available rooms across buildings by type, capacity, and schedule
+- **College & Course Inventory** — manage colleges, departments, and course catalog records
+- **Academic Calendar** — configure school year dates, holidays, no-class periods, and exam ranges
+- **User & Role Management** — create accounts and assign granular page-level permissions per role
+- **AI Chatbot Assistant** — real-time chatbot for answering scheduling and system queries
+
+The system is designed for the following roles:
 
 - **Developer** — full system access; manages developer-level configurations and registrar accounts.
 - **Registrar / Super Admin** — manages school years, semesters, college/course inventory, user accounts, roles & permissions, and approval workflows.
@@ -16,7 +34,6 @@ SWU-IFSS centralizes academic scheduling, room reservations, maintenance managem
 - **Student Life** — reviews and approves student organization activity requests.
 - **Student / General User** — finds available rooms and submits room reservation requests.
 
-Core features include weekly schedule grids with drag-and-drop, a real-time AI chatbot assistant, multi-tier approval workflows for reservations and maintenance, college/course inventory management, and a granular role-based access control system backed by Firebase.
 
 ---
 
