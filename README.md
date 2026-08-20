@@ -137,7 +137,7 @@ For questions, bug reports, or contributions, open an issue on the [GitHub repos
 
 **Proprietary — All Rights Reserved**
 
-Copyright © 2024–2026 SWU-IFSS Capstone Team, St. Wealth University.
+Copyright © 2024–2026 Southwestern University PHINMA.
 
 This software and its source code are proprietary and confidential. No part of this codebase may be copied, modified, distributed, sublicensed, or used in any form — commercial or otherwise — without the express written permission of the copyright holders.
 
