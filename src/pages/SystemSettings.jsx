@@ -11,6 +11,7 @@ import { useModal } from '../hooks/useModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import PrintRoomScheduleTab from '../components/settings/PrintRoomScheduleTab';
+import ModernCalendarView from '../components/calendar/ModernCalendarView';
 import CustomSelect from '../components/ui/CustomSelect';
 import {
   buildSchoolYearId,
@@ -52,6 +53,8 @@ export default function SystemSettings() {
     setActiveSchoolYearId,
     calendarData,
   } = useAcademicCalendar();
+
+  const activeSchoolYear = schoolYears.find((sy) => sy.id === activeSchoolYearId);
 
   // Navigation tab state
   const [activeTab, setActiveTab] = useState('schoolYear'); // 'schoolYear' | 'examPeriods' | 'calendarPdf' | 'activities'
@@ -885,8 +888,8 @@ export default function SystemSettings() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <BookOpen size={16} />
-                <span>School Calendar (PDF)</span>
+                <Calendar size={16} />
+                <span>School Calendar</span>
               </div>
               <ChevronRight size={14} className={activeTab === 'calendarPdf' ? 'opacity-100' : 'opacity-40'} />
             </button>
@@ -1277,125 +1280,14 @@ export default function SystemSettings() {
             </div>
           )}
 
-          {/* TAB 3: Official School Calendar (PDF Upload & Viewer) */}
+          {/* TAB 3: Interactive School Calendar & AI Scanner */}
           {activeTab === 'calendarPdf' && (
-            <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs space-y-6">
-              <div className="pb-4 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                    <BookOpen size={18} className="text-[#7A0808]" />
-                    Official School Calendar (PDF Copy)
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Upload an official PDF copy of the school calendar for all students, deans, and staff to view.
-                  </p>
-                </div>
-              </div>
-
-              {/* Upload Zone with Drag & Drop support */}
-              <div
-                onDragOver={handlePdfDragOver}
-                onDragLeave={handlePdfDragLeave}
-                onDrop={handlePdfDrop}
-                className={`p-8 border-2 border-dashed rounded-2xl transition-all text-center ${
-                  isDraggingPdf
-                    ? 'border-[#7A0808] bg-red-50/80 ring-4 ring-[#7A0808]/15 scale-[1.01]'
-                    : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
-                }`}
-              >
-                <input
-                  type="file"
-                  id="pdf-upload-input"
-                  accept="application/pdf"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handlePdfFileUpload(e.target.files[0]);
-                    }
-                  }}
-                  className="hidden"
-                />
-
-                <label htmlFor="pdf-upload-input" className="cursor-pointer flex flex-col items-center justify-center space-y-3">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
-                    isDraggingPdf ? 'bg-[#7A0808] text-white scale-110' : 'bg-red-50 text-[#7A0808]'
-                  }`}>
-                    <FileUp size={28} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-gray-900">
-                      {pdfUploading
-                        ? 'Uploading PDF Calendar...'
-                        : isDraggingPdf
-                          ? 'Drop PDF file here to upload'
-                          : 'Click or Drag PDF file here to upload'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1 font-medium">
-                      Supports official PDF documents up to 8MB
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {/* PDF Document Status Banner */}
-              {calendarPdfData?.pdfUrl && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center flex-shrink-0">
-                      <BookOpen size={20} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-emerald-950 truncate max-w-sm">
-                        {calendarPdfData.pdfFileName || 'School_Calendar.pdf'}
-                      </h4>
-                      <p className="text-[10px] font-semibold text-emerald-700 mt-0.5">
-                        Uploaded by {calendarPdfData.uploadedBy || 'Registrar'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={calendarPdfData.pdfUrl}
-                      download={calendarPdfData.pdfFileName || 'School_Calendar.pdf'}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-colors flex items-center gap-1.5 shadow-2xs"
-                    >
-                      <Download size={13} /> Download PDF
-                    </a>
-                    <button
-                      type="button"
-                      onClick={handleRemovePdf}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 transition-colors flex items-center gap-1.5"
-                    >
-                      <Trash2 size={13} /> Remove
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Embedded PDF Viewer */}
-              {calendarPdfData?.pdfUrl ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                      <Eye size={14} className="text-[#7A0808]" /> Live PDF Document Preview
-                    </span>
-                  </div>
-
-                  <div className="rounded-2xl overflow-hidden border border-gray-200 bg-gray-900 shadow-sm">
-                    <iframe
-                      src={calendarPdfData.pdfUrl}
-                      title="Official School Calendar PDF"
-                      className="w-full h-[650px] border-none"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="p-12 text-center bg-gray-50 border border-gray-200 rounded-2xl">
-                  <p className="text-xs font-bold text-gray-500">
-                    No official PDF school calendar has been uploaded yet. Upload a copy above to publish it for users.
-                  </p>
-                </div>
-              )}
+            <div className="space-y-6">
+              <ModernCalendarView
+                schoolYearId={activeSchoolYearId}
+                schoolYearLabel={activeSchoolYear?.displayLabel || syForm.label || '2026-2027'}
+                isRegistrar={true}
+              />
             </div>
           )}
 

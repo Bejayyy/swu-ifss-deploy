@@ -23,7 +23,7 @@ export const NAV_PERMISSIONS_CATALOG = [
     actions: [
       { permission: PERMISSIONS.ROOM_AVAILABILITY_VIEW, label: 'View room availability', description: 'See room schedules and availability calendars' },
       { permission: PERMISSIONS.ROOMS_MANAGE_ASSIGNED, label: 'Manage assigned rooms', description: 'Edit room details and capacity for assigned rooms' },
-      { permission: PERMISSIONS.BUILDINGS_MANAGE, label: 'Manage buildings', description: 'Add new buildings, set room prefixes, edit floors' },
+      { permission: PERMISSIONS.BUILDINGS_MANAGE, label: 'Manage & delete buildings', description: 'Add new buildings, set room prefixes, edit floors, and delete buildings' },
     ],
   },
   {

@@ -100,10 +100,6 @@ export default function CourseSchedulingNew() {
   const [selectedDeanUid, setSelectedDeanUid] = useState(null);
   const [selectedSection, setSelectedSection] = useState(null);
   const [deanSections, setDeanSections] = useState([]); // Dynamic sections from Firestore
-  const [showAddSectionModal, setShowAddSectionModal] = useState(false);
-  const [newSectionName, setNewSectionName] = useState('');
-  const [newSectionYear, setNewSectionYear] = useState('1st Year');
-  const [newSectionModality, setNewSectionModality] = useState('regular');
   const [expandedYearLevels, setExpandedYearLevels] = useState({});
   const [sectionSearchQuery, setSectionSearchQuery] = useState('');
 
@@ -149,18 +145,10 @@ export default function CourseSchedulingNew() {
 
 
   const toggleYearLevel = (yearLevel) => {
-
     setExpandedYearLevels((prev) => ({
       ...prev,
       [yearLevel]: !prev[yearLevel],
     }));
-  };
-
-  const handleOpenAddSectionModalForYear = (yearLevel) => {
-    setNewSectionYear(yearLevel || '1st Year');
-    setNewSectionName('');
-    setNewSectionModality('regular');
-    setShowAddSectionModal(true);
   };
 
   const handleUpdateSectionModality = async (newModality) => {
@@ -312,6 +300,8 @@ export default function CourseSchedulingNew() {
       return undefined;
     }
 
+    const deanCollegeCode = selectedDean?.college || selectedDean?.department || '';
+
     return subscribeDeanSections(
       selectedDeanUid,
       (sections) => {
@@ -333,10 +323,11 @@ export default function CourseSchedulingNew() {
         });
         setExpandedYearLevels(prev => ({ ...yearExpandState, ...prev }));
       },
-      (err) => console.error('Error loading sections:', err)
+      (err) => console.error('Error loading sections:', err),
+      deanCollegeCode
     );
 
-  }, [selectedDeanUid, selectedSection]);
+  }, [selectedDeanUid, selectedSection, selectedDean]);
 
   // Subscribe to plot entries for selected dean and section
   useEffect(() => {
@@ -627,49 +618,6 @@ export default function CourseSchedulingNew() {
   const handleSelectDean = (deanUid) => {
     setSelectedDeanUid(deanUid);
     setSelectedSection(null); // Reset section when changing dean
-  };
-
-  const handleAddSection = async () => {
-    if (!selectedDeanUid || !newSectionName.trim()) {
-      setNotification({
-        type: 'error',
-        title: 'Invalid Input',
-        message: 'Please enter a section name.',
-      });
-      return;
-    }
-
-    const createdSectionName = newSectionName.trim();
-    const targetYear = newSectionYear;
-    setIsLoading(true);
-    setLoadingMessage('Creating section...');
-    setShowAddSectionModal(false);
-
-    try {
-      await createDeanSection(selectedDeanUid, createdSectionName, targetYear, newSectionModality);
-      setSelectedSection(createdSectionName);
-      setExpandedYearLevels((prev) => ({ ...prev, [targetYear]: true }));
-      setNewSectionName('');
-      setError('');
-      setIsLoading(false);
-      
-      // Show success notification
-      setNotification({
-        type: 'success',
-        title: 'Section Created!',
-        message: `Section "${createdSectionName}" added to ${targetYear}.`,
-      });
-    } catch (err) {
-      console.error('Error creating section:', err);
-      setIsLoading(false);
-      
-      // Show error notification
-      setNotification({
-        type: 'error',
-        title: 'Failed to Create Section',
-        message: err.message || 'An error occurred while creating the section. Please try again.',
-      });
-    }
   };
 
   const handleDeleteSection = async (sectionName) => {
@@ -1065,41 +1013,26 @@ export default function CourseSchedulingNew() {
 
                   return (
                     <div key={yearLevel} className="space-y-1">
-                      {/* Year Level Header & Add Button Layout */}
-                      <div className="flex items-center gap-2">
-                        {/* Main Dropdown Card Field */}
-                        <button
-                          type="button"
-                          onClick={() => toggleYearLevel(yearLevel)}
-                          className="flex-1 px-3 py-2 bg-white hover:bg-gray-50/80 rounded-xl border border-gray-200 transition-all flex items-center justify-between shadow-2xs group"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
-                              {yearLevel}
-                            </span>
-                            <span className="text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
-                              {sectionsForYear.length}
-                            </span>
-                          </div>
-                          {isOpen ? (
-                            <ChevronDown size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
-                          ) : (
-                            <ChevronRight size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
-                          )}
-                        </button>
-
-                        {/* Separate Square Plus (+) Button */}
-                        {canPlot && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAddSectionModalForYear(yearLevel)}
-                            className="w-8 h-8 rounded-xl bg-white hover:bg-red-50 border border-gray-200 hover:border-[#7A0808] transition-all flex items-center justify-center flex-shrink-0 shadow-2xs group"
-                            title={`Add section to ${yearLevel}`}
-                          >
-                            <Plus size={15} className="text-[#7A0808] group-hover:scale-110 transition-transform" />
-                          </button>
+                      {/* Year Level Header Dropdown */}
+                      <button
+                        type="button"
+                        onClick={() => toggleYearLevel(yearLevel)}
+                        className="w-full px-3 py-2 bg-white hover:bg-gray-50/80 rounded-xl border border-gray-200 transition-all flex items-center justify-between shadow-2xs group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
+                            {yearLevel}
+                          </span>
+                          <span className="text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
+                            {sectionsForYear.length}
+                          </span>
+                        </div>
+                        {isOpen ? (
+                          <ChevronDown size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
+                        ) : (
+                          <ChevronRight size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
                         )}
-                      </div>
+                      </button>
 
                       {/* Sections Sub-List */}
                       {isOpen && (
@@ -1392,105 +1325,6 @@ export default function CourseSchedulingNew() {
           lockTimes={entryModal.lockTimes}
         />
       ) : null}
-
-      {/* Add Section Modal */}
-      {showAddSectionModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-modal-pop">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
-              <div>
-                <h3 className="font-black text-lg text-gray-900">
-                  Add New Section
-                </h3>
-                <p className="text-xs font-semibold text-[#7A0808] mt-0.5">
-                  Target Year: <span className="font-black">{newSectionYear}</span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddSectionModal(false);
-                  setNewSectionName('');
-                  setError('');
-                }}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                  Section Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newSectionName}
-                  onChange={(e) => setNewSectionName(e.target.value)}
-                  placeholder="e.g., 1A, BSIT-2, Section Alpha"
-                  className="form-input w-full"
-                  autoFocus
-                />
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Enter section name (e.g., 1A for first year section A, BSIT-2 for second year IT)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                  Year Level <span className="text-red-500">*</span>
-                </label>
-                <CustomSelect
-                  value={newSectionYear}
-                  onChange={(e) => setNewSectionYear(e.target.value)}
-                  options={YEAR_LEVELS}
-                />
-                <p className="text-[10px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
-                  ✓ Pre-selected to {newSectionYear} based on the (+) button clicked.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                  Class Modality / OJT Pattern
-                </label>
-                <CustomSelect
-                  value={newSectionModality}
-                  onChange={(e) => setNewSectionModality(e.target.value)}
-                  options={MODALITY_OPTIONS}
-                />
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Select if this section has alternating OJT weeks (e.g. for 3rd/4th Year students).
-                </p>
-              </div>
-
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddSectionModal(false);
-                    setNewSectionName('');
-                    setError('');
-                  }}
-                  className="btn-outline flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddSection}
-                  disabled={!newSectionName.trim()}
-                  className="btn-maroon flex-1 flex items-center justify-center gap-1"
-                >
-                  <Plus size={14} /> Add Section
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Loading Modal */}
       <LoadingModal isOpen={isLoading} message={loadingMessage} />

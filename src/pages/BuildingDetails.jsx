@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
@@ -10,6 +10,7 @@ import AddFloorModal from '../components/modals/AddFloorModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
+import ConfirmModal from '../components/modals/ConfirmModal';
 import { buildingSchedulesById } from '../data/mockSchedules';
 import ProgressStatCards from '../components/ProgressStatCards';
 import CustomSelect from '../components/ui/CustomSelect';
@@ -19,7 +20,7 @@ const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', 
 export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { buildingList, buildingsLoading, updateBuilding, currentUser } = useApp();
+  const { buildingList, buildingsLoading, updateBuilding, deleteBuilding, currentUser } = useApp();
   const { canManageBuildings, canManageAssignedRooms, isDean, canEditRoom, canSubmitReservation, isRegistrar } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
   const canManageBuilding = Boolean(canManageBuildings() || canManageAssignedRooms() || isDean || isRegistrar);
@@ -29,6 +30,8 @@ export default function BuildingDetails() {
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [editRoom, setEditRoom] = useState(null);
   const [editFloor, setEditFloor] = useState(null);
 
@@ -75,6 +78,20 @@ export default function BuildingDetails() {
     capacity: floorData.rooms.reduce((a, r) => a + (r.capacity || 0), 0),
   };
 
+  const handleDeleteBuildingConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteBuilding(building.id);
+      setShowDeleteConfirm(false);
+      navigate('/building-management');
+    } catch (err) {
+      console.error('Failed to delete building:', err);
+      alert(err.message || 'Failed to delete building.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <Layout title={building.name} subtitle="Building management and room overview">
       <div className="flex items-center justify-between mb-5">
@@ -91,13 +108,23 @@ export default function BuildingDetails() {
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
           {canManageBuilding && (
-            <button
-              type="button"
-              className="btn-maroon flex items-center gap-2 px-4 py-2 text-xs font-bold shadow-2xs rounded-xl cursor-pointer"
-              onClick={() => setShowEditBuilding(true)}
-            >
-              <Edit2 size={14} /> Edit Building
-            </button>
+            <>
+              <button
+                type="button"
+                className="px-3.5 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                onClick={() => setShowDeleteConfirm(true)}
+                title="Delete Building"
+              >
+                <Trash2 size={14} /> Delete Building
+              </button>
+              <button
+                type="button"
+                className="btn-maroon flex items-center gap-2 px-4 py-2 text-xs font-bold shadow-2xs rounded-xl cursor-pointer"
+                onClick={() => setShowEditBuilding(true)}
+              >
+                <Edit2 size={14} /> Edit Building
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -409,6 +436,20 @@ export default function BuildingDetails() {
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
+          onSave={updateBuilding}
+          onDelete={handleDeleteBuildingConfirm}
+        />
+      )}
+      {showDeleteConfirm && (
+        <ConfirmModal
+          title="Delete Building"
+          message={`Are you sure you want to delete "${building.name}"? This will permanently delete this building and all of its ${building.floorData?.length || 0} floor(s) and ${allRooms.length} room(s). This action cannot be undone.`}
+          confirmText="Yes, Delete Building"
+          cancelText="Cancel"
+          variant="danger"
+          isProcessing={isDeleting}
+          onConfirm={handleDeleteBuildingConfirm}
+          onCancel={() => setShowDeleteConfirm(false)}
         />
       )}
       {canManageBuilding && editFloor && (

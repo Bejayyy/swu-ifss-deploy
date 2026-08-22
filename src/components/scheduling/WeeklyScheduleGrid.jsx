@@ -129,20 +129,28 @@ export default function WeeklyScheduleGrid({
   const [typeFilter, setTypeFilter] = useState('All');
 
   const legendItems = React.useMemo(() => {
-    if (roomType) {
-      const isLab = roomType.toLowerCase().includes('lab');
-      const schedulingColors = isLab ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture;
-      return [
-        { type: 'Scheduling', label: `Scheduling (${roomType})`, colors: schedulingColors },
-        { type: 'Reservation', label: 'Reservation', colors: SCHEDULE_TYPE_COLORS.Reservation },
-        { type: 'Maintenance', label: 'Maintenance', colors: SCHEDULE_TYPE_COLORS.Maintenance },
-      ];
+    const hasDisabledDays = dayStatuses.some((d) => d?.disabled);
+    const baseItems = roomType
+      ? [
+          { type: 'Scheduling', label: `Scheduling (${roomType})`, colors: roomType.toLowerCase().includes('lab') ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture },
+          { type: 'Reservation', label: 'Reservation', colors: SCHEDULE_TYPE_COLORS.Reservation },
+          { type: 'Maintenance', label: 'Maintenance', colors: SCHEDULE_TYPE_COLORS.Maintenance },
+        ]
+      : [
+          { type: 'Lecture', label: 'Lecture', colors: SCHEDULE_TYPE_COLORS.Lecture },
+          { type: 'Laboratory', label: 'Laboratory', colors: SCHEDULE_TYPE_COLORS.Laboratory },
+        ];
+
+    if (hasDisabledDays) {
+      baseItems.push({
+        type: 'NoClass',
+        label: 'Holiday / No Class',
+        colors: { bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B' },
+      });
     }
-    return [
-      { type: 'Lecture', label: 'Lecture', colors: SCHEDULE_TYPE_COLORS.Lecture },
-      { type: 'Laboratory', label: 'Laboratory', colors: SCHEDULE_TYPE_COLORS.Laboratory },
-    ];
-  }, [roomType]);
+
+    return baseItems;
+  }, [roomType, dayStatuses]);
 
   const dropdownOptions = React.useMemo(() => {
     if (roomType) {
@@ -384,16 +392,32 @@ export default function WeeklyScheduleGrid({
               const disabled = status?.disabled;
               const shortDay = day.substring(0, 3).toUpperCase();
               return (
-                <div key={day} className="py-2 text-center print:bg-[#7A0808] print:text-white print:border-r print:border-black flex flex-col justify-center">
+                <div
+                  key={day}
+                  className={`py-2 text-center print:bg-[#7A0808] print:text-white print:border-r print:border-black flex flex-col justify-center transition-all ${
+                    disabled ? 'bg-red-50/70 border-b-2 border-red-300' : ''
+                  }`}
+                >
                   <p className="text-[10px] font-bold uppercase text-gray-400 print:text-white print:font-extrabold print:text-xs">
                     <span className="print:hidden">{day}</span>
                     <span className="hidden print:inline">{shortDay}</span>
                   </p>
                   {showDayDates && (
-                    <p className="text-sm font-black print:hidden" style={{ color: disabled ? '#9CA3AF' : '#2B3235' }}>{dayDates[i]}</p>
+                    <p className="text-sm font-black print:hidden" style={{ color: disabled ? '#B91C1C' : '#2B3235' }}>
+                      {dayDates[i]}
+                    </p>
                   )}
-                  {disabled && status?.reason && (
-                    <p className="text-[8px] font-bold leading-tight mt-0.5 px-1 text-red-700 print:hidden">{status.reason}</p>
+                  {disabled && (
+                    <div className="print:hidden px-1 mt-0.5">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-red-700 bg-red-100/90 border border-red-200 px-1 py-0.5 rounded leading-none inline-block">
+                        {status?.badge || 'NO CLASS'}
+                      </span>
+                      {status?.reason && (
+                        <p className="text-[8px] font-bold leading-tight mt-0.5 text-red-800 line-clamp-1" title={status.reason}>
+                          {status.reason}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -434,12 +458,18 @@ export default function WeeklyScheduleGrid({
                         className="border-t border-l border-gray-100 print:border-r print:border-black"
                         style={{
                           height: 'var(--cell-height, 48px)',
-                          background: disabled ? '#F3F4F6' : selected ? '#FEE2E2' : 'transparent',
-                          cursor: canPlot && !disabled ? 'crosshair' : 'default',
+                          background: disabled
+                            ? 'repeating-linear-gradient(45deg, #FEF2F2, #FEF2F2 10px, #FFF5F5 10px, #FFF5F5 20px)'
+                            : selected
+                            ? '#FEE2E2'
+                            : 'transparent',
+                          cursor: canPlot && !disabled ? 'crosshair' : disabled ? 'not-allowed' : 'default',
                         }}
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          handleSlotMouseDown(dayIndex, slotIndex, disabled, dayStatuses[dayIndex]?.date);
+                          if (!disabled) {
+                            handleSlotMouseDown(dayIndex, slotIndex, disabled, dayStatuses[dayIndex]?.date);
+                          }
                         }}
                         onMouseEnter={() => handleSlotMouseEnter(dayIndex, slotIndex, disabled)}
                         role="presentation"
@@ -454,86 +484,116 @@ export default function WeeklyScheduleGrid({
               className="absolute top-0 grid pointer-events-none"
               style={{ left: 85, right: 0, height: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`, gridTemplateColumns: 'repeat(7, 1fr)' }}
             >
-              {blocksByDay.map((dayBlocks, dayIndex) => (
-                <div key={dayIndex} className="relative h-full" style={{ minHeight: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))` }}>
-                  {dayBlocks.map((sched) => {
-                    const isLabRoom = roomType ? roomType.toLowerCase().includes('lab') : false;
-                    const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
-                      (sched.isCourseSchedule ? (isLabRoom ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture) : null) ||
-                      (sched.isReservation || sched.type?.startsWith?.('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
-                      (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
-                      SCHEDULE_TYPE_COLORS.Lecture;
-                    const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
-                    const durationSlots = (sched.end - sched.start) * 2;
-                    const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
-                    const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
+              {blocksByDay.map((dayBlocks, dayIndex) => {
+                const dayStatus = dayStatuses[dayIndex];
+                const isDisabledDay = Boolean(dayStatus?.disabled);
 
-                    const isNonCourse = sched.isReservation || sched.isMaintenance;
-                    return (
+                return (
+                  <div key={dayIndex} className="relative h-full" style={{ minHeight: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))` }}>
+                    {/* Blocked Day Vertical Bar Overlay */}
+                    {isDisabledDay && (
                       <div
-                        key={sched.id}
-                        className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center ${
-                          isNonCourse ? 'print:hidden' : ''
-                        }`}
-                        onMouseDown={(e) => e.stopPropagation()}
+                        className="absolute inset-x-0.5 top-1 bottom-1 z-[6] pointer-events-auto flex flex-col items-center justify-start pt-6 pb-4 px-1.5 text-center rounded-xl border border-red-200/80 select-none shadow-2xs"
                         style={{
-                          top: topCalc,
-                          height: heightCalc,
-                          background: colors.bg,
-                          border: `1.5px solid ${colors.border}`,
-                          boxSizing: 'border-box',
-                          padding: '8px',
-                          borderRadius: '8px',
+                          background: 'rgba(254, 242, 242, 0.65)',
+                          backdropFilter: 'blur(0.5px)',
                         }}
                       >
-                        <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
-                        <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
-                          {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
-                        </p>
-                        {(sched.section || sched.sectionName || sched.program) && (
-                          <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
-                            Sec: {sched.section || sched.sectionName || sched.program}
+                        <div className="bg-white/95 border border-red-200 shadow-xs px-2.5 py-2.5 rounded-xl text-center w-full max-w-[96%] animate-in fade-in duration-200">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-red-700 bg-red-100/90 border border-red-200 px-2 py-0.5 rounded-md inline-block mb-1">
+                            {dayStatus?.badge || 'NO CLASS'}
+                          </span>
+                          <p className="text-xs font-black text-gray-900 leading-snug">
+                            {dayStatus?.reason || 'Official School Non-Working Holiday'}
                           </p>
-                        )}
-                        {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}
-                        <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
-                          {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
-                        </p>
-                        {!readOnly && (onEditBlock || onDeleteBlock) && (
-                          <div className="flex gap-1 mt-1 pointer-events-auto">
-                            {onEditBlock && (
-                              <button 
-                                type="button" 
-                                className="p-0.5 rounded hover:bg-white/50" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  onEditBlock(sched);
-                                }}
-                              >
-                                <Edit2 size={9} style={{ color: colors.text }} />
-                              </button>
-                            )}
-                            {onDeleteBlock && (
-                              <button 
-                                type="button" 
-                                className="p-0.5 rounded hover:bg-white/50" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  onDeleteBlock(sched);
-                                }}
-                              >
-                                <Trash2 size={9} style={{ color: colors.text }} />
-                              </button>
-                            )}
-                          </div>
-                        )}
+                          {dayStatus?.description && (
+                            <p className="text-[10px] text-gray-500 font-medium mt-1 leading-snug">
+                              {dayStatus.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                    )}
+
+                    {dayBlocks.map((sched) => {
+                      const isLabRoom = roomType ? roomType.toLowerCase().includes('lab') : false;
+                      const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
+                        (sched.isCourseSchedule ? (isLabRoom ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture) : null) ||
+                        (sched.isReservation || sched.type?.startsWith?.('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
+                        (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
+                        SCHEDULE_TYPE_COLORS.Lecture;
+                      const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
+                      const durationSlots = (sched.end - sched.start) * 2;
+                      const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
+                      const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
+
+                      const isNonCourse = sched.isReservation || sched.isMaintenance;
+                      return (
+                        <div
+                          key={sched.id}
+                          className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center ${
+                            isNonCourse ? 'print:hidden' : ''
+                          }`}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          style={{
+                            top: topCalc,
+                            height: heightCalc,
+                            background: colors.bg,
+                            border: `1.5px solid ${colors.border}`,
+                            boxSizing: 'border-box',
+                            padding: '8px',
+                            borderRadius: '8px',
+                          }}
+                        >
+                          <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                          <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                            {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
+                          </p>
+                          {(sched.section || sched.sectionName || sched.program) && (
+                            <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                              Sec: {sched.section || sched.sectionName || sched.program}
+                            </p>
+                          )}
+                          {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}
+                          <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                            {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
+                          </p>
+                          {!readOnly && (onEditBlock || onDeleteBlock) && (
+                            <div className="flex gap-1 mt-1 pointer-events-auto">
+                              {onEditBlock && (
+                                <button 
+                                  type="button" 
+                                  className="p-0.5 rounded hover:bg-white/50" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    onEditBlock(sched);
+                                  }}
+                                >
+                                  <Edit2 size={9} style={{ color: colors.text }} />
+                                </button>
+                              )}
+                              {onDeleteBlock && (
+                                <button 
+                                  type="button" 
+                                  className="p-0.5 rounded hover:bg-white/50" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    onDeleteBlock(sched);
+                                  }}
+                                >
+                                  <Trash2 size={9} style={{ color: colors.text }} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

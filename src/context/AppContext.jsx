@@ -5,6 +5,7 @@ import {
   addFloorToBuilding,
   addRoomToFloor,
   updateBuildingRecord,
+  deleteBuildingRecord,
   updateRoomRecord,
 } from '../services/buildingService';
 import {
@@ -297,6 +298,9 @@ export function AppProvider({ children }) {
   const updateBuilding = async (buildingId, patch) => {
     await updateBuildingRecord(buildingId, patch);
   };
+  const deleteBuilding = async (buildingId) => {
+    await deleteBuildingRecord(buildingId);
+  };
 
   return (
     <AppContext.Provider value={{
@@ -319,6 +323,7 @@ export function AppProvider({ children }) {
       submitReservation,
       addUser,
       updateBuilding,
+      deleteBuilding,
       toggleBuilding,
       toggleFloor,
     }}>

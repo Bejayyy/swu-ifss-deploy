@@ -354,6 +354,85 @@ export default function RoomWeeklyScheduleModal({
     return blocks;
   }, [weekStartDate, courseSchedules, effectiveApprovedReservations, maintenanceSchedules, activeSemesterObj, roomCode]);
 
+  const dayStatuses = useMemo(() => {
+    const weekStart = weekStartDate || new Date();
+    const days = [];
+
+    for (let i = 0; i < 7; i++) {
+      const currentDayDate = addDays(weekStart, i);
+      const year = currentDayDate.getFullYear();
+      const month = String(currentDayDate.getMonth() + 1).padStart(2, '0');
+      const day = String(currentDayDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      let disabled = false;
+      let reason = '';
+      let description = '';
+      let badge = '';
+
+      // 1. Check holidays
+      const holidayMatch = (calendarData?.holidays || []).find((h) => {
+        const hStart = h.date || h.startDate;
+        const hEnd = h.endDate || h.date || h.startDate;
+        return hStart && dateStr >= hStart && dateStr <= hEnd;
+      });
+
+      if (holidayMatch) {
+        disabled = true;
+        reason = holidayMatch.name || holidayMatch.title || 'Official Holiday';
+        description = holidayMatch.desc || holidayMatch.description || 'No Classes Scheduled';
+        badge = 'HOLIDAY';
+      }
+
+      // 2. Check no-class periods
+      if (!disabled) {
+        const noClassMatch = (calendarData?.noClassPeriods || []).find((nc) => {
+          const start = nc.start || nc.startDate;
+          const end = nc.end || nc.endDate || start;
+          return start && dateStr >= start && dateStr <= end;
+        });
+
+        if (noClassMatch) {
+          disabled = true;
+          reason = noClassMatch.reason || noClassMatch.desc || 'No Classes Scheduled';
+          description = noClassMatch.desc || '';
+          badge = 'NO CLASS';
+        }
+      }
+
+      // 3. Check official calendar events (from AI scan or manual entry)
+      if (!disabled) {
+        const eventMatch = (calendarData?.events || []).find((ev) => {
+          const evStart = ev.startDate || ev.date;
+          const evEnd = ev.endDate || evStart;
+          return (
+            evStart &&
+            dateStr >= evStart &&
+            dateStr <= evEnd &&
+            (ev.isNoClass || ev.category === 'holiday')
+          );
+        });
+
+        if (eventMatch) {
+          disabled = true;
+          reason = eventMatch.title || 'School Activity / Holiday';
+          description = eventMatch.description || (eventMatch.isNoClass ? 'No Classes' : '');
+          badge = eventMatch.category === 'holiday' ? 'HOLIDAY' : 'NO CLASS';
+        }
+      }
+
+      days.push({
+        date: dateStr,
+        disabled,
+        reason,
+        description,
+        badge,
+      });
+    }
+
+    return days;
+  }, [weekStartDate, calendarData]);
+
   if (!isOpen) return null;
 
   return (
@@ -420,6 +499,7 @@ export default function RoomWeeklyScheduleModal({
           ) : (
             <WeeklyScheduleGrid
               blocks={scheduleBlocks}
+              dayStatuses={dayStatuses}
               scheduleTab={scheduleTab}
               onScheduleTabChange={setScheduleTab}
               semester={semesterTab}

@@ -53,8 +53,9 @@ export function subscribeCalendarBundle(schoolYearId, onData, onError) {
   let config = null;
   let holidays = [];
   let noClassPeriods = [];
+  let events = [];
 
-  const emit = () => onData({ config, holidays, noClassPeriods });
+  const emit = () => onData({ config, holidays, noClassPeriods, events });
 
   const unsubConfig = onSnapshot(
     schoolYearRef(schoolYearId),
@@ -83,10 +84,20 @@ export function subscribeCalendarBundle(schoolYearId, onData, onError) {
     onError,
   );
 
+  const unsubEvents = onSnapshot(
+    query(calendarEventsRef(schoolYearId), orderBy('startDate')),
+    (snap) => {
+      events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      emit();
+    },
+    onError,
+  );
+
   return () => {
     unsubConfig();
     unsubHolidays();
     unsubNoClass();
+    unsubEvents();
   };
 }
 
@@ -298,3 +309,174 @@ export async function deleteSchoolCalendarPdf() {
     await deleteDoc(parentRef);
   }
 }
+
+// ----------------------------------------------------
+// CALENDAR EVENTS (Interactive UI & AI-Generated)
+// ----------------------------------------------------
+function calendarEventsRef(schoolYearId) {
+  return collection(db, COLLECTIONS.ACADEMIC_CALENDARS, schoolYearId, COLLECTIONS.CALENDAR_EVENTS || 'events');
+}
+
+/**
+ * Subscribe to all calendar events for a given school year
+ */
+export function subscribeCalendarEvents(schoolYearId, onData, onError) {
+  if (!schoolYearId) {
+    onData([]);
+    return () => {};
+  }
+  const q = query(calendarEventsRef(schoolYearId), orderBy('startDate', 'asc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      onData(list);
+    },
+    onError,
+  );
+}
+
+/**
+ * Add a single calendar event
+ */
+export async function addCalendarEvent(schoolYearId, {
+  title,
+  startDate,
+  endDate,
+  category = 'event', // 'holiday' | 'exam' | 'academic' | 'activity' | 'event'
+  isNoClass = false,
+  description = '',
+  source = 'manual',
+}) {
+  const ref = doc(calendarEventsRef(schoolYearId));
+  const cleanData = {
+    title: (title || '').trim(),
+    startDate: startDate || '',
+    endDate: endDate || startDate || '',
+    category: category || 'event',
+    isNoClass: Boolean(isNoClass),
+    description: (description || '').trim(),
+    source: source || 'manual',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  await setDoc(ref, cleanData);
+  return ref.id;
+}
+
+/**
+ * Update an existing calendar event
+ */
+export async function updateCalendarEvent(schoolYearId, eventId, updates) {
+  const ref = doc(calendarEventsRef(schoolYearId), eventId);
+  const cleanData = {
+    ...updates,
+    updatedAt: serverTimestamp(),
+  };
+  if (updates.title !== undefined) cleanData.title = updates.title.trim();
+  if (updates.description !== undefined) cleanData.description = updates.description.trim();
+  await updateDoc(ref, cleanData);
+}
+
+/**
+ * Delete a calendar event
+ */
+export async function deleteCalendarEvent(schoolYearId, eventId) {
+  await deleteDoc(doc(calendarEventsRef(schoolYearId), eventId));
+}
+
+/**
+ * Apply AI-parsed calendar data to Firestore:
+ * - Upserts school year configuration (semesters, label)
+ * - Updates exam period date ranges if detected
+ * - Batches all parsed events, holidays, and no-class records
+ */
+export async function applyAiParsedCalendar(schoolYearId, parsedData, options = {}) {
+  const { clearExisting = false } = options;
+  const batch = writeBatch(db);
+
+  // 1. Update School Year Configuration & Semesters
+  const syDocRef = schoolYearRef(schoolYearId);
+  const sySnap = await getDoc(syDocRef);
+  const existingSy = sySnap.exists() ? sySnap.data() : {};
+
+  const label = parsedData.schoolYear || existingSy.label || '2026-2027';
+  const displayLabel = label.startsWith('SY ') ? label : `SY ${label}`;
+
+  const semestersToSave = Array.isArray(parsedData.semesters) && parsedData.semesters.length > 0
+    ? parsedData.semesters.map((s, idx) => ({
+        id: s.id || `sem_${idx + 1}`,
+        name: (s.name || '').trim() || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
+        start: s.start || '',
+        end: s.end || '',
+      }))
+    : (existingSy.semesters || [
+        { id: 'sem_1', name: 'Semester 1', start: '', end: '' },
+        { id: 'sem_2', name: 'Semester 2', start: '', end: '' },
+      ]);
+
+  const syUpdates = {
+    label,
+    displayLabel,
+    semesters: semestersToSave,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (!sySnap.exists()) {
+    syUpdates.createdAt = serverTimestamp();
+  }
+
+  // Update Exam Periods if detected
+  if (parsedData.examPeriods && Object.keys(parsedData.examPeriods).length > 0) {
+    syUpdates.examPeriods = {
+      ...(existingSy.examPeriods || EMPTY_EXAM_PERIODS),
+      ...parsedData.examPeriods,
+    };
+  }
+
+  batch.set(syDocRef, syUpdates, { merge: true });
+
+  // 2. Clear existing events if requested
+  if (clearExisting) {
+    const existingEventsSnap = await getDocs(calendarEventsRef(schoolYearId));
+    existingEventsSnap.forEach((d) => batch.delete(d.ref));
+  }
+
+  // 3. Batch Save All Events
+  if (Array.isArray(parsedData.events)) {
+    for (const ev of parsedData.events) {
+      if (!ev.title || !ev.startDate) continue;
+      const evRef = doc(calendarEventsRef(schoolYearId));
+      batch.set(evRef, {
+        title: (ev.title || '').trim(),
+        startDate: ev.startDate || '',
+        endDate: ev.endDate || ev.startDate || '',
+        category: ev.category || 'event',
+        isNoClass: Boolean(ev.isNoClass),
+        description: (ev.description || '').trim(),
+        source: 'ai_scan',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      // If it's a holiday, also sync to holidays collection
+      if (ev.category === 'holiday' || ev.isNoClass) {
+        const holRef = doc(holidaysRef(schoolYearId));
+        batch.set(holRef, {
+          date: ev.startDate,
+          endDate: ev.endDate || ev.startDate,
+          name: (ev.title || '').trim(),
+          desc: (ev.description || '').trim(),
+          isNoClass: Boolean(ev.isNoClass),
+          source: 'ai_scan',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  }
+
+  await batch.commit();
+  return { success: true, count: parsedData.events?.length || 0 };
+}
+

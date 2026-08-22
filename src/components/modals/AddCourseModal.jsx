@@ -43,6 +43,8 @@ export default function AddCourseModal({
     title: editingCourse?.title || '',
     yearLevel: editingCourse?.yearLevel || '1st Year',
     semester: editingCourse?.semester || '1st Semester',
+    lecUnits: editingCourse?.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse?.type === 'laboratory' ? '0' : String(editingCourse?.units || '3')),
+    labUnits: editingCourse?.labUnits !== undefined ? String(editingCourse.labUnits) : (editingCourse?.type === 'laboratory' ? String(editingCourse?.units || '3') : '0'),
     units: editingCourse?.units ? String(editingCourse.units) : '3',
     type: editingCourse?.type || 'lecture',
   });
@@ -56,6 +58,8 @@ export default function AddCourseModal({
         title: editingCourse.title || '',
         yearLevel: editingCourse.yearLevel || '1st Year',
         semester: editingCourse.semester || '1st Semester',
+        lecUnits: editingCourse.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse.type === 'laboratory' ? '0' : String(editingCourse.units || '3')),
+        labUnits: editingCourse.labUnits !== undefined ? String(editingCourse.labUnits) : (editingCourse.type === 'laboratory' ? String(editingCourse.units || '3') : '0'),
         units: editingCourse.units ? String(editingCourse.units) : '3',
         type: editingCourse.type || 'lecture',
       });
@@ -104,6 +108,10 @@ export default function AddCourseModal({
       return;
     }
 
+    const numLec = parseFloat(individualForm.lecUnits) || 0;
+    const numLab = parseFloat(individualForm.labUnits) || 0;
+    const totalUnits = parseFloat(individualForm.units) || (numLec + numLab);
+
     setIsSubmitting(true);
     try {
       const coursePayload = {
@@ -111,8 +119,10 @@ export default function AddCourseModal({
         title,
         yearLevel: individualForm.yearLevel,
         semester: individualForm.semester,
-        units,
-        type: individualForm.type,
+        lecUnits: numLec,
+        labUnits: numLab,
+        units: totalUnits,
+        type: individualForm.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
         collegeCode,
       };
 
@@ -375,19 +385,75 @@ export default function AddCourseModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
-                    Units <span className="text-red-500">*</span>
+                    Lecture Units
                   </label>
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={individualForm.units}
-                    onChange={(e) => setIndividualForm({ ...individualForm, units: e.target.value.replace(/[^0-9.]/g, '') })}
+                    value={individualForm.lecUnits}
+                    onChange={(e) => {
+                      const cleanLec = e.target.value.replace(/[^0-9.]/g, '');
+                      const numLec = parseFloat(cleanLec) || 0;
+                      const numLab = parseFloat(individualForm.labUnits || '0') || 0;
+                      const total = numLec + numLab;
+                      let type = individualForm.type;
+                      if (numLab > 0 && numLec > 0) type = 'both';
+                      else if (numLab > 0 && numLec === 0) type = 'laboratory';
+                      else if (numLec > 0 && numLab === 0) type = 'lecture';
+                      setIndividualForm({
+                        ...individualForm,
+                        lecUnits: cleanLec,
+                        units: String(total),
+                        type,
+                      });
+                    }}
                     placeholder="3"
-                    className="form-input w-full font-bold bg-white"
-                    required
+                    className="form-input w-full font-bold bg-white text-center"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
+                    Laboratory Units
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={individualForm.labUnits}
+                    onChange={(e) => {
+                      const cleanLab = e.target.value.replace(/[^0-9.]/g, '');
+                      const numLab = parseFloat(cleanLab) || 0;
+                      const numLec = parseFloat(individualForm.lecUnits || '0') || 0;
+                      const total = numLec + numLab;
+                      let type = individualForm.type;
+                      if (numLab > 0 && numLec > 0) type = 'both';
+                      else if (numLab > 0 && numLec === 0) type = 'laboratory';
+                      else if (numLec > 0 && numLab === 0) type = 'lecture';
+                      setIndividualForm({
+                        ...individualForm,
+                        labUnits: cleanLab,
+                        units: String(total),
+                        type,
+                      });
+                    }}
+                    placeholder="0"
+                    className="form-input w-full font-bold bg-white text-center"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
+                    Total Units <span className="text-gray-400 font-normal">(Auto)</span>
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    readOnly
+                    value={individualForm.units}
+                    className="form-input w-full font-black bg-gray-100/90 text-gray-800 cursor-not-allowed text-center"
                   />
                 </div>
 

@@ -534,3 +534,42 @@ export async function updateAllRoomsOnFloor(buildingId, floorId, patch) {
   await batch.commit();
   return { updated: roomsSnapshot.size };
 }
+
+export async function deleteBuildingRecord(buildingId) {
+  if (!buildingId) throw new Error('Building ID is required.');
+
+  const buildingRef = doc(db, COLLECTIONS.BUILDINGS, buildingId);
+  const floorsCollection = collection(buildingRef, COLLECTIONS.FLOORS);
+  const floorsSnapshot = await getDocs(floorsCollection);
+
+  let batch = writeBatch(db);
+  let opCount = 0;
+
+  for (const floorDoc of floorsSnapshot.docs) {
+    const roomsCollection = collection(floorDoc.ref, COLLECTIONS.ROOMS);
+    const roomsSnapshot = await getDocs(roomsCollection);
+
+    for (const roomDoc of roomsSnapshot.docs) {
+      batch.delete(roomDoc.ref);
+      opCount++;
+      if (opCount >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        opCount = 0;
+      }
+    }
+
+    batch.delete(floorDoc.ref);
+    opCount++;
+    if (opCount >= 450) {
+      await batch.commit();
+      batch = writeBatch(db);
+      opCount = 0;
+    }
+  }
+
+  // Delete building root document
+  batch.delete(buildingRef);
+  await batch.commit();
+}
+

@@ -83,13 +83,19 @@ export function subscribeAllCourses(onData, onError) {
  * Add a new course
  */
 export async function addCourse(courseData) {
+  const lecUnits = courseData.lecUnits !== undefined ? Number(courseData.lecUnits) : (courseData.type === 'laboratory' ? 0 : Number(courseData.units) || 3);
+  const labUnits = courseData.labUnits !== undefined ? Number(courseData.labUnits) : (courseData.type === 'laboratory' ? Number(courseData.units) || 3 : 0);
+  const totalUnits = courseData.units !== undefined ? Number(courseData.units) : (lecUnits + labUnits);
+
   const cleanData = {
     code: (courseData.code || '').trim().toUpperCase(),
     title: (courseData.title || '').trim(),
-    type: courseData.type || 'lecture',
+    type: courseData.type || (labUnits > 0 && lecUnits > 0 ? 'both' : (labUnits > 0 ? 'laboratory' : 'lecture')),
     yearLevel: courseData.yearLevel || '1st Year',
     semester: courseData.semester || '1st Semester',
-    units: Number(courseData.units) || 0,
+    lecUnits: Number(lecUnits) || 0,
+    labUnits: Number(labUnits) || 0,
+    units: Number(totalUnits) || 0,
     collegeCode: (courseData.collegeCode || '').trim().toUpperCase(),
     programCode: (courseData.programCode || '').trim().toUpperCase(),
     assignedTeacherUid: courseData.assignedTeacherUid || null,
@@ -116,6 +122,8 @@ export async function updateCourse(courseId, updates) {
   if (updates.code) cleanUpdates.code = updates.code.trim().toUpperCase();
   if (updates.title) cleanUpdates.title = updates.title.trim();
   if (updates.type) cleanUpdates.type = updates.type;
+  if (updates.lecUnits !== undefined) cleanUpdates.lecUnits = Number(updates.lecUnits) || 0;
+  if (updates.labUnits !== undefined) cleanUpdates.labUnits = Number(updates.labUnits) || 0;
   if (updates.units !== undefined) cleanUpdates.units = Number(updates.units) || 0;
   if (updates.semester) cleanUpdates.semester = updates.semester;
   if (updates.yearLevel) cleanUpdates.yearLevel = updates.yearLevel;

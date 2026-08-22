@@ -44,7 +44,7 @@ export default function App() {
     <AuthProvider>
       <RoleConfigProvider>
         <AppProvider>
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route

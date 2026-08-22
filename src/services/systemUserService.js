@@ -389,18 +389,11 @@ export async function deleteStaffUser(uid) {
     // Continue with user deletion even if cleanup partially fails
   }
 
-  // ── 7. Delete the user document and auth account ──
-  try {
-    const { httpsCallable } = await import('firebase/functions');
-    const { functions } = await import('../firebase/firebase');
-    const deleteAuthUser = httpsCallable(functions, 'deleteStaffAuthUser');
-    await deleteAuthUser({ uid });
-    console.log('Successfully deleted staff user and all related data:', uid);
-  } catch (error) {
-    // If cloud function fails (not deployed), fall back to deleting just the Firestore doc
-    console.warn('Cloud function deleteStaffAuthUser not available, deleting Firestore doc only:', error.message);
-    await deleteDoc(userRef);
-    console.log('Deleted user Firestore document (Auth account may remain):', uid);
-  }
+  // ── 7. Delete the user document and Auth account via Cloud Function ──
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('../firebase/firebase');
+  const deleteAuthUser = httpsCallable(functions, 'deleteStaffAuthUser');
+  await deleteAuthUser({ uid });
+  console.log('Successfully deleted staff user and all related data:', uid);
 }
 

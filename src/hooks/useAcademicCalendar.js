@@ -40,8 +40,9 @@ export function useAcademicCalendar(preferredSchoolYearId = null) {
   const calendarData = useMemo(
     () => ({
       config: bundle.config,
-      holidays: bundle.holidays,
-      noClassPeriods: bundle.noClassPeriods,
+      holidays: bundle.holidays || [],
+      noClassPeriods: bundle.noClassPeriods || [],
+      events: bundle.events || [],
       examPeriods: normalizeExamPeriods(bundle.config?.examPeriods),
     }),
     [bundle],

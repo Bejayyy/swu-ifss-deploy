@@ -7,7 +7,7 @@
  * Deploy: firebase deploy --only functions
  */
 require('dotenv').config();
-const functions = require('firebase-functions');
+const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -69,34 +69,51 @@ exports.deleteStaffAuthUser = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('permission-denied', 'Active user required.');
   }
 
+  // Only registrars and developers may delete staff accounts
+  const callerRole = caller.data().role;
+  if (!['registrar', 'developer'].includes(callerRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Registrar or Developer role required.');
+  }
+
   const { uid } = data;
   if (!uid) {
     throw new functions.https.HttpsError('invalid-argument', 'uid is required.');
   }
 
+  // Prevent self-deletion
+  if (uid === context.auth.uid) {
+    throw new functions.https.HttpsError('failed-precondition', 'Cannot delete your own account.');
+  }
+
   const target = await admin.firestore().doc(`users/${uid}`).get();
   if (!target.exists) {
-    throw new functions.https.HttpsError('not-found', 'User not found.');
+    // User already gone from Firestore — still try to clean up Auth
+    try {
+      await admin.auth().deleteUser(uid);
+    } catch (err) {
+      if (err.code !== 'auth/user-not-found') throw err;
+    }
+    return { success: true };
   }
 
   const targetData = target.data();
-  const allowedRoles = ['dean', 'organization_head', 'teacher', 'gsd', 'student_life'];
-  
-  if (!allowedRoles.includes(targetData.role)) {
-    throw new functions.https.HttpsError('failed-precondition', 'Can only delete staff users.');
+
+  // Developers cannot be deleted via this function
+  if (targetData.role === 'developer') {
+    throw new functions.https.HttpsError('failed-precondition', 'Developer accounts cannot be deleted from here.');
   }
 
-  // Delete Auth user
+  // 1. Delete Firebase Auth account first
   try {
     await admin.auth().deleteUser(uid);
   } catch (error) {
-    // If user doesn't exist in Auth, that's okay, continue with Firestore deletion
+    // auth/user-not-found is acceptable — the Auth record may have been removed already
     if (error.code !== 'auth/user-not-found') {
-      throw error;
+      throw new functions.https.HttpsError('internal', `Failed to delete Auth account: ${error.message}`);
     }
   }
 
-  // Delete Firestore document
+  // 2. Delete Firestore user document
   await admin.firestore().doc(`users/${uid}`).delete();
 
   return { success: true };

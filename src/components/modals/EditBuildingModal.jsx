@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Upload } from 'lucide-react';
+import { X, Upload, Trash2 } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
-export default function EditBuildingModal({ building, onClose, onSave }) {
+export default function EditBuildingModal({ building, onClose, onSave, onDelete }) {
   const [form, setForm] = useState({
     name: building?.name || '',
     prefix: building?.prefix || building?.code || '',
@@ -12,7 +12,9 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
       : Array.from({ length: building?.floors || 1 }, (_, i) => `Floor ${i + 1}`),
   });
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [error, setError] = useState('');
 
   if (!building) return null;
@@ -73,6 +75,22 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
     }
   };
 
+  const handleExecuteDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await onDelete(building.id);
+      setShowDeleteModal(false);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to delete building.');
+      setShowDeleteModal(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="modal-overlay" onClick={onClose}>
@@ -99,63 +117,69 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
                   Building Name <span className="text-red-500">*</span>
                 </label>
                 <input
-                  className="form-input"
+                  type="text"
+                  required
+                  className="form-input text-xs font-medium"
+                  placeholder="e.g. Science Building"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  required
                 />
               </div>
+
               <div>
                 <label className="form-label font-bold text-gray-700">
-                  Building Prefix <span className="text-red-500">*</span>
+                  Room Prefix <span className="text-red-500">*</span>
                 </label>
                 <input
-                  className="form-input"
-                  placeholder="e.g. PH"
+                  type="text"
+                  required
+                  maxLength={6}
+                  className="form-input text-xs font-medium uppercase tracking-wider"
+                  placeholder="e.g. SCI"
                   value={form.prefix}
                   onChange={(e) => setForm((f) => ({ ...f, prefix: e.target.value.toUpperCase() }))}
-                  required
                 />
-                <p className="text-[10px] text-gray-400 mt-1">Used for rooms (e.g. PH - 101)</p>
+                <p className="text-[10px] text-gray-400 mt-1">Short code used for rooms (e.g. {form.prefix || 'SCI'}-101)</p>
               </div>
             </div>
 
-            {/* Building Image (Required) */}
+            {/* Building Photo Upload */}
             <div>
               <label className="form-label font-bold text-gray-700">
-                Building Image / Photo <span className="text-red-500">*</span>
+                Building Photo <span className="text-red-500">*</span>
               </label>
-              {form.image ? (
-                <div className="relative rounded-xl overflow-hidden h-40 border border-gray-200 group mb-3 shadow-sm bg-gray-50">
-                  <img src={form.image} alt="Building preview" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
-                    <label className="btn-maroon cursor-pointer shadow-md">
-                      <Upload size={14} /> Change Photo
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, image: '' }))}
-                      className="btn-delete cursor-pointer shadow-md"
+              <div className="mt-1 flex items-center gap-3">
+                {form.image ? (
+                  <div className="relative group w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 bg-gray-50">
+                    <img src={form.image} alt="Building Preview" className="w-full h-full object-cover" />
+                    <label
+                      htmlFor="building-image-edit-input"
+                      className="absolute inset-0 bg-black/50 text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-center p-1"
                     >
-                      <X size={14} /> Remove
-                    </button>
+                      Change Photo
+                    </label>
                   </div>
+                ) : (
+                  <label
+                    htmlFor="building-image-edit-input"
+                    className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#7A0808] bg-gray-50 hover:bg-red-50/50 flex flex-col items-center justify-center text-gray-400 hover:text-[#7A0808] cursor-pointer transition-colors flex-shrink-0"
+                  >
+                    <Upload size={18} />
+                    <span className="text-[10px] font-bold mt-1">Upload</span>
+                  </label>
+                )}
+                <input
+                  type="file"
+                  id="building-image-edit-input"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+                <div className="text-[11px] text-gray-500">
+                  <p className="font-semibold text-gray-700">Upload building banner</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">PNG, JPG, WebP up to 5MB.</p>
                 </div>
-              ) : (
-                <label className={`flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-xl cursor-pointer transition-all bg-gray-50/50 mb-3 ${
-                  error && !form.image ? 'border-red-400 bg-red-50/50' : 'border-gray-200 hover:border-[#7A0808]'
-                }`}>
-                  <div className="flex flex-col items-center gap-1">
-                    <div className="w-10 h-10 rounded-full bg-red-50 text-[#7A0808] flex items-center justify-center mb-1">
-                      <Upload size={18} />
-                    </div>
-                    <span className="text-xs font-bold text-gray-700">Click to upload building photo</span>
-                    <span className="text-[10px] text-gray-400">PNG, JPG, WEBP up to 5MB (Required)</span>
-                  </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} required />
-                </label>
-              )}
+              </div>
             </div>
 
             {/* Floors Section */}
@@ -172,24 +196,37 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
               </div>
             </div>
 
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-outline-maroon flex-1 justify-center py-2.5 font-bold"
-                style={{ borderRadius: 10 }}
-                disabled={loading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-maroon flex-1 justify-center py-2.5 font-bold shadow-md"
-                style={{ borderRadius: 10 }}
-                disabled={loading}
-              >
-                {loading ? 'Saving…' : 'Save Changes'}
-              </button>
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100">
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="px-3 py-2.5 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Delete this building"
+                  disabled={loading || deleting}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              )}
+              <div className="flex gap-2 flex-1 justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-outline-maroon px-4 py-2.5 font-bold"
+                  style={{ borderRadius: 10 }}
+                  disabled={loading || deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-maroon px-5 py-2.5 font-bold shadow-md"
+                  style={{ borderRadius: 10 }}
+                  disabled={loading || deleting}
+                >
+                  {loading ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -206,6 +243,20 @@ export default function EditBuildingModal({ building, onClose, onSave }) {
           isProcessing={loading}
           onConfirm={handleExecuteSubmit}
           onCancel={() => setShowConfirmModal(false)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <ConfirmModal
+          title="Delete Building"
+          message={`Are you sure you want to delete "${building.name}"? This will permanently delete all floors and rooms inside this building. This action cannot be undone.`}
+          confirmText="Yes, Delete Building"
+          cancelText="Cancel"
+          variant="danger"
+          isProcessing={deleting}
+          onConfirm={handleExecuteDelete}
+          onCancel={() => setShowDeleteModal(false)}
         />
       )}
     </>

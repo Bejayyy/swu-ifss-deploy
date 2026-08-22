@@ -523,38 +523,91 @@ export async function getDeanSections(deanUid) {
 
 /**
  * Subscribe to sections for a specific dean
- * Returns section objects with metadata (name, yearLevel, scheduleCount)
+ * Fetches sections configured by Registrar in program_sections for the dean's college,
+ * and merges with any existing course_schedules metadata (scheduleCount, modality).
  */
-export function subscribeDeanSections(deanUid, onData, onError) {
+export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode) {
   if (!deanUid) {
     onData([]);
     return () => {};
   }
 
   const schedulesRef = collection(db, COLLECTIONS.USERS, deanUid, 'course_schedules');
-  
-  return onSnapshot(
-    schedulesRef,
-    async (snapshot) => {
-      const sectionPromises = snapshot.docs.map(async (doc) => {
-        const sectionName = doc.id;
+  const programSectionsRef = collection(db, 'program_sections');
+
+  let unsubSchedules = () => {};
+  let unsubProgSections = () => {};
+
+  let currentSchedulesDocs = [];
+  let currentProgSectionsDocs = [];
+
+  const mergeAndEmit = async () => {
+    try {
+      const sectionMap = new Map();
+
+      // 1. Process Registrar-created sections from program_sections
+      for (const pDoc of currentProgSectionsDocs) {
+        const pData = pDoc.data ? pDoc.data() : pDoc;
+        const pCollege = String(pData.collegeCode || '').trim().toUpperCase();
+        const targetCollege = String(deanCollegeCode || '').trim().toUpperCase();
+
+        // If deanCollegeCode is specified, filter by college
+        if (targetCollege && pCollege && pCollege !== targetCollege) {
+          continue;
+        }
+
+        const sectionsList = Array.isArray(pData.sections) ? pData.sections : [];
+        for (const secName of sectionsList) {
+          if (!secName) continue;
+          sectionMap.set(secName, {
+            id: secName,
+            name: secName,
+            yearLevel: pData.yearLabel || '1st Year',
+            programCode: pData.programCode || '',
+            scheduleCount: 0,
+            modality: 'regular',
+          });
+        }
+      }
+
+      // 2. Process Dean's course_schedules (override with actual count, modality, etc.)
+      for (const sDoc of currentSchedulesDocs) {
+        const sName = sDoc.id;
+        const sData = sDoc.data ? sDoc.data() : sDoc;
         
-        // Count entries in this section
-        const entriesRef = deanSectionEntriesRef(deanUid, sectionName);
-        const entriesSnapshot = await getDocs(entriesRef);
-        const scheduleCount = entriesSnapshot.size;
-        
-        return {
-          id: doc.id,
-          name: sectionName, // Section name is the document ID
-          scheduleCount, // Add schedule count
-          ...doc.data(), // Includes yearLevel, createdAt, etc.
-        };
+        let existing = sectionMap.get(sName);
+        if (!existing) {
+          existing = {
+            id: sName,
+            name: sName,
+            yearLevel: sData.yearLevel || '1st Year',
+            scheduleCount: 0,
+            modality: sData.modality || 'regular',
+          };
+          sectionMap.set(sName, existing);
+        } else {
+          existing.modality = sData.modality || existing.modality || 'regular';
+          if (sData.yearLevel) existing.yearLevel = sData.yearLevel;
+        }
+      }
+
+      // 3. Populate scheduleCount for sections
+      const sectionPromises = Array.from(sectionMap.values()).map(async (sec) => {
+        try {
+          const entriesRef = deanSectionEntriesRef(deanUid, sec.name);
+          const entriesSnapshot = await getDocs(entriesRef);
+          return {
+            ...sec,
+            scheduleCount: entriesSnapshot.size,
+          };
+        } catch {
+          return sec;
+        }
       });
-      
+
       const sections = await Promise.all(sectionPromises);
-      
-      // Sort by year level first, then by name
+
+      // 4. Sort by year level first, then by name
       sections.sort((a, b) => {
         const yearA = a.yearLevel || '';
         const yearB = b.yearLevel || '';
@@ -563,11 +616,42 @@ export function subscribeDeanSections(deanUid, onData, onError) {
         }
         return a.name.localeCompare(b.name);
       });
-      
+
       onData(sections);
+    } catch (err) {
+      console.error('Error in mergeAndEmit sections:', err);
+      if (onError) onError(err);
+    }
+  };
+
+  unsubSchedules = onSnapshot(
+    schedulesRef,
+    (snap) => {
+      currentSchedulesDocs = snap.docs;
+      mergeAndEmit();
     },
-    onError
+    (err) => {
+      console.error('Error in schedules snapshot:', err);
+      if (onError) onError(err);
+    }
   );
+
+  unsubProgSections = onSnapshot(
+    programSectionsRef,
+    (snap) => {
+      currentProgSectionsDocs = snap.docs;
+      mergeAndEmit();
+    },
+    (err) => {
+      console.error('Error in program_sections snapshot:', err);
+      if (onError) onError(err);
+    }
+  );
+
+  return () => {
+    unsubSchedules();
+    unsubProgSections();
+  };
 }
 
 /**

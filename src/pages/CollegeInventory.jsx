@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   GraduationCap,
   Plus,
@@ -12,6 +12,9 @@ import {
   ChevronRight,
   Filter,
   UserCheck,
+  Users,
+  Save,
+  Hash,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { StatCardItem } from '../components/ProgressStatCards';
@@ -27,6 +30,12 @@ import { ROLES } from '../firebase/constants';
 import { subscribeColleges, deleteCollege } from '../services/collegeService';
 import { subscribeCollegeCourses, deleteCourse } from '../services/courseService';
 import { subscribeStaffUsers } from '../services/systemUserService';
+import {
+  subscribeProgramSections,
+  upsertProgramYearSections,
+  generateSectionNames,
+  getYearLabel,
+} from '../services/sectionService';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -52,6 +61,9 @@ export default function CollegeInventory() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCollege, setEditingCollege] = useState(null);
 
+  // College drill-down tab state
+  const [activeCollegeTab, setActiveCollegeTab] = useState('courses'); // 'courses' | 'sections'
+
   // Course management states
   const [viewingCollegeCourses, setViewingCollegeCourses] = useState(null);
   const [collegeCourses, setCollegeCourses] = useState([]);
@@ -62,6 +74,13 @@ export default function CollegeInventory() {
   const [semesterFilter, setSemesterFilter] = useState('All');
   const [courseCurrentPage, setCourseCurrentPage] = useState(1);
   const [courseItemsPerPage, setCourseItemsPerPage] = useState(5);
+
+  // Sections management states
+  const [selectedSectionProgram, setSelectedSectionProgram] = useState(null); // { code, name }
+  const [programSectionRows, setProgramSectionRows] = useState([]); // from Firestore
+  const [sectionDraftCounts, setSectionDraftCounts] = useState({}); // yearNumber -> count (draft)
+  const [savingSectionYear, setSavingSectionYear] = useState(null); // yearNumber being saved
+  const [extraYears, setExtraYears] = useState([]); // additional years beyond 4 added by registrar
 
   // Subscribe to colleges
   useEffect(() => {
@@ -219,15 +238,86 @@ export default function CollegeInventory() {
   // Course management functions
   const handleViewCourses = (college) => {
     setViewingCollegeCourses(college);
+    setActiveCollegeTab('courses');
     setCourseSearchQuery('');
     setYearFilter('All');
     setSemesterFilter('All');
+    // Reset sections state
+    setSelectedSectionProgram(null);
+    setProgramSectionRows([]);
+    setSectionDraftCounts({});
+    setExtraYears([]);
   };
 
   const handleBackToColleges = () => {
     setViewingCollegeCourses(null);
     setCollegeCourses([]);
+    setSelectedSectionProgram(null);
+    setProgramSectionRows([]);
+    setSectionDraftCounts({});
+    setExtraYears([]);
   };
+
+  // Subscribe to sections when program is selected
+  useEffect(() => {
+    if (!selectedSectionProgram) {
+      setProgramSectionRows([]);
+      setSectionDraftCounts({});
+      setExtraYears([]);
+      return () => {};
+    }
+    return subscribeProgramSections(
+      selectedSectionProgram.code,
+      (rows) => {
+        setProgramSectionRows(rows);
+        // Sync draft counts from Firestore (don't overwrite user's in-progress edits)
+        setSectionDraftCounts((prev) => {
+          const next = { ...prev };
+          rows.forEach((r) => {
+            // Only set if not already in draft (don't overwrite user edits)
+            if (next[r.yearNumber] === undefined) {
+              next[r.yearNumber] = r.sectionCount;
+            }
+          });
+          return next;
+        });
+        // Determine extra years (beyond year 4) that are already saved
+        const savedExtraYears = rows
+          .filter((r) => r.yearNumber > 4)
+          .map((r) => r.yearNumber)
+          .filter((y) => ![...Array(4)].map((_, i) => i + 1).includes(y));
+        setExtraYears((prev) => {
+          const merged = Array.from(new Set([...savedExtraYears, ...prev]));
+          return merged.sort((a, b) => a - b);
+        });
+      },
+      (err) => console.error('Error loading program sections:', err)
+    );
+  }, [selectedSectionProgram]);
+
+  // Save section count for a specific year
+  const handleSaveSectionYear = useCallback(async (yearNumber) => {
+    if (!selectedSectionProgram || !viewingCollegeCourses) return;
+    const count = Number(sectionDraftCounts[yearNumber]) || 0;
+    setSavingSectionYear(yearNumber);
+    try {
+      await upsertProgramYearSections(
+        viewingCollegeCourses.code,
+        selectedSectionProgram.code,
+        yearNumber,
+        count
+      );
+      setNotification({
+        type: 'success',
+        title: 'Sections Saved',
+        message: `${getYearLabel(yearNumber)} sections for ${selectedSectionProgram.code} saved successfully.`,
+      });
+    } catch (err) {
+      setNotification({ type: 'error', title: 'Save Failed', message: err.message });
+    } finally {
+      setSavingSectionYear(null);
+    }
+  }, [selectedSectionProgram, viewingCollegeCourses, sectionDraftCounts]);
 
   const handleAddCourse = () => {
     setEditingCourse(null);
@@ -462,11 +552,19 @@ export default function CollegeInventory() {
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => handleViewCourses(college)}
+                                onClick={() => { handleViewCourses(college); setActiveCollegeTab('courses'); }}
                                 className="btn-table-action btn-table-action-maroon"
                                 title="Manage courses"
                               >
                                 <BookOpen size={13} /> Courses
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { handleViewCourses(college); setActiveCollegeTab('sections'); }}
+                                className="btn-table-action" style={{ color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe' }}
+                                title="Manage sections"
+                              >
+                                <Users size={13} /> Sections
                               </button>
                               <button
                                 type="button"
@@ -531,7 +629,7 @@ export default function CollegeInventory() {
           </div>
         </div>
       ) : (
-        /* COURSE MANAGEMENT TABLE VIEW */
+        /* COURSE / SECTIONS DRILL-DOWN VIEW */
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <button
@@ -541,20 +639,51 @@ export default function CollegeInventory() {
             >
               ← Back to Colleges
             </button>
+            {activeCollegeTab === 'courses' && (
+              <button
+                type="button"
+                onClick={handleAddCourse}
+                className="btn-maroon text-xs px-4 py-2.5 flex items-center gap-2 font-bold shadow-sm"
+              >
+                <Plus size={16} /> Add Courses
+              </button>
+            )}
+          </div>
+
+          {/* Tab Switcher */}
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
             <button
               type="button"
-              onClick={handleAddCourse}
-              className="btn-maroon text-xs px-4 py-2.5 flex items-center gap-2 font-bold shadow-sm"
+              onClick={() => setActiveCollegeTab('courses')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeCollegeTab === 'courses'
+                  ? 'bg-white text-[#7A0808] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
             >
-              <Plus size={16} /> Add Courses
+              <BookOpen size={13} /> Courses
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveCollegeTab('sections')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeCollegeTab === 'sections'
+                  ? 'bg-white text-[#7A0808] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Users size={13} /> Sections
             </button>
           </div>
 
-          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
-            <div>
-              <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: '#2B3235' }}>
-                <BookOpen size={20} className="text-[#7A0808]" /> {viewingCollegeCourses.name} ({viewingCollegeCourses.code})
-              </h2>
+          {/* ── COURSES TAB ── */}
+          {activeCollegeTab === 'courses' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
+                <div>
+                  <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: '#2B3235' }}>
+                    <BookOpen size={20} className="text-[#7A0808]" /> {viewingCollegeCourses.name} ({viewingCollegeCourses.code})
+                  </h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Manage course list, semester offerings, year levels, credit units, and course types.
               </p>
@@ -794,6 +923,156 @@ export default function CollegeInventory() {
               </div>
             )}
           </div>
+        </div>
+      )} {/* end courses tab */}
+
+          {/* ── SECTIONS TAB ── */}
+          {activeCollegeTab === 'sections' && (
+            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-5">
+              <div>
+                <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: '#2B3235' }}>
+                  <Users size={20} className="text-[#7A0808]" /> Sections — {viewingCollegeCourses.name}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Define the number of sections per year level for each program. Section names are auto-generated.
+                </p>
+              </div>
+
+              {/* Program Picker */}
+              {viewingCollegeCourses.programs?.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-100">
+                    <span className="text-xs font-bold text-gray-600">Program:</span>
+                    <div className="w-[260px]">
+                      <CustomSelect
+                        value={selectedSectionProgram?.code || ''}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          const prog = viewingCollegeCourses.programs?.find((p) => p.code === code);
+                          if (prog) {
+                            setSelectedSectionProgram({ code: prog.code, name: prog.name });
+                            setSectionDraftCounts({});
+                            setExtraYears([]);
+                          } else {
+                            setSelectedSectionProgram(null);
+                          }
+                        }}
+                        options={[
+                          { value: '', label: '— Select a Program —' },
+                          ...(viewingCollegeCourses.programs || []).map((p) => ({
+                            value: p.code,
+                            label: `${p.code} — ${p.name}`,
+                          })),
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  {selectedSectionProgram ? (
+                    <div className="space-y-3">
+                      {/* Year rows: 1–4 default + extra years */}
+                      {[1, 2, 3, 4, ...extraYears].map((yearNum) => {
+                        const savedRow = programSectionRows.find((r) => r.yearNumber === yearNum);
+                        const rawDraft = sectionDraftCounts[yearNum];
+                        const count = rawDraft !== undefined && rawDraft !== '' 
+                          ? Number(rawDraft) 
+                          : (savedRow?.sectionCount ?? 0);
+                        const displayVal = rawDraft !== undefined ? rawDraft : (savedRow?.sectionCount !== undefined ? String(savedRow.sectionCount) : '');
+                        const preview = count > 0 && selectedSectionProgram?.code
+                          ? generateSectionNames(selectedSectionProgram.code, yearNum, count)
+                          : [];
+                        const isSaving = savingSectionYear === yearNum;
+
+                        return (
+                          <div
+                            key={yearNum}
+                            className="flex flex-wrap items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100"
+                          >
+                            {/* Year label */}
+                            <div className="w-24 flex-shrink-0 pt-1">
+                              <span className="text-xs font-black text-[#7A0808]">{getYearLabel(yearNum)}</span>
+                            </div>
+
+                            {/* Section count input */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600">Sections:</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={displayVal}
+                                onChange={(e) => {
+                                  const clean = e.target.value.replace(/[^0-9]/g, '');
+                                  const formatted = clean === '' ? '' : String(parseInt(clean, 10));
+                                  setSectionDraftCounts((prev) => ({
+                                    ...prev,
+                                    [yearNum]: formatted,
+                                  }));
+                                }}
+                                className="w-16 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold"
+                                placeholder="0"
+                              />
+                            </div>
+
+                            {/* Section name preview chips */}
+                            <div className="flex-1 flex flex-wrap gap-1 min-w-0">
+                              {preview.length > 0 ? (
+                                preview.map((name) => (
+                                  <span
+                                    key={name}
+                                    className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold"
+                                  >
+                                    {name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-gray-400 italic pt-1">No sections — set count above</span>
+                              )}
+                            </div>
+
+                            {/* Save button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSectionYear(yearNum)}
+                              disabled={isSaving}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#7A0808] text-white hover:bg-[#5A0606] disabled:opacity-50 transition-all flex-shrink-0"
+                            >
+                              <Save size={12} />
+                              {isSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        );
+                      })}
+
+                      {/* Add Year button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextYear = Math.max(4, ...[...extraYears]) + 1;
+                          if (nextYear <= 7) setExtraYears((prev) => [...prev, nextYear]);
+                        }}
+                        disabled={extraYears.length >= 3} // max year 7
+                        className="flex items-center gap-2 text-xs font-bold text-[#7A0808] border border-dashed border-[#7A0808]/40 rounded-xl px-4 py-2.5 hover:bg-red-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed w-full justify-center"
+                      >
+                        <Plus size={14} /> Add Year Level (e.g. 5th Year)
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center">
+                      <Hash size={36} className="mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm font-semibold text-gray-400">Select a program above to manage its sections</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-8 text-center">
+                  <GraduationCap size={36} className="mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm font-semibold text-gray-400">No programs in this college yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Add programs to this college first, then manage their sections here.</p>
+                </div>
+              )}
+            </div>
+          )} {/* end sections tab */}
+
         </div>
       )}
 

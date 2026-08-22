@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Building2, Calendar, ChevronRight, ChevronLeft, ChevronDown, Layers, DoorOpen, Camera, Eye, ArrowLeft, CheckSquare } from 'lucide-react';
+import { Plus, Edit2, Building2, Calendar, ChevronRight, ChevronLeft, ChevronDown, Layers, DoorOpen, Camera, Eye, ArrowLeft, CheckSquare, Trash2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,7 @@ import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import BulkEditRoomsModal from '../components/modals/BulkEditRoomsModal';
+import ConfirmModal from '../components/modals/ConfirmModal';
 import PageSkeleton from '../components/SkeletonLoader';
 import CustomSelect from '../components/ui/CustomSelect';
 
@@ -29,7 +30,7 @@ const getRoomTypesSummary = (rooms = []) => {
 
 export default function BuildingManagement() {
   const navigate = useNavigate();
-  const { buildingList, buildingsLoading, buildingsError, updateBuilding } = useApp();
+  const { buildingList, buildingsLoading, buildingsError, updateBuilding, deleteBuilding } = useApp();
   const { profile } = useAuth();
   const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, canSubmitReservation, roleLabel, isRegistrar, canEditRoom } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
@@ -38,6 +39,8 @@ export default function BuildingManagement() {
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
+  const [deletingBuilding, setDeletingBuilding] = useState(null);
+  const [isDeletingBuilding, setIsDeletingBuilding] = useState(false);
   const [editFloor, setEditFloor] = useState(null);
   const [editRoom, setEditRoom] = useState(null);
   const [expandedBuildings, setExpandedBuildings] = useState({});
@@ -185,6 +188,20 @@ export default function BuildingManagement() {
   const selectedRoomsObjects = useMemo(() => {
     return displayedRooms.filter((r) => selectedRoomDocIds.includes(r.docId || r.id));
   }, [displayedRooms, selectedRoomDocIds]);
+
+  const handleDeleteBuildingConfirm = async () => {
+    if (!deletingBuilding) return;
+    setIsDeletingBuilding(true);
+    try {
+      await deleteBuilding(deletingBuilding.id);
+      setDeletingBuilding(null);
+    } catch (err) {
+      console.error('Failed to delete building:', err);
+      alert(err.message || 'Failed to delete building.');
+    } finally {
+      setIsDeletingBuilding(false);
+    }
+  };
 
   return (
     <Layout
@@ -393,9 +410,17 @@ export default function BuildingManagement() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  {isRegistrar && (
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {(isRegistrar || canManageBuildings()) && (
                     <>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingBuilding(building)}
+                        className="px-3 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Delete Building"
+                      >
+                        <Trash2 size={14} /> Delete Building
+                      </button>
                       <button
                         type="button"
                         onClick={() => setShowEditBuilding(true)}
@@ -657,6 +682,19 @@ export default function BuildingManagement() {
           building={building}
           onClose={() => setShowEditBuilding(false)}
           onSave={updateBuilding}
+          onDelete={(isRegistrar || canManageBuildings()) ? deleteBuilding : undefined}
+        />
+      )}
+      {deletingBuilding && (
+        <ConfirmModal
+          title="Delete Building"
+          message={`Are you sure you want to delete "${deletingBuilding.name}"? This will permanently delete this building and all of its ${deletingBuilding.floorData?.length || 0} floor(s) and ${allRooms.length} room(s). This action cannot be undone.`}
+          confirmText="Yes, Delete Building"
+          cancelText="Cancel"
+          variant="danger"
+          isProcessing={isDeletingBuilding}
+          onConfirm={handleDeleteBuildingConfirm}
+          onCancel={() => setDeletingBuilding(null)}
         />
       )}
       {editFloor && building && (
