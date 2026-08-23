@@ -22,7 +22,7 @@ import { subscribeColleges } from '../../services/collegeService';
 import AddRoleModal from './AddRoleModal';
 import AddCollegeModal from './AddCollegeModal';
 import CustomSelect from '../ui/CustomSelect';
-import { downloadBulkUserTemplate, parseBulkUserSpreadsheet } from '../../utils/excelTemplate';
+import { downloadBulkUserTemplate, parseBulkUserSpreadsheet, toTitleCase } from '../../utils/excelTemplate';
 
 const createEmptyUser = (defaultRole = 'dean', roleDefinitions = {}) => {
   const def = getRoleDefinition(defaultRole, roleDefinitions);
@@ -96,7 +96,7 @@ export default function AddUserModal({
 
       const errs = [];
       if (!fn) errs.push('First name is required');
-      if (!mn) errs.push('Middle name is required');
+      // Middle name is optional
       if (!ln) errs.push('Last name is required');
       if (!email) {
         errs.push('Email is required');
@@ -242,7 +242,7 @@ export default function AddUserModal({
         permissions: [],
         navKeys: [],
         isValid: false,
-        errors: ['First name is required', 'Middle name is required', 'Last name is required', 'Email is required'],
+        errors: ['First name is required', 'Last name is required', 'Email is required'],
       };
       return revalidateRows([...prev, newRow]);
     });
@@ -272,10 +272,7 @@ export default function AddUserModal({
           setError(`First Name is required${numLabel}.`);
           return;
         }
-        if (!u.middleName.trim()) {
-          setError(`Middle Name is required${numLabel}.`);
-          return;
-        }
+        // Middle Name is optional
         if (!u.lastName.trim()) {
           setError(`Last Name is required${numLabel}.`);
           return;
@@ -303,12 +300,19 @@ export default function AddUserModal({
           return;
         }
 
-        const fullName = `${u.firstName.trim()} ${u.middleName.trim()} ${u.lastName.trim()}`;
+        const fn = toTitleCase(u.firstName);
+        const mn = u.middleName?.trim() ? toTitleCase(u.middleName) : '';
+        const ln = toTitleCase(u.lastName);
+        const fullName = [fn, mn, ln].filter(Boolean).join(' ');
 
         payload.push({
           ...u,
+          firstName: fn,
+          middleName: mn,
+          lastName: ln,
           email: normEmail,
           name: fullName,
+          status: 'Active',
           college: showCollege ? u.college : '',
           department: showCollege ? u.college : '',
           permissions: u.useCustomAccess ? u.permissions : [],
@@ -337,16 +341,20 @@ export default function AddUserModal({
 
       const payload = bulkRows.map((u) => {
         const showCollege = requiresCollege(u.role, roleDefinitions);
-        const fullName = `${u.firstName.trim()} ${u.middleName.trim()} ${u.lastName.trim()}`;
+        const fn = toTitleCase(u.firstName);
+        const mn = u.middleName?.trim() ? toTitleCase(u.middleName) : '';
+        const ln = toTitleCase(u.lastName);
+        const fullName = [fn, mn, ln].filter(Boolean).join(' ');
         const def = getRoleDefinition(u.role, roleDefinitions);
 
         return {
-          firstName: u.firstName.trim(),
-          middleName: u.middleName.trim(),
-          lastName: u.lastName.trim(),
+          firstName: fn,
+          middleName: mn,
+          lastName: ln,
           name: fullName,
           email: u.email.trim().toLowerCase(),
           role: u.role,
+          status: 'Active',
           college: showCollege ? u.college : '',
           department: showCollege ? u.college : '',
           useCustomAccess: false,
@@ -508,14 +516,13 @@ export default function AddUserModal({
                           </div>
                           <div>
                             <label className="form-label">
-                              Middle Name <span className="text-red-500">*</span>
+                              Middle Name <span className="text-gray-400 font-normal text-xs">(Optional)</span>
                             </label>
                             <input
                               className="form-input"
                               value={form.middleName}
                               onChange={(e) => updateUserField(index, 'middleName', e.target.value)}
                               placeholder="e.g. Dela"
-                              required
                             />
                           </div>
                           <div>
@@ -612,29 +619,31 @@ export default function AddUserModal({
                         </div>
 
                         {/* Custom access permissions */}
-                        <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer text-gray-700 pt-1">
-                          <input
-                            type="checkbox"
-                            checked={form.useCustomAccess}
-                            onChange={(e) => updateUserField(index, 'useCustomAccess', e.target.checked)}
-                          />
-                          Customize access for this person (override role defaults)
-                        </label>
+                        <div className="space-y-2 pt-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={form.useCustomAccess}
+                              onChange={(e) => updateUserField(index, 'useCustomAccess', e.target.checked)}
+                            />
+                            Customize access for this person (override role defaults)
+                          </label>
 
-                        <div className={form.useCustomAccess ? '' : 'opacity-50 pointer-events-none'}>
-                          <label className="form-label">Access & navigation</label>
-                          <PermissionCheckboxGrid
-                            permissions={form.permissions}
-                            navKeys={form.navKeys}
-                            onChange={({ permissions, navKeys }) => {
-                              setUsersList((prev) => {
-                                const updated = [...prev];
-                                updated[index] = { ...updated[index], permissions, navKeys };
-                                return updated;
-                              });
-                            }}
-                            disabled={!form.useCustomAccess}
-                          />
+                          <div>
+                            <PermissionCheckboxGrid
+                              permissions={form.permissions}
+                              navKeys={form.navKeys}
+                              roleLabel={roles.find((r) => r.value === form.role)?.label || form.role}
+                              onChange={({ permissions, navKeys }) => {
+                                setUsersList((prev) => {
+                                  const updated = [...prev];
+                                  updated[index] = { ...updated[index], permissions, navKeys };
+                                  return updated;
+                                });
+                              }}
+                              disabled={!form.useCustomAccess}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -770,7 +779,7 @@ export default function AddUserModal({
                           <tr>
                             <th className="p-2.5 text-center w-10">#</th>
                             <th className="p-2.5 min-w-[120px]">First Name *</th>
-                            <th className="p-2.5 min-w-[120px]">Middle Name *</th>
+                            <th className="p-2.5 min-w-[120px]">Middle Name</th>
                             <th className="p-2.5 min-w-[120px]">Last Name *</th>
                             <th className="p-2.5 min-w-[200px]">Email *</th>
                             <th className="p-2.5 min-w-[150px]">Role *</th>
@@ -807,12 +816,10 @@ export default function AddUserModal({
                                 {/* Middle Name */}
                                 <td className="p-1.5">
                                   <input
-                                    className={`w-full px-2 py-1.5 border rounded-md text-xs font-medium focus:ring-1 ${
-                                      !row.middleName ? 'border-red-300 bg-red-50/50' : 'border-gray-300 bg-white'
-                                    }`}
+                                    className="w-full px-2 py-1.5 border border-gray-300 bg-white rounded-md text-xs font-medium focus:ring-1"
                                     value={row.middleName}
                                     onChange={(e) => updateBulkRowField(idx, 'middleName', e.target.value)}
-                                    placeholder="Middle Name"
+                                    placeholder="Middle Name (Opt)"
                                   />
                                 </td>
 

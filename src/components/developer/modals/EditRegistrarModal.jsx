@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { REGISTRAR_PERMISSION_CATALOG, USER_STATUS } from '../../../firebase/constants';
 import CustomSelect from '../../ui/CustomSelect';
+import { toTitleCase } from '../../../utils/excelTemplate';
 
 export default function EditRegistrarModal({ registrar, onClose, onSave, saving }) {
   const [form, setForm] = useState({
@@ -27,7 +28,11 @@ export default function EditRegistrarModal({ registrar, onClose, onSave, saving 
     e.preventDefault();
     setError('');
     try {
-      await onSave({ uid: registrar.uid, ...form });
+      await onSave({
+        uid: registrar.uid,
+        ...form,
+        displayName: toTitleCase(form.displayName),
+      });
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to update registrar.');

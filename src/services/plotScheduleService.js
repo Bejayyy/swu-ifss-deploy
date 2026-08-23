@@ -325,18 +325,29 @@ export function entriesToGridBlocks(entries, weekDates = []) {
       const dayIndex = weekDates.length ? weekDates.indexOf(e.date) : (e.day ?? 0);
       return {
         id: e.id,
+        rawEntry: e,
         date: e.date,
         day: dayIndex >= 0 ? dayIndex : e.day,
         title: e.title || e.subject || 'Untitled',
         course: e.courseCode || e.course || '',
-        instructor: getFirstName(e.instructor || ''), // Extract first name only
+        courseCode: e.courseCode || e.course || '',
+        instructor: getFirstName(e.instructor || ''), // Extract first name for card
+        instructorFullName: e.instructor || '',
         start: e.startHour,
         end: e.endHour,
+        startHour: e.startHour,
+        endHour: e.endHour,
         type: e.type || 'Lecture',
         roomCode: e.roomCode || '',
+        buildingName: e.buildingName || '',
+        buildingId: e.buildingId || '',
         scheduleMode: e.scheduleMode || 'regular',
         section: e.section || e.sectionName || '',
+        sectionName: e.section || e.sectionName || '',
+        yearLevel: e.yearLevel || '',
+        semester: e.semester || '',
         program: e.program || e.programCode || '',
+        programCode: e.programCode || e.program || '',
       };
     })
     .filter((e) => e.day >= 0 && e.day <= 6); // Only include valid days (0-6)
@@ -643,8 +654,9 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
       mergeAndEmit();
     },
     (err) => {
-      console.error('Error in program_sections snapshot:', err);
-      if (onError) onError(err);
+      console.warn('Note: program_sections subscription unavailable or restricted for current role:', err?.message || err);
+      // Still merge and emit with schedulesDocs so dean schedules function smoothly
+      mergeAndEmit();
     }
   );
 

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Edit2, Plus, Trash2 } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Edit2, Plus, Trash2, Eye } from 'lucide-react';
 import {
   SCHEDULE_TYPE_COLORS,
   SCHEDULE_DAYS,
   SCHEDULE_CELL_HEIGHT,
   SCHEDULE_START_HOUR,
+  SCHEDULE_END_HOUR,
   SCHEDULE_SLOT_COUNT,
   formatScheduleHour,
   slotIndexToHour,
@@ -46,6 +47,7 @@ export default function WeeklyScheduleGrid({
   onSlotSelect,
   onEditBlock,
   onDeleteBlock,
+  onBlockClick,
   emptyMessage,
 }) {
   const activeSemesterOptions = useMemo(() => {
@@ -78,7 +80,7 @@ export default function WeeklyScheduleGrid({
     const minSlot = Math.min(startSlot, endSlot);
     const maxSlot = Math.max(startSlot, endSlot);
     const startHour = slotIndexToHour(minSlot);
-    const endHour = minSlot === maxSlot ? slotIndexToHour(maxSlot) + 0.5 : slotIndexToHour(maxSlot);
+    const endHour = slotIndexToHour(maxSlot);
     onSlotSelect({
       dayIndex,
       date,
@@ -106,8 +108,7 @@ export default function WeeklyScheduleGrid({
     if (!drag?.active || drag.dayIndex !== dayIndex) return false;
     const min = Math.min(drag.startSlot, drag.endSlot);
     const max = Math.max(drag.startSlot, drag.endSlot);
-    if (min === max) return slotIndex === min;
-    return slotIndex >= min && slotIndex < max;
+    return slotIndex >= min && slotIndex <= max;
   };
 
   const handleSlotMouseDown = (dayIndex, slotIndex, disabled, date) => {
@@ -445,8 +446,10 @@ export default function WeeklyScheduleGrid({
                     top: `calc(${slotIndex} * var(--cell-height, 48px))`
                   }}
                 >
-                  <div className="border-t border-gray-100 pr-2 flex items-start pt-1 bg-white z-[1] print:border-r print:border-l print:border-black print:items-center print:justify-center print:pt-0">
-                    <span className="text-[10px] text-gray-400 font-medium print:hidden">{label}</span>
+                  <div className="border-t border-gray-100 pr-2 flex items-center justify-center bg-white z-[1] print:border-r print:border-l print:border-black">
+                    <span className="text-[10px] text-gray-500 font-semibold print:hidden select-none whitespace-nowrap">
+                      {label}
+                    </span>
                     <span className="hidden print:inline text-[9px] font-bold text-gray-900">{intervalLabel}</span>
                   </div>
                   {SCHEDULE_DAYS.map((_, dayIndex) => {
@@ -479,6 +482,20 @@ export default function WeeklyScheduleGrid({
                 </div>
               );
             })}
+
+            {/* Bottom border line */}
+            <div
+              className="grid absolute left-0 right-0 pointer-events-none"
+              style={{
+                gridTemplateColumns: '85px repeat(7, 1fr)',
+                top: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, 48px))`
+              }}
+            >
+              <div className="border-t border-gray-100" />
+              {SCHEDULE_DAYS.map((_, dayIndex) => (
+                <div key={dayIndex} className="border-t border-gray-100" />
+              ))}
+            </div>
 
             <div
               className="absolute top-0 grid pointer-events-none"
@@ -523,7 +540,7 @@ export default function WeeklyScheduleGrid({
                         (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
                         SCHEDULE_TYPE_COLORS.Lecture;
                       const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
-                      const durationSlots = (sched.end - sched.start) * 2;
+                      const durationSlots = Math.max(1, Math.round((sched.end - sched.start) * 2) + 1);
                       const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
                       const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
 
@@ -531,10 +548,15 @@ export default function WeeklyScheduleGrid({
                       return (
                         <div
                           key={sched.id}
-                          className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center ${
+                          className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center cursor-pointer hover:shadow-md hover:scale-[1.01] hover:brightness-95 transition-all group ${
                             isNonCourse ? 'print:hidden' : ''
                           }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onBlockClick?.(sched);
+                          }}
                           onMouseDown={(e) => e.stopPropagation()}
+                          title="Click to view full schedule details"
                           style={{
                             top: topCalc,
                             height: heightCalc,
@@ -558,36 +580,54 @@ export default function WeeklyScheduleGrid({
                           <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                             {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
                           </p>
-                          {!readOnly && (onEditBlock || onDeleteBlock) && (
-                            <div className="flex gap-1 mt-1 pointer-events-auto">
-                              {onEditBlock && (
-                                <button 
-                                  type="button" 
-                                  className="p-0.5 rounded hover:bg-white/50" 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    onEditBlock(sched);
-                                  }}
-                                >
-                                  <Edit2 size={9} style={{ color: colors.text }} />
-                                </button>
-                              )}
-                              {onDeleteBlock && (
-                                <button 
-                                  type="button" 
-                                  className="p-0.5 rounded hover:bg-white/50" 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    onDeleteBlock(sched);
-                                  }}
-                                >
-                                  <Trash2 size={9} style={{ color: colors.text }} />
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1 mt-1 pointer-events-auto">
+                            {onBlockClick && (
+                              <button
+                                type="button"
+                                className="p-0.5 rounded hover:bg-white/60 transition-colors"
+                                title="View details"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  onBlockClick(sched);
+                                }}
+                              >
+                                <Eye size={10} style={{ color: colors.text }} />
+                              </button>
+                            )}
+                            {!readOnly && (onEditBlock || onDeleteBlock) && (
+                              <>
+                                {onEditBlock && (
+                                  <button 
+                                    type="button" 
+                                    className="p-0.5 rounded hover:bg-white/60 transition-colors" 
+                                    title="Edit schedule"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      onEditBlock(sched);
+                                    }}
+                                  >
+                                    <Edit2 size={9} style={{ color: colors.text }} />
+                                  </button>
+                                )}
+                                {onDeleteBlock && (
+                                  <button 
+                                    type="button" 
+                                    className="p-0.5 rounded hover:bg-white/60 transition-colors" 
+                                    title="Delete schedule"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      onDeleteBlock(sched);
+                                    }}
+                                  >
+                                    <Trash2 size={9} style={{ color: colors.text }} />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       );
                     })}

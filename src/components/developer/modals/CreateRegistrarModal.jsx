@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { INSTITUTIONAL_EMAIL_DOMAIN, REGISTRAR_PERMISSION_CATALOG } from '../../../firebase/constants';
 import { validateInstitutionalEmail } from '../../../firebase/authHelpers';
+import { toTitleCase } from '../../../utils/excelTemplate';
 
 export default function CreateRegistrarModal({ onClose, onSave, saving }) {
   const [form, setForm] = useState({
@@ -32,10 +33,7 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
       setError('First Name is required.');
       return;
     }
-    if (!form.middleName.trim()) {
-      setError('Middle Name is required.');
-      return;
-    }
+    // Middle name is optional
     if (!form.lastName.trim()) {
       setError('Last Name is required.');
       return;
@@ -50,13 +48,17 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
       return;
     }
 
-    const displayName = [form.firstName.trim(), form.middleName.trim(), form.lastName.trim()]
-      .filter(Boolean)
-      .join(' ');
+    const fn = toTitleCase(form.firstName);
+    const mn = form.middleName?.trim() ? toTitleCase(form.middleName) : '';
+    const ln = toTitleCase(form.lastName);
+    const displayName = [fn, mn, ln].filter(Boolean).join(' ');
 
     try {
       await onSave({
         ...form,
+        firstName: fn,
+        middleName: mn,
+        lastName: ln,
         displayName,
         department: 'Registrar',
       });
@@ -93,13 +95,12 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
               </div>
               <div>
                 <label className="form-label">
-                  Middle Name <span className="text-red-500">*</span>
+                  Middle Name <span className="text-gray-400 font-normal text-xs">(Optional)</span>
                 </label>
                 <input
                   className="form-input"
                   value={form.middleName}
                   onChange={(e) => set('middleName', e.target.value)}
-                  required
                 />
               </div>
               <div>

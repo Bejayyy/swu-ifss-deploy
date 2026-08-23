@@ -52,12 +52,10 @@ export function blockTopPx(startHour) {
 }
 
 export function blockHeightPx(startHour, endHour) {
-  // Calculate the number of 30-minute slots needed
-  const hours = Math.max(0.5, endHour - startHour);
-  const slots = hours * 2; // 2 slots per hour
-  const heightPx = slots * SCHEDULE_CELL_HEIGHT;
-  
-  return Math.max(heightPx, SCHEDULE_CELL_HEIGHT / 2);
+  // Calculate the number of 30-minute slots needed (inclusive of end slot row)
+  const hours = Math.max(0, endHour - startHour);
+  const slots = Math.max(1, Math.round(hours * 2) + 1);
+  return slots * SCHEDULE_CELL_HEIGHT;
 }
 
 export function clampScheduleHours(startHour, endHour) {

@@ -2,11 +2,15 @@ import * as XLSX from 'xlsx';
 
 /**
  * Smart Title Case Formatter: Capitalizes the first letter of each word.
- * e.g., "introduction to programming" -> "Introduction To Programming"
+ * e.g., "john mark" -> "John Mark", "de la cruz" -> "De La Cruz"
  */
 export const toTitleCase = (str) => {
   if (!str) return '';
-  return String(str).replace(/\b\w/g, (char) => char.toUpperCase());
+  return String(str)
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 };
 
 /**
@@ -62,7 +66,7 @@ export const normalizeSemester = (rawSem) => {
 export function downloadBulkUserTemplate() {
   const headers = [
     'First Name *',
-    'Middle Name *',
+    'Middle Name (Optional)',
     'Last Name *',
     'Role *',
     'Email Address *',
@@ -197,7 +201,7 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
           const rowErrors = [];
 
           if (!rawFirstName) rowErrors.push('First name is required');
-          if (!rawMiddleName) rowErrors.push('Middle name is required');
+          // Middle name is optional
           if (!rawLastName) rowErrors.push('Last name is required');
 
           if (!rawRole) {
@@ -226,7 +230,7 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
           parsedRows.push({
             id: `bulk_usr_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
             firstName: toTitleCase(rawFirstName),
-            middleName: toTitleCase(rawMiddleName),
+            middleName: rawMiddleName ? toTitleCase(rawMiddleName) : '',
             lastName: toTitleCase(rawLastName),
             role: validRoleValues.includes(rawRole) ? rawRole : 'student',
             email: rawEmail,

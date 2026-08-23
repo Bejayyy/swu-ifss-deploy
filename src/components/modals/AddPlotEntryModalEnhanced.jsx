@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Eye,
   Check,
+  GraduationCap,
 } from 'lucide-react';
 import {
   parseTimeToHour,
@@ -61,6 +62,8 @@ export default function AddPlotEntryModalEnhanced({
   lockTimes = false,
   deanCollege, // Dean's college code for fetching courses
   deanUid, // Dean's UID for querying room schedules
+  programCode, // Optional program code to filter curriculum
+  programName, // Optional program title
   semester = '1', // Current semester
   sectionYearLevel = '1st Year', // Selected section's year level
   dayIndex, // 0-6 for Mon-Sun
@@ -161,7 +164,9 @@ export default function AddPlotEntryModalEnhanced({
     return subscribeCollegeCourses(
       deanCollege,
       (data) => {
-        // Filter courses dynamically by Semester and Section Year Level
+        // Filter courses dynamically by Semester, Section Year Level, and Program Code
+        const effectiveProgramCode = programCode || deanSections.find((s) => s.name === selectedSection)?.programCode;
+
         const filtered = data.filter((c) => {
           // 1. Semester matching
           if (semester) {
@@ -190,6 +195,15 @@ export default function AddPlotEntryModalEnhanced({
             }
           }
 
+          // 3. Program Code matching
+          if (effectiveProgramCode && effectiveProgramCode !== 'ALL' && effectiveProgramCode !== 'all') {
+            const activePrg = String(effectiveProgramCode).toUpperCase().trim();
+            const coursePrg = String(c.programCode || '').toUpperCase().trim();
+            if (coursePrg && coursePrg !== activePrg) {
+              return false;
+            }
+          }
+
           return true;
         });
 
@@ -201,7 +215,7 @@ export default function AddPlotEntryModalEnhanced({
         setLoadingCourses(false);
       }
     );
-  }, [deanCollege, semester, activeYearLevel]);
+  }, [deanCollege, semester, activeYearLevel, programCode, selectedSection, deanSections]);
 
   // Subscribe to buildings
   useEffect(() => {
@@ -682,6 +696,15 @@ export default function AddPlotEntryModalEnhanced({
                       </div>
                     )}
                   </div>
+                  {(programCode || deanSections.find((s) => s.name === selectedSection)?.programCode) && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold shadow-2xs">
+                      <GraduationCap size={14} className="text-amber-700" />
+                      <span>
+                        Program: <span className="font-black">{programCode || deanSections.find((s) => s.name === selectedSection)?.programCode}</span>
+                        {programName ? ` (${programName})` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-xl self-start sm:self-auto">

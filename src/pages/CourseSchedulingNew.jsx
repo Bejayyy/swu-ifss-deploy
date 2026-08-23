@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2, Layers, Search, Edit } from 'lucide-react';
+import { Calendar, Plus, Send, ChevronDown, ChevronRight, Users, X, Trash2, Layers, Search, Edit, GraduationCap, BookOpen } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
@@ -9,11 +9,13 @@ import { ModalRenderer } from '../components/modals/ModalProvider';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 import AddPlotEntryModal from '../components/modals/AddPlotEntryModal';
 import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnhanced';
+import ViewScheduleDetailsModal from '../components/modals/ViewScheduleDetailsModal';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessModal';
 import ResetDeanSchedulesModal from '../components/modals/ResetDeanSchedulesModal';
 import CustomSelect from '../components/ui/CustomSelect';
+import { subscribeColleges } from '../services/collegeService';
 import { addDays } from '../constants/scheduleGrid';
 import {
   formatDisplayDate,
@@ -96,8 +98,10 @@ export default function CourseSchedulingNew() {
   } = useAcademicCalendar();
 
   const [staffUsers, setStaffUsers] = useState([]);
+  const [colleges, setColleges] = useState([]);
   const [expandedColleges, setExpandedColleges] = useState({});
   const [selectedDeanUid, setSelectedDeanUid] = useState(null);
+  const [selectedProgram, setSelectedProgram] = useState('ALL'); // 'ALL' or specific programCode like 'BSMT', 'BSN'
   const [selectedSection, setSelectedSection] = useState(null);
   const [deanSections, setDeanSections] = useState([]); // Dynamic sections from Firestore
   const [expandedYearLevels, setExpandedYearLevels] = useState({});
@@ -192,6 +196,7 @@ export default function CourseSchedulingNew() {
   const [selectedDeansForReset, setSelectedDeansForReset] = useState([]);
 
   const [entryModal, setEntryModal] = useState(null);
+  const [viewingBlock, setViewingBlock] = useState(null);
 
 
   // Auto-adjust week start date when switching to exam mode or changing exam period
@@ -243,6 +248,14 @@ export default function CourseSchedulingNew() {
     );
   }, []);
 
+  // Subscribe to colleges to get programs and degree curricula
+  useEffect(() => {
+    return subscribeColleges(
+      (list) => setColleges(list),
+      (err) => console.error('Error loading colleges in course scheduling:', err)
+    );
+  }, []);
+
   // Get dean departments grouped by college
   const deansByCollege = useMemo(() => {
     const departments = getDeanDepartmentOptions(staffUsers);
@@ -283,15 +296,121 @@ export default function CourseSchedulingNew() {
     return staffUsers.find(u => u.uid === selectedDeanUid);
   }, [staffUsers, selectedDeanUid]);
 
+  // Active college info for selected dean
+  const activeCollegeCode = useMemo(() => {
+    return selectedDean?.college || selectedDean?.department || (isDean ? (profile?.college || profile?.department) : '') || '';
+  }, [selectedDean, isDean, profile]);
+
+  const activeCollegeObj = useMemo(() => {
+    if (!activeCollegeCode) return null;
+    const clean = String(activeCollegeCode).trim().toUpperCase();
+    return colleges.find(
+      (c) =>
+        String(c.code || '').trim().toUpperCase() === clean ||
+        String(c.name || '').trim().toLowerCase() === String(activeCollegeCode).trim().toLowerCase()
+    ) || null;
+  }, [colleges, activeCollegeCode]);
+
+  // Programs offered by this dean's college
+  const availablePrograms = useMemo(() => {
+    const progMap = new Map();
+
+    // 1. From college document (configured in College Inventory)
+    if (activeCollegeObj?.programs && Array.isArray(activeCollegeObj.programs)) {
+      activeCollegeObj.programs.forEach((p) => {
+        const pCode = String(p.code || '').trim().toUpperCase();
+        if (pCode) {
+          progMap.set(pCode, {
+            code: pCode,
+            name: p.name || pCode,
+            coursesCount: Array.isArray(p.courses) ? p.courses.length : 0,
+          });
+        }
+      });
+    }
+
+    // 2. Supplement with any programCode found in deanSections
+    deanSections.forEach((s) => {
+      const pCode = String(s.programCode || '').trim().toUpperCase();
+      if (pCode && !progMap.has(pCode)) {
+        progMap.set(pCode, {
+          code: pCode,
+          name: pCode,
+          coursesCount: 0,
+        });
+      }
+    });
+
+    const list = Array.from(progMap.values());
+    list.sort((a, b) => a.code.localeCompare(b.code));
+    return list;
+  }, [activeCollegeObj, deanSections]);
+
+  const selectedProgramObj = useMemo(() => {
+    if (!selectedProgram) return availablePrograms[0] || null;
+    return availablePrograms.find((p) => p.code === selectedProgram) || availablePrograms[0] || null;
+  }, [availablePrograms, selectedProgram]);
+
+  // Auto-select first program if none selected or current selection is invalid
+  useEffect(() => {
+    if (availablePrograms.length > 0) {
+      if (!selectedProgram || !availablePrograms.some((p) => p.code === selectedProgram)) {
+        setSelectedProgram(availablePrograms[0].code);
+      }
+    } else {
+      setSelectedProgram('');
+    }
+  }, [availablePrograms, selectedProgram]);
+
+  // Handle program tab click
+  const handleSelectProgram = (progCode) => {
+    setSelectedProgram(progCode);
+    const progSections = deanSections.filter((s) => {
+      const pCode = String(s.programCode || '').trim().toUpperCase();
+      return pCode ? pCode === progCode.toUpperCase() : s.name.toUpperCase().startsWith(progCode.toUpperCase());
+    });
+    setSelectedSection(progSections[0]?.name || null);
+  };
+
+  // Filter sections by selected program
+  const displayedDeanSections = useMemo(() => {
+    if (!selectedProgram) return [];
+    return deanSections.filter((s) => {
+      const pCode = String(s.programCode || '').trim().toUpperCase();
+      if (!pCode) {
+        return s.name.toUpperCase().startsWith(selectedProgram.toUpperCase());
+      }
+      return pCode === selectedProgram.toUpperCase();
+    });
+  }, [deanSections, selectedProgram]);
+
+  // Ensure selectedSection is always scoped strictly to the active program's sections
+  useEffect(() => {
+    if (scheduleTab === 'exam') return;
+    if (!selectedProgram) {
+      setSelectedSection(null);
+      return;
+    }
+
+    const validSectionNames = displayedDeanSections.map((s) => s.name);
+    if (validSectionNames.length > 0) {
+      if (!selectedSection || !validSectionNames.includes(selectedSection)) {
+        setSelectedSection(validSectionNames[0]);
+      }
+    } else {
+      setSelectedSection(null);
+    }
+  }, [selectedProgram, displayedDeanSections, selectedSection, scheduleTab]);
+
   // Auto-set section for exam mode (sections don't matter for exams)
   useEffect(() => {
     if (scheduleTab === 'exam') {
       setSelectedSection('exam-schedule'); // Use a generic identifier for exam schedules
     } else if (scheduleTab === 'regular' && selectedSection === 'exam-schedule') {
-      // Reset to first section when switching back to regular
-      setSelectedSection(deanSections[0]?.name || null);
+      // Reset to first section of active program when switching back to regular
+      setSelectedSection(displayedDeanSections[0]?.name || null);
     }
-  }, [scheduleTab, deanSections]);
+  }, [scheduleTab, displayedDeanSections]);
 
   // Subscribe to sections for selected dean
   useEffect(() => {
@@ -306,28 +425,20 @@ export default function CourseSchedulingNew() {
       selectedDeanUid,
       (sections) => {
         setDeanSections(sections);
-        // Auto-select first section if none selected or current selection doesn't exist
-        const sectionNames = sections.map(s => s.name);
-        let activeSec = sections.find(s => s.name === selectedSection) || sections[0];
-
-        if (!selectedSection || !sectionNames.includes(selectedSection)) {
-          setSelectedSection(activeSec?.name || null);
-        }
-
         // Auto-expand year level dropdowns that contain sections so they are open by default
         const yearExpandState = {};
-        sections.forEach(s => {
+        sections.forEach((s) => {
           if (s.yearLevel) {
             yearExpandState[s.yearLevel] = true;
           }
         });
-        setExpandedYearLevels(prev => ({ ...yearExpandState, ...prev }));
+        setExpandedYearLevels((prev) => ({ ...yearExpandState, ...prev }));
       },
       (err) => console.error('Error loading sections:', err),
       deanCollegeCode
     );
 
-  }, [selectedDeanUid, selectedSection, selectedDean]);
+  }, [selectedDeanUid, selectedDean]);
 
   // Subscribe to plot entries for selected dean and section
   useEffect(() => {
@@ -617,6 +728,7 @@ export default function CourseSchedulingNew() {
 
   const handleSelectDean = (deanUid) => {
     setSelectedDeanUid(deanUid);
+    setSelectedProgram('ALL');
     setSelectedSection(null); // Reset section when changing dean
   };
 
@@ -958,13 +1070,73 @@ export default function CourseSchedulingNew() {
             </div>
           )}
 
+          {/* Degree Programs Navigation Card */}
+          {availablePrograms.length > 0 && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
+              <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
+                <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
+                  <GraduationCap size={16} className="text-[#7A0808]" /> Degree Programs
+                </h3>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                  {availablePrograms.length} {availablePrograms.length === 1 ? 'Program' : 'Programs'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {availablePrograms.map((prog) => {
+                  const isProgActive = selectedProgram === prog.code;
+                  const progSectionsCount = deanSections.filter((s) => {
+                    const pCode = String(s.programCode || '').trim().toUpperCase();
+                    return pCode ? pCode === prog.code : s.name.toUpperCase().startsWith(prog.code);
+                  }).length;
+
+                  return (
+                    <button
+                      key={prog.code}
+                      type="button"
+                      onClick={() => handleSelectProgram(prog.code)}
+                      className={`w-full text-left p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                        isProgActive
+                          ? 'bg-[#7A0808] text-white shadow-2xs'
+                          : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-100'
+                      }`}
+                      title={`${prog.code} - ${prog.name}`}
+                    >
+                      <div className="truncate pr-2">
+                        <div className="flex items-center gap-1.5">
+                          <BookOpen size={13} className={isProgActive ? 'text-red-200' : 'text-[#7A0808]'} />
+                          <span className="font-extrabold">{prog.code}</span>
+                        </div>
+                        <span className={`block text-[10px] font-medium truncate mt-0.5 ${
+                          isProgActive ? 'text-red-100' : 'text-gray-500'
+                        }`}>
+                          {prog.name}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md flex-shrink-0 ${
+                        isProgActive ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
+                      }`}>
+                        {progSectionsCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Sections per Year Level Sidebar (Rendered for both Dean and Registrar) */}
           <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
             <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
               <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
                 <Layers size={16} className="text-[#7A0808]" /> Sections per Year Level
               </h3>
-              {!isDean && selectedDean && (
+              {selectedProgram !== 'ALL' && selectedProgram && (
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 truncate max-w-[100px]" title={`Filtered by ${selectedProgram}`}>
+                  {selectedProgram}
+                </span>
+              )}
+              {selectedProgram === 'ALL' && !isDean && selectedDean && (
                 <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
                   {selectedDean.college || selectedDean.department || selectedDean.name}
                 </span>
@@ -1000,7 +1172,7 @@ export default function CourseSchedulingNew() {
                 const searchTerm = sectionSearchQuery.toLowerCase().trim();
 
                 return YEAR_LEVELS.map((yearLevel) => {
-                  const sectionsForYear = deanSections.filter((s) => {
+                  const sectionsForYear = displayedDeanSections.filter((s) => {
                     const matchesYear = s.yearLevel === yearLevel;
                     if (!isSearching) return matchesYear;
                     return matchesYear && s.name?.toLowerCase().includes(searchTerm);
@@ -1105,6 +1277,13 @@ export default function CourseSchedulingNew() {
                         <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
                           {selectedDean.department || selectedDean.college}
                         </h3>
+                        {(selectedProgramObj || currentSectionObj?.programCode) && (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
+                            <GraduationCap size={13} className="text-amber-700" />
+                            Program: <span className="font-extrabold">{selectedProgramObj?.code || currentSectionObj?.programCode}</span>
+                            {selectedProgramObj?.name ? ` · ${selectedProgramObj.name}` : ''}
+                          </span>
+                        )}
                         {selectedSection && (
                           <span className="inline-flex items-center justify-center text-xs font-bold bg-[#7A0808] text-white px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
                             Section: {selectedSection}
@@ -1237,50 +1416,67 @@ export default function CourseSchedulingNew() {
                 </div>
               )}
 
-              {/* Weekly Schedule Grid */}
-              <WeeklyScheduleGrid
-                title={scheduleTab === 'exam' 
-                  ? `${selectedDean.department || selectedDean.college} · ${selectedStudentCategory === 'freshmen' ? 'Freshmen' : 'Upperclassmen'} · ${selectedExamPeriod.toUpperCase()}`
-                  : `${selectedDean.department || selectedDean.college} · Section ${selectedSection || ''}`
-                }
-                schoolYearLabel={schoolYearLabel}
-                schoolYearOptions={[]} // Empty - selector moved to top
-                onSchoolYearChange={undefined} // Disabled - controlled from top
-                semester={semester}
-                onSemesterChange={setSemester} // Re-enabled for quick switching
-                semesterOptions={semesterOptions}
-                lockSemester={false} // Allow semester switching in grid
-                scheduleTab={scheduleTab}
-                onScheduleTabChange={setScheduleTab}
-                weekStartDate={scheduleTab === 'exam' ? weekStartDate : null}
-                onPrevWeek={scheduleTab === 'exam' ? () => setWeekStartDate((d) => addDays(d, -7)) : undefined}
-                onNextWeek={scheduleTab === 'exam' ? () => setWeekStartDate((d) => addDays(d, 7)) : undefined}
-                canPrevWeek={scheduleTab === 'exam' ? canPrevWeek : false}
-                canNextWeek={scheduleTab === 'exam' ? canNextWeek : false}
-                showDayDates={scheduleTab === 'exam'}
-                semesterRangeLabel={semesterRangeLabel}
-                dayStatuses={dayStatuses}
-                blocks={gridBlocks}
-                readOnly={!isDean || profile?.uid !== selectedDeanUid}
-                canPlot={canPlot}
-                onAddBlock={() => {
-                  const firstOpenIdx = dayStatuses.findIndex((d) => !d.disabled);
-                  if (firstOpenIdx >= 0) {
-                    const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[firstOpenIdx] : dayStatuses[firstOpenIdx].date;
-                    handleSlotSelect({
-                      dayIndex: firstOpenIdx,
-                      date: dayIdentifier,
-                      startTime: '08:00',
-                      endTime: '09:00',
-                      fromDrag: false,
-                    });
+              {/* Weekly Schedule Grid or Empty Program Placeholder */}
+              {scheduleTab === 'regular' && !selectedSection ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-12 text-center space-y-3 shadow-2xs">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-800 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
+                    <GraduationCap size={32} />
+                  </div>
+                  <h3 className="font-bold text-base text-gray-800">
+                    No Sections Available for {selectedProgramObj ? `${selectedProgramObj.code} (${selectedProgramObj.name})` : (selectedProgram || 'this program')}
+                  </h3>
+                  <p className="text-xs text-gray-500 max-w-md mx-auto">
+                    {displayedDeanSections.length === 0
+                      ? 'There are currently no sections created for this academic program. Go to College Inventory to create and configure sections for this program.'
+                      : 'Please select a section from the left sidebar to view or plot its weekly schedule.'}
+                  </p>
+                </div>
+              ) : (
+                <WeeklyScheduleGrid
+                  title={scheduleTab === 'exam' 
+                    ? `${selectedDean.department || selectedDean.college} · ${selectedStudentCategory === 'freshmen' ? 'Freshmen' : 'Upperclassmen'} · ${selectedExamPeriod.toUpperCase()}`
+                    : `${selectedDean.department || selectedDean.college} · ${selectedProgramObj?.code || ''} · Section ${selectedSection || ''}`
                   }
-                }}
-                onSlotSelect={handleSlotSelect}
-                onEditBlock={openEditModal}
-                onDeleteBlock={handleDeleteEntry}
-                emptyMessage={canPlot ? 'Click or drag on the grid to add schedule blocks.' : 'No schedule blocks yet.'}
-              />
+                  schoolYearLabel={schoolYearLabel}
+                  schoolYearOptions={[]} // Empty - selector moved to top
+                  onSchoolYearChange={undefined} // Disabled - controlled from top
+                  semester={semester}
+                  onSemesterChange={setSemester} // Re-enabled for quick switching
+                  semesterOptions={semesterOptions}
+                  lockSemester={false} // Allow semester switching in grid
+                  scheduleTab={scheduleTab}
+                  onScheduleTabChange={setScheduleTab}
+                  weekStartDate={scheduleTab === 'exam' ? weekStartDate : null}
+                  onPrevWeek={scheduleTab === 'exam' ? () => setWeekStartDate((d) => addDays(d, -7)) : undefined}
+                  onNextWeek={scheduleTab === 'exam' ? () => setWeekStartDate((d) => addDays(d, 7)) : undefined}
+                  canPrevWeek={scheduleTab === 'exam' ? canPrevWeek : false}
+                  canNextWeek={scheduleTab === 'exam' ? canNextWeek : false}
+                  showDayDates={scheduleTab === 'exam'}
+                  semesterRangeLabel={semesterRangeLabel}
+                  dayStatuses={dayStatuses}
+                  blocks={gridBlocks}
+                  readOnly={!isDean || profile?.uid !== selectedDeanUid}
+                  canPlot={canPlot}
+                  onAddBlock={() => {
+                    const firstOpenIdx = dayStatuses.findIndex((d) => !d.disabled);
+                    if (firstOpenIdx >= 0) {
+                      const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[firstOpenIdx] : dayStatuses[firstOpenIdx].date;
+                      handleSlotSelect({
+                        dayIndex: firstOpenIdx,
+                        date: dayIdentifier,
+                        startTime: '08:00',
+                        endTime: '09:00',
+                        fromDrag: false,
+                      });
+                    }
+                  }}
+                  onSlotSelect={handleSlotSelect}
+                  onEditBlock={openEditModal}
+                  onDeleteBlock={handleDeleteEntry}
+                  onBlockClick={(block) => setViewingBlock(block)}
+                  emptyMessage={canPlot ? 'Click or drag on the grid to add schedule blocks.' : 'No schedule blocks yet.'}
+                />
+              )}
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-2xl p-12 text-center">
@@ -1291,6 +1487,25 @@ export default function CourseSchedulingNew() {
           )}
         </div>
       </div>
+
+      {/* View Course Schedule Details Modal */}
+      {viewingBlock && (
+        <ViewScheduleDetailsModal
+          block={viewingBlock}
+          onClose={() => setViewingBlock(null)}
+          onEdit={(block) => {
+            setViewingBlock(null);
+            openEditModal(block);
+          }}
+          onDelete={(block) => {
+            setViewingBlock(null);
+            handleDeleteEntry(block);
+          }}
+          canEdit={canPlot && isDean && profile?.uid === selectedDeanUid}
+          schoolYearLabel={schoolYearLabel}
+          semesterLabel={selectedSemesterObj?.label || `Semester ${semester}`}
+        />
+      )}
 
       {entryModal && canPlot && isDean ? (
         <AddPlotEntryModalEnhanced
@@ -1306,8 +1521,12 @@ export default function CourseSchedulingNew() {
           lockTimes={entryModal.lockTimes}
           deanCollege={selectedDean?.college || selectedDean?.department}
           deanUid={selectedDeanUid}
+          programCode={currentSectionObj?.programCode || (selectedProgram !== 'ALL' ? selectedProgram : null)}
+          programName={availablePrograms.find((p) => p.code === (currentSectionObj?.programCode || selectedProgram))?.name || ''}
+          sections={displayedDeanSections}
+          initialSection={selectedSection || ''}
           semester={semester}
-          sectionYearLevel={deanSections.find((s) => s.name === selectedSection)?.yearLevel || '1st Year'}
+          sectionYearLevel={currentSectionObj?.yearLevel || '1st Year'}
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
         />
       ) : entryModal ? (

@@ -6,6 +6,7 @@ import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
 import CustomSelect from '../ui/CustomSelect';
+import { toTitleCase } from '../../utils/excelTemplate';
 
 const parseFullName = (nameStr = '') => {
   const parts = nameStr.trim().split(/\s+/).filter(Boolean);
@@ -97,10 +98,7 @@ export default function EditUserModal({
       setError('First Name is required.');
       return;
     }
-    if (!form.middleName.trim()) {
-      setError('Middle Name is required.');
-      return;
-    }
+    // Middle name is optional
     if (!form.lastName.trim()) {
       setError('Last Name is required.');
       return;
@@ -118,12 +116,17 @@ export default function EditUserModal({
       return;
     }
     try {
+      const fn = toTitleCase(form.firstName);
+      const mn = form.middleName?.trim() ? toTitleCase(form.middleName) : '';
+      const ln = toTitleCase(form.lastName);
+      const fullName = [fn, mn, ln].filter(Boolean).join(' ');
+
       const saveData = {
         uid: user.uid,
-        name: computedFullName,
-        firstName: form.firstName.trim(),
-        middleName: form.middleName.trim(),
-        lastName: form.lastName.trim(),
+        name: fullName,
+        firstName: fn,
+        middleName: mn,
+        lastName: ln,
         email: form.email.trim(),
         department: showCollegeField ? form.college : '',
         college: showCollegeField ? form.college : '',
@@ -178,14 +181,13 @@ export default function EditUserModal({
               </div>
               <div>
                 <label className="form-label">
-                  Middle Name <span className="text-red-500">*</span>
+                  Middle Name <span className="text-gray-400 font-normal text-xs">(Optional)</span>
                 </label>
                 <input
                   className="form-input"
                   value={form.middleName}
                   onChange={(e) => set('middleName', e.target.value)}
                   placeholder="e.g. Santos"
-                  required
                 />
               </div>
               <div>
@@ -272,23 +274,25 @@ export default function EditUserModal({
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer" style={{ color: '#2B3235' }}>
-              <input
-                type="checkbox"
-                checked={form.useCustomAccess}
-                onChange={(e) => set('useCustomAccess', e.target.checked)}
-              />
-              Customize access for this user (override role defaults)
-            </label>
+            <div className="space-y-2 pt-2">
+              <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer" style={{ color: '#2B3235' }}>
+                <input
+                  type="checkbox"
+                  checked={form.useCustomAccess}
+                  onChange={(e) => set('useCustomAccess', e.target.checked)}
+                />
+                Customize access for this user (override role defaults)
+              </label>
 
-            <div className={form.useCustomAccess ? '' : 'opacity-50 pointer-events-none'}>
-              <label className="form-label">Access & navigation</label>
-              <PermissionCheckboxGrid
-                permissions={form.permissions}
-                navKeys={form.navKeys}
-                onChange={({ permissions, navKeys }) => setForm((f) => ({ ...f, permissions, navKeys }))}
-                disabled={!form.useCustomAccess}
-              />
+              <div>
+                <PermissionCheckboxGrid
+                  permissions={form.permissions}
+                  navKeys={form.navKeys}
+                  roleLabel={roleOptions.find((r) => r.value === form.roleValue)?.label || form.roleValue}
+                  onChange={({ permissions, navKeys }) => setForm((f) => ({ ...f, permissions, navKeys }))}
+                  disabled={!form.useCustomAccess}
+                />
+              </div>
             </div>
           </div>
 

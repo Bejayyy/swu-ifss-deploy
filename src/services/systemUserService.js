@@ -15,6 +15,7 @@ import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
 import { collegePriorityFromValue, isCasDepartment } from '../constants/plotScheduling';
 import { getInitials, normalizeEmail, validateInstitutionalEmail } from '../firebase/authHelpers';
 import { getRoleDefinition } from '../constants/rolePermissions';
+import { toTitleCase } from '../utils/excelTemplate';
 
 export const STAFF_ROLE_OPTIONS = [
   { value: 'registrar', label: 'Registrar' },
@@ -165,14 +166,16 @@ export async function createStaffUserByEmailInvite({
   const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
   const shouldIncludeCollege = roleValue === 'teacher' || roleValue === 'organization_head' || roleValue === 'dean';
   
+  const formattedName = name ? toTitleCase(name) : '';
+
   const payload = {
     email: normalized,
-    displayName: name.trim(),
+    displayName: formattedName,
     role: roleValue,
     status: USER_STATUS.ACTIVE,
     department: shouldIncludeDepartment ? (department?.trim() || '') : '',
     college: shouldIncludeCollege ? (college?.trim() || '') : '',
-    initials: getInitials(name, normalized),
+    initials: getInitials(formattedName, normalized),
     authProviders: ['password'],
     mustSetPassword: true,
     passwordEnabled: true,
@@ -192,7 +195,7 @@ export async function createStaffUserByEmailInvite({
     const sendWelcomeEmail = httpsCallable(functions, 'sendStaffWelcomeEmail');
     await sendWelcomeEmail({
       email: normalized,
-      displayName: name.trim(),
+      displayName: formattedName,
       role: roleValue,
       password: tempPassword,
     });
@@ -221,15 +224,16 @@ export async function updateStaffUser({
   // GSD and Student Life don't have departments or colleges
   const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
   const shouldIncludeCollege = roleValue === 'teacher' || roleValue === 'organization_head' || roleValue === 'dean';
+  const formattedName = name ? toTitleCase(name) : '';
 
   const patch = {
-    displayName: name?.trim() || '',
+    displayName: formattedName,
     email: email?.trim() ? normalizeEmail(email) : undefined, // Update email if provided
     department: shouldIncludeDepartment ? (department?.trim() || '') : '',
     college: shouldIncludeCollege ? (college?.trim() || '') : '',
     role: roleValue,
     status: status || USER_STATUS.ACTIVE,
-    initials: getInitials(name, email || ''),
+    initials: getInitials(formattedName, email || ''),
     permissions: permissions || [],
     navKeys: navKeys || [],
     updatedAt: serverTimestamp(),
