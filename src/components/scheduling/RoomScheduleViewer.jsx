@@ -23,9 +23,10 @@ export default function RoomScheduleViewer({
   roomType = null,
   scheduleMode = 'regular',
   semester = '1',
-  deanUid, // Required: The dean's UID to query their schedules
+  deanUid, // Dean's UID if available
   currentTimeSlot = null, // { day, startHour, endHour } - to highlight the proposed time
   onTimeSelect, // Callback when user drags to select a time: (day, startHour, endHour) => void
+  onConflictsChange, // Callback when conflicts are detected or cleared: (conflictsList) => void
 }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,9 +49,9 @@ export default function RoomScheduleViewer({
     }
   }, [currentTimeSlot?.startHour, roomCode]);
 
-  // Subscribe to all schedule entries for this room
+  // Subscribe to all schedule entries for this room across all deans and sections
   useEffect(() => {
-    if (!roomCode || !deanUid) {
+    if (!roomCode) {
       setEntries([]);
       setLoading(false);
       return undefined;
@@ -61,7 +62,7 @@ export default function RoomScheduleViewer({
       roomCode,
       semester,
       scheduleMode,
-      deanUid, // Pass deanUid to query function
+      deanUid,
       (data) => {
         setEntries(data);
         setLoading(false);
@@ -73,18 +74,25 @@ export default function RoomScheduleViewer({
     );
   }, [roomCode, semester, scheduleMode, deanUid]);
 
+  const parseDay = (d, dateStr, dayLabelStr) => {
+    if (typeof d === 'number' && d >= 0 && d <= 6) return d;
+    const str = String(d || dateStr || dayLabelStr || '').trim().toUpperCase();
+    const idx = SCHEDULE_DAYS.findIndex((dayName) => str.includes(dayName) || dayName.includes(str));
+    return idx >= 0 ? idx : 0;
+  };
+
   // Convert entries to blocks for rendering
   const blocks = useMemo(() => {
     return entries.map(entry => ({
       id: entry.id,
-      day: entry.day,
-      start: entry.startHour,
-      end: entry.endHour,
-      title: entry.title,
-      course: entry.courseCode,
-      instructor: entry.instructor,
-      type: entry.type,
-      section: entry.sectionName || entry.section || '',
+      day: parseDay(entry.day, entry.date, entry.dayLabel),
+      start: Number(entry.startHour) || 0,
+      end: Number(entry.endHour) || 0,
+      title: entry.title || entry.courseCode || '',
+      course: entry.courseCode || entry.title || '',
+      instructor: entry.instructor || '',
+      type: entry.type || 'Lecture',
+      section: entry.section || entry.sectionName || '',
       program: entry.program || entry.programCode || '',
     }));
   }, [entries]);
@@ -138,7 +146,6 @@ export default function RoomScheduleViewer({
   // Handle slot mouse down
   const handleSlotMouseDown = (dayIndex, slotIndex) => {
     if (!onTimeSelect) return;
-    console.log('Mouse down on day:', dayIndex, 'slot:', slotIndex, 'day name:', SCHEDULE_DAYS[dayIndex]);
     setDrag({
       active: true,
       dayIndex,
@@ -150,17 +157,18 @@ export default function RoomScheduleViewer({
   // Handle slot mouse enter during drag
   const handleSlotMouseEnter = (dayIndex, slotIndex) => {
     if (!drag?.active || drag.dayIndex !== dayIndex) return;
-    console.log('Mouse enter on day:', dayIndex, 'slot:', slotIndex);
     setDrag((d) => (d ? { ...d, endSlot: slotIndex } : d));
   };
 
   // Detect conflicts with proposed time
   const conflicts = useMemo(() => {
-    if (!currentTimeSlot) return [];
+    if (!currentTimeSlot || currentTimeSlot.day === undefined || currentTimeSlot.startHour === undefined || currentTimeSlot.endHour === undefined) {
+      return [];
+    }
     const result = [];
     blocks.forEach(block => {
       if (block.day !== currentTimeSlot.day) return;
-      // Check if ranges overlap
+      // Check if ranges overlap: block.start < currentTimeSlot.endHour && block.end > currentTimeSlot.startHour
       if (block.start < currentTimeSlot.endHour && block.end > currentTimeSlot.startHour) {
         result.push(block);
       }
@@ -168,100 +176,123 @@ export default function RoomScheduleViewer({
     return result;
   }, [currentTimeSlot, blocks]);
 
+  // Propagate conflicts to parent
+  useEffect(() => {
+    if (onConflictsChange) {
+      onConflictsChange(conflicts);
+    }
+  }, [conflicts, onConflictsChange]);
+
   if (loading) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-xs text-gray-400">Loading room schedule...</p>
+      <div className="p-8 text-center bg-gray-50/70 rounded-2xl border border-gray-200">
+        <p className="text-xs font-semibold text-gray-500">Loading live schedule for Room {roomCode}...</p>
       </div>
     );
   }
 
   const SCHEDULE_TYPE_COLORS = {
-    Lecture: { bg: '#DBEAFE', border: '#3B82F6', text: '#1E40AF' },
+    Lecture: { bg: '#FEE2E2', border: '#FCA5A5', text: '#991B1B' },
     Laboratory: { bg: '#D1FAE5', border: '#10B981', text: '#065F46' },
     CAS: { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E' },
     Exam: { bg: '#FCE7F3', border: '#EC4899', text: '#9F1239' },
-    Maintenance: { bg: '#F3F4F6', border: '#9CA3AF', text: '#374151' },
+    Maintenance: { bg: '#FFEDD5', border: '#FDBA74', text: '#C2410C' },
+    Reservation: { bg: '#F3E8FF', border: '#D8B4FE', text: '#6B21A8' },
   };
 
   return (
     <div className="space-y-3 select-none">
-      <div className="mb-2">
-        <p className="text-xs font-bold" style={{ color: '#2B3235' }}>
-          Weekly Schedule for {roomCode}
-        </p>
-        <p className="text-[10px] text-gray-500">
-          {entries.length} schedule {entries.length === 1 ? 'entry' : 'entries'} this week
-        </p>
-        {onTimeSelect && (
-          <p className="text-[10px] font-semibold mt-1" style={{ color: '#7A0808' }}>
-            👆 Click or drag on the grid to set your schedule time
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <p className="text-xs font-black text-gray-900">
+            Weekly Schedule for Room {roomCode}
           </p>
+          <p className="text-[10px] font-medium text-gray-500">
+            {entries.length === 0 ? 'No existing schedules this week (Room is vacant)' : `${entries.length} scheduled ${entries.length === 1 ? 'class' : 'classes'} this week`}
+          </p>
+        </div>
+        {entries.length > 0 ? (
+          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+            {entries.length} scheduled {entries.length === 1 ? 'block' : 'blocks'}
+          </span>
+        ) : (
+          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+            ✓ Vacant this week
+          </span>
         )}
       </div>
+
+      {/* Prominent Conflict Warning Bar (Top of Grid) */}
+      {currentTimeSlot && conflicts.length > 0 && (
+        <div className="p-3 bg-red-100/90 border-2 border-red-500 rounded-xl flex items-start gap-2.5 shadow-sm animate-in fade-in">
+          <div className="p-1 rounded-lg bg-red-600 text-white font-black text-xs flex items-center justify-center">
+            ⚠️
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-black text-red-950 uppercase tracking-wide">
+              Time Conflict: Room is already scheduled during this time!
+            </p>
+            <ul className="mt-1 space-y-1">
+              {conflicts.map((conflict) => (
+                <li key={conflict.id} className="text-[11px] font-bold text-red-900 bg-white/80 border border-red-200 px-2.5 py-1 rounded-lg flex items-center justify-between">
+                  <span>
+                    <span className="font-extrabold">{conflict.course || conflict.title}</span>
+                    {conflict.instructor && <span className="text-gray-700 font-medium ml-1">· {conflict.instructor}</span>}
+                    {conflict.section && <span className="text-red-700 font-semibold ml-1.5">(Sec: {conflict.section})</span>}
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-950">
+                    {formatScheduleHour(conflict.start)} – {formatScheduleHour(conflict.end)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] font-semibold text-red-800 mt-1.5">
+              Please choose a different day or time slot to proceed.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Legend */}
-      <div className="flex items-center gap-3 flex-wrap text-[10px]">
-        {roomType ? (
-          (() => {
-            const isLab = roomType.toLowerCase().includes('lab');
-            const bg = isLab ? '#D1FAE5' : '#DBEAFE';
-            const border = isLab ? '1.5px solid #10B981' : '1.5px solid #3B82F6';
-            return (
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-sm" style={{ background: bg, border }}></div>
-                <span className="text-gray-600 font-semibold">Scheduling ({roomType})</span>
-              </div>
-            );
-          })()
-        ) : (
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ background: '#DBEAFE', border: '1.5px solid #3B82F6' }}></div>
-            <span className="text-gray-600 font-semibold">Scheduling</span>
-          </div>
-        )}
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ background: '#F3E8FF', border: '1.5px solid #D8B4FE' }}></div>
-          <span className="text-gray-600 font-semibold">Reservation</span>
+      <div className="flex items-center gap-3 flex-wrap text-[10px] bg-gray-50/70 p-2 rounded-xl border border-gray-100">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-red-100 border border-red-300"></div>
+          <span className="text-gray-700 font-bold">Lecture</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ background: '#FFEDD5', border: '1.5px solid #FDBA74' }}></div>
-          <span className="text-gray-600 font-semibold">Maintenance</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-400"></div>
+          <span className="text-gray-700 font-bold">Laboratory</span>
         </div>
-        {onTimeSelect && (
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ background: '#FEE2E2', border: '1.5px solid #FCA5A5' }}></div>
-            <span className="text-gray-600 font-semibold">Drag selection</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-purple-100 border border-purple-300"></div>
+          <span className="text-gray-700 font-bold">Reservation</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-orange-100 border border-orange-300"></div>
+          <span className="text-gray-700 font-bold">Maintenance</span>
+        </div>
         {currentTimeSlot && (
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ background: '#FEF3C7', border: '1.5px solid #F59E0B' }}></div>
-            <span className="text-gray-600 font-semibold">Your time</span>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-3 h-3 rounded-sm ${conflicts.length > 0 ? 'bg-red-200 border-2 border-red-600' : 'bg-amber-200 border-2 border-amber-600'}`}></div>
+            <span className={conflicts.length > 0 ? 'text-red-950 font-black' : 'text-amber-950 font-black'}>
+              {conflicts.length > 0 ? 'Conflicting Proposed Time' : 'Your Proposed Time'}
+            </span>
           </div>
         )}
       </div>
 
-      {entries.length === 0 ? (
-        <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-          <Calendar size={32} className="mx-auto mb-2 text-gray-300" />
-          <p className="text-xs text-gray-500">No schedules for this room yet</p>
-          {onTimeSelect && (
-            <p className="text-[10px] text-gray-400 mt-1">Click or drag to set your time</p>
-          )}
-        </div>
-      ) : (
-        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-          <div ref={scrollContainerRef} style={{ minWidth: 600, maxHeight: 500, overflowY: 'auto' }}>
-            {/* Day Headers */}
-            <div className="grid sticky top-0 bg-white z-10 border-b border-gray-200" style={{ gridTemplateColumns: '60px repeat(7, 1fr)' }}>
-              <div className="p-2 text-[10px] font-bold text-gray-400 uppercase">Time</div>
-              {SCHEDULE_DAYS.map((day) => (
-                <div key={day} className="p-2 text-center border-l border-gray-200">
-                  <p className="text-[10px] font-bold text-gray-700 uppercase">{day.slice(0, 3)}</p>
-                </div>
-              ))}
-            </div>
+      {/* Full Weekly Schedule Grid (Always Rendered) */}
+      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+        <div ref={scrollContainerRef} style={{ minWidth: 600, maxHeight: 420, overflowY: 'auto' }}>
+          {/* Day Headers */}
+          <div className="grid sticky top-0 bg-white z-10 border-b border-gray-200 shadow-2xs" style={{ gridTemplateColumns: '60px repeat(7, 1fr)' }}>
+            <div className="p-2 text-[10px] font-black text-gray-400 uppercase">Time</div>
+            {SCHEDULE_DAYS.map((day) => (
+              <div key={day} className="p-2 text-center border-l border-gray-200">
+                <p className="text-[10px] font-black text-gray-800 uppercase">{day.slice(0, 3)}</p>
+              </div>
+            ))}
+          </div>
 
             {/* Time Grid */}
             <div className="relative" style={{ height: gridHeight }}>
@@ -297,6 +328,11 @@ export default function RoomScheduleViewer({
                     {SCHEDULE_DAYS.map((_, dayIndex) => {
                       const selected = isSlotSelected(dayIndex, slotIndex);
                       const proposed = isSlotProposed(dayIndex, slotIndex);
+                      const cellBg = proposed
+                        ? (conflicts.length > 0 ? '#FEE2E2' : '#FEF3C7')
+                        : selected
+                        ? '#FEE2E2'
+                        : 'transparent';
 
                       return (
                         <div
@@ -304,7 +340,7 @@ export default function RoomScheduleViewer({
                           className="border-t border-l border-gray-100"
                           style={{
                             height: SCHEDULE_CELL_HEIGHT,
-                            background: proposed ? '#FEF3C7' : selected ? '#FEE2E2' : 'transparent',
+                            background: cellBg,
                             cursor: onTimeSelect ? 'crosshair' : 'default',
                           }}
                           onMouseDown={(e) => {
@@ -336,21 +372,31 @@ export default function RoomScheduleViewer({
                     className="relative h-full"
                   >
                     <div
-                      className="absolute left-1 right-1 rounded-xl p-2 bg-amber-200/90 border-2 border-amber-600 text-amber-950 shadow-md pointer-events-auto overflow-hidden animate-in fade-in duration-150"
+                      className={`absolute left-1 right-1 rounded-xl p-2 shadow-md pointer-events-auto overflow-hidden animate-in fade-in duration-150 ${
+                        conflicts.length > 0
+                          ? 'bg-red-200/95 border-2 border-red-600 text-red-950'
+                          : 'bg-amber-200/90 border-2 border-amber-600 text-amber-950'
+                      }`}
                       style={{
                         top: blockTopPx(currentTimeSlot.startHour),
                         height: blockHeightPx(currentTimeSlot.startHour, currentTimeSlot.endHour),
                       }}
                     >
-                      <p className="text-[10px] font-black tracking-wide text-amber-900 flex items-center gap-1">
-                        <span>★ YOUR PROPOSED TIME</span>
+                      <p className={`text-[10px] font-black tracking-wide flex items-center gap-1 ${conflicts.length > 0 ? 'text-red-900' : 'text-amber-900'}`}>
+                        <span>{conflicts.length > 0 ? '⚠️ TIME CONFLICT' : '★ YOUR PROPOSED TIME'}</span>
                       </p>
-                      <p className="text-[11px] font-extrabold text-amber-950 mt-0.5">
+                      <p className="text-[11px] font-extrabold mt-0.5">
                         {formatScheduleHour(currentTimeSlot.startHour)} – {formatScheduleHour(currentTimeSlot.endHour)}
                       </p>
-                      <p className="text-[9px] font-bold text-amber-800">
-                        ({Math.round((currentTimeSlot.endHour - currentTimeSlot.startHour) * 10) / 10} hrs)
-                      </p>
+                      {conflicts.length > 0 ? (
+                        <p className="text-[9px] font-black text-red-900 truncate">
+                          Overlap: {conflicts[0].course || conflicts[0].title}
+                        </p>
+                      ) : (
+                        <p className="text-[9px] font-bold text-amber-800">
+                          ({Math.round((currentTimeSlot.endHour - currentTimeSlot.startHour) * 10) / 10} hrs)
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -408,7 +454,6 @@ export default function RoomScheduleViewer({
             </div>
           </div>
         </div>
-      )}
 
       {/* Conflict Warning */}
       {currentTimeSlot && conflicts.length > 0 && (

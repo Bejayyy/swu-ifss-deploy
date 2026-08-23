@@ -537,20 +537,25 @@ export async function getDeanSections(deanUid) {
  * Fetches sections configured by Registrar in program_sections for the dean's college,
  * and merges with any existing course_schedules metadata (scheduleCount, modality).
  */
-export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode) {
+export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode, allowedProgramCodes = []) {
   if (!deanUid) {
     onData([]);
     return () => {};
   }
 
   const schedulesRef = collection(db, COLLECTIONS.USERS, deanUid, 'course_schedules');
-  const programSectionsRef = collection(db, 'program_sections');
 
   let unsubSchedules = () => {};
-  let unsubProgSections = () => {};
+  const unsubsProgSections = [];
 
   let currentSchedulesDocs = [];
   let currentProgSectionsDocs = [];
+  const progSectionDocsMap = new Map();
+
+  const targetCollege = String(deanCollegeCode || '').trim().toUpperCase();
+  const targetPrograms = Array.isArray(allowedProgramCodes)
+    ? allowedProgramCodes.map((p) => String(p || '').trim().toUpperCase()).filter(Boolean)
+    : [];
 
   const mergeAndEmit = async () => {
     try {
@@ -560,11 +565,20 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
       for (const pDoc of currentProgSectionsDocs) {
         const pData = pDoc.data ? pDoc.data() : pDoc;
         const pCollege = String(pData.collegeCode || '').trim().toUpperCase();
-        const targetCollege = String(deanCollegeCode || '').trim().toUpperCase();
+        const pProgram = String(pData.programCode || '').trim().toUpperCase();
 
-        // If deanCollegeCode is specified, filter by college
-        if (targetCollege && pCollege && pCollege !== targetCollege) {
-          continue;
+        // If specific college or program filters are provided, ensure section matches
+        if (targetCollege || targetPrograms.length > 0) {
+          const matchesProgram = targetPrograms.length > 0 && targetPrograms.includes(pProgram);
+          const matchesCollegeExact = targetCollege && (pCollege === targetCollege || pProgram === targetCollege);
+          const matchesCollegeFuzzy = targetCollege && (
+            (pCollege && (pCollege.includes(targetCollege) || targetCollege.includes(pCollege))) ||
+            (pProgram && (pProgram.includes(targetCollege) || targetCollege.includes(pProgram)))
+          );
+
+          if (!matchesProgram && !matchesCollegeExact && !matchesCollegeFuzzy) {
+            continue;
+          }
         }
 
         const sectionsList = Array.isArray(pData.sections) ? pData.sections : [];
@@ -574,6 +588,7 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
             id: secName,
             name: secName,
             yearLevel: pData.yearLabel || '1st Year',
+            yearNumber: pData.yearNumber || 1,
             programCode: pData.programCode || '',
             scheduleCount: 0,
             modality: 'regular',
@@ -585,13 +600,28 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
       for (const sDoc of currentSchedulesDocs) {
         const sName = sDoc.id;
         const sData = sDoc.data ? sDoc.data() : sDoc;
-        
+
+        // Skip dummy/legacy entries where the section name is identical to the program code or college code
+        const isProgramCode =
+          targetPrograms.includes(sName.toUpperCase()) ||
+          (targetCollege && sName.toUpperCase() === targetCollege) ||
+          Array.from(progSectionDocsMap.values()).some((pDoc) => {
+            const p = pDoc.data ? pDoc.data() : pDoc;
+            return String(p.programCode || '').toUpperCase() === sName.toUpperCase();
+          });
+
+        if (isProgramCode) {
+          continue;
+        }
+
         let existing = sectionMap.get(sName);
         if (!existing) {
           existing = {
             id: sName,
             name: sName,
             yearLevel: sData.yearLevel || '1st Year',
+            yearNumber: sData.yearNumber || 1,
+            programCode: sData.programCode || '',
             scheduleCount: 0,
             modality: sData.modality || 'regular',
           };
@@ -599,6 +629,7 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
         } else {
           existing.modality = sData.modality || existing.modality || 'regular';
           if (sData.yearLevel) existing.yearLevel = sData.yearLevel;
+          if (sData.programCode) existing.programCode = sData.programCode;
         }
       }
 
@@ -618,12 +649,12 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
 
       const sections = await Promise.all(sectionPromises);
 
-      // 4. Sort by year level first, then by name
+      // 4. Sort by year number/level first, then by name
       sections.sort((a, b) => {
-        const yearA = a.yearLevel || '';
-        const yearB = b.yearLevel || '';
-        if (yearA !== yearB) {
-          return yearA.localeCompare(yearB);
+        const yearNumA = a.yearNumber || (a.yearLevel ? parseInt(a.yearLevel, 10) : 1) || 1;
+        const yearNumB = b.yearNumber || (b.yearLevel ? parseInt(b.yearLevel, 10) : 1) || 1;
+        if (yearNumA !== yearNumB) {
+          return yearNumA - yearNumB;
         }
         return a.name.localeCompare(b.name);
       });
@@ -635,6 +666,7 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
     }
   };
 
+  // Subscribe to Dean's course_schedules
   unsubSchedules = onSnapshot(
     schedulesRef,
     (snap) => {
@@ -647,22 +679,47 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode)
     }
   );
 
-  unsubProgSections = onSnapshot(
-    programSectionsRef,
-    (snap) => {
-      currentProgSectionsDocs = snap.docs;
-      mergeAndEmit();
-    },
-    (err) => {
-      console.warn('Note: program_sections subscription unavailable or restricted for current role:', err?.message || err);
-      // Still merge and emit with schedulesDocs so dean schedules function smoothly
-      mergeAndEmit();
-    }
+  const handleProgSectionsSnap = (snap) => {
+    snap.docs.forEach((d) => {
+      progSectionDocsMap.set(d.id, d);
+    });
+    currentProgSectionsDocs = Array.from(progSectionDocsMap.values());
+    mergeAndEmit();
+  };
+
+  // Subscribe using scoped where() queries and general collection query
+  if (targetPrograms.length > 0) {
+    targetPrograms.forEach((pCode) => {
+      const q = query(collection(db, 'program_sections'), where('programCode', '==', pCode));
+      unsubsProgSections.push(
+        onSnapshot(q, handleProgSectionsSnap, (err) =>
+          console.warn(`Note: program_sections for ${pCode}:`, err?.message || err)
+        )
+      );
+    });
+  }
+
+  if (targetCollege) {
+    const qCollege = query(collection(db, 'program_sections'), where('collegeCode', '==', targetCollege));
+    unsubsProgSections.push(
+      onSnapshot(qCollege, handleProgSectionsSnap, (err) =>
+        console.warn(`Note: program_sections for college ${targetCollege}:`, err?.message || err)
+      )
+    );
+  }
+
+  // Also listen to the root program_sections collection so any updates are captured
+  unsubsProgSections.push(
+    onSnapshot(
+      collection(db, 'program_sections'),
+      handleProgSectionsSnap,
+      (err) => console.warn('Note: program_sections general subscription:', err?.message || err)
+    )
   );
 
   return () => {
     unsubSchedules();
-    unsubProgSections();
+    unsubsProgSections.forEach((unsub) => unsub());
   };
 }
 
@@ -813,77 +870,74 @@ export async function resetMultipleDeansSchedules(deanUids, semester) {
  * - Using Cloud Functions to aggregate room schedules
  * - Or implementing a more complex multi-user query
  */
+/**
+ * Subscribe to all plot entries for a specific room across all deans and sections
+ * Used by RoomScheduleViewer to show real-time room occupancy and prevent conflicts
+ */
 export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, deanUid, onData, onError) {
-  if (!roomCode || !deanUid) {
+  if (!roomCode) {
     onData([]);
     return () => {};
   }
 
-  console.log('subscribePlotEntriesForRoom called with:', {
-    roomCode,
-    semester,
-    scheduleMode,
-    deanUid
-  });
+  const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
+  const targetRoomNorm = normalizeRoom(roomCode);
 
-  // Query the current dean's schedules across all sections
-  // This is a simplified version - in production you'd want to aggregate across all deans
-  const userRef = doc(db, COLLECTIONS.USERS, deanUid);
-  const schedulesColl = collection(userRef, 'course_schedules');
+  if (!targetRoomNorm) {
+    onData([]);
+    return () => {};
+  }
 
-  // We need to query all sections for this dean to find entries with this room
-  // Since we can't query subcollections directly, we'll need to aggregate in the client
-  
-  const unsubscribers = [];
-  const sectionData = new Map(); // Track entries from each section
+  const entriesRef = collectionGroup(db, 'entries');
 
-  // First, get all sections for this dean
-  getDocs(schedulesColl).then(sectionsSnapshot => {
-    console.log(`Found ${sectionsSnapshot.docs.length} sections for dean`);
-    
-    sectionsSnapshot.docs.forEach(sectionDoc => {
-      const sectionName = sectionDoc.id;
-      const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
-      
-      // Subscribe to entries in this section that match the room
-      const q = query(
-        entriesRef,
-        where('roomCode', '==', roomCode),
-        where('scheduleMode', '==', scheduleMode)
-      );
+  return onSnapshot(
+    entriesRef,
+    (snapshot) => {
+      const allDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          console.log(`Section ${sectionName} has ${entries.length} entries for room ${roomCode}`);
-          
-          // Store entries from this section
-          sectionData.set(sectionName, entries);
-          
-          // Aggregate all entries from all sections
-          const allEntries = Array.from(sectionData.values()).flat();
-          console.log(`Total entries for room ${roomCode}: ${allEntries.length}`);
-          onData(allEntries);
-        },
-        (err) => {
-          console.error(`Error subscribing to section ${sectionName}:`, err);
-          if (onError) onError(err);
+      const matchingEntries = allDocs.filter((e) => {
+        // Match room code / name (normalized to ignore spacing and dashes, e.g. "MB - 101" vs "MB-101")
+        const eRoomNorm = normalizeRoom(e.roomCode || e.room || e.roomId || e.roomName || '');
+        if (eRoomNorm !== targetRoomNorm) {
+          return false;
         }
-      );
-      
-      unsubscribers.push(unsubscribe);
-    });
-  }).catch(err => {
-    console.error('Error getting sections:', err);
-    if (onError) onError(err);
-  });
 
-  // Return a function that unsubscribes from all sections
-  return () => {
-    console.log('Unsubscribing from all room schedule listeners');
-    unsubscribers.forEach(unsub => unsub());
-  };
+        // Match semester if specified
+        if (semester && e.semester !== undefined && e.semester !== null) {
+          if (String(e.semester) !== String(semester)) {
+            return false;
+          }
+        }
+
+        // Match scheduleMode if specified
+        if (scheduleMode) {
+          const entryMode = e.scheduleMode || 'regular';
+          if (entryMode !== scheduleMode) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      // Sort by day and startHour
+      matchingEntries.sort((a, b) => {
+        const dayA = a.day ?? 0;
+        const dayB = b.day ?? 0;
+        if (dayA !== dayB) return dayA - dayB;
+        return (a.startHour ?? 0) - (b.startHour ?? 0);
+      });
+
+      onData(matchingEntries);
+    },
+    (err) => {
+      console.error(`subscribePlotEntriesForRoom error for room ${roomCode}:`, err);
+      if (onError) onError(err);
+    }
+  );
 }
 
 /**
@@ -952,7 +1006,7 @@ export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, o
 }
 
 /**
- * Subscribe to ALL course schedule entries for a specific room (from ALL deans)
+ * Subscribe to ALL course schedule entries for a specific room (from ALL deans and sections)
  * Used in Room Details page to show the complete schedule for a room
  */
 export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode, onData, onError) {
@@ -962,136 +1016,65 @@ export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode,
     return () => {};
   }
 
-  console.log('[subscribeAllPlotEntriesForRoom] Starting subscription:', {
-    roomCode,
-    semester,
-    scheduleMode
-  });
+  const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
+  const targetRoomNorm = normalizeRoom(roomCode);
 
-  // We need to query all users and their course_schedules
-  // This is a complex query since course_schedules are nested under users
-  
-  const unsubscribers = [];
-  const deanData = new Map(); // Track entries from each dean
-  let isInitialized = false;
-  
-  // Get all users with role 'dean'
-  const usersRef = collection(db, COLLECTIONS.USERS);
-  const deansQuery = query(usersRef, where('role', '==', 'dean'));
-  
-  getDocs(deansQuery).then(deansSnapshot => {
-    console.log(`[subscribeAllPlotEntriesForRoom] Found ${deansSnapshot.docs.length} deans to check for room ${roomCode}`);
-    
-    if (deansSnapshot.empty) {
-      console.warn('[subscribeAllPlotEntriesForRoom] No deans found in database');
-      onData([]);
-      isInitialized = true;
-      return;
-    }
-    
-    let processedDeans = 0;
-    
-    deansSnapshot.docs.forEach(deanDoc => {
-      const deanUid = deanDoc.id;
-      const deanData_single = deanDoc.data();
-      const deanName = deanData_single.name || 'Unknown';
-      const college = deanData_single.college || deanData_single.department || 'Unknown';
-      const userRef = doc(db, COLLECTIONS.USERS, deanUid);
-      const schedulesColl = collection(userRef, 'course_schedules');
-      
-      console.log(`[subscribeAllPlotEntriesForRoom] Checking dean: ${deanName} (${college})`);
-      
-      // Get all sections for this dean
-      getDocs(schedulesColl).then(sectionsSnapshot => {
-        processedDeans++;
-        
-        if (sectionsSnapshot.empty) {
-          console.log(`[subscribeAllPlotEntriesForRoom] No sections found for dean ${deanName}`);
-          // If all deans processed and still no data, initialize with empty
-          if (processedDeans === deansSnapshot.docs.length && !isInitialized) {
-            console.log('[subscribeAllPlotEntriesForRoom] All deans processed, no schedules found');
-            onData([]);
-            isInitialized = true;
-          }
-          return;
+  if (!targetRoomNorm) {
+    onData([]);
+    return () => {};
+  }
+
+  console.log('[subscribeAllPlotEntriesForRoom] Starting subscription for room:', roomCode, { targetRoomNorm, semester, scheduleMode });
+
+  const entriesRef = collectionGroup(db, 'entries');
+
+  return onSnapshot(
+    entriesRef,
+    (snapshot) => {
+      const allDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const matchingEntries = allDocs.filter((entry) => {
+        // Match room code / name / ID (normalized to ignore spacing, dashes, underscores)
+        const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
+        if (eRoomNorm !== targetRoomNorm) {
+          return false;
         }
-        
-        console.log(`[subscribeAllPlotEntriesForRoom] Dean ${deanName} has ${sectionsSnapshot.docs.length} sections`);
-        
-        sectionsSnapshot.docs.forEach(sectionDoc => {
-          const sectionName = sectionDoc.id;
-          const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
-          
-          // Build query to match room and mode
-          let q = query(
-            entriesRef,
-            where('roomCode', '==', roomCode)
-          );
-          
-          // Add scheduleMode filter only for specific modes
-          if (scheduleMode) {
-            q = query(q, where('scheduleMode', '==', scheduleMode));
-          }
-          
-          console.log(`[subscribeAllPlotEntriesForRoom] Subscribing to ${deanName}/${sectionName}/entries with roomCode=${roomCode}, semester=${semester}, mode=${scheduleMode}`);
-          
-          const unsubscribe = onSnapshot(
-            q,
-            (snapshot) => {
-              const entries = snapshot.docs
-                .map(d => ({ 
-                  id: d.id, 
-                  ...d.data(),
-                  deanUid,
-                  deanName,
-                  college,
-                  sectionName 
-                }))
-                .filter(entry => {
-                  if (!semester) return true;
-                  const eSem = String(entry.semester || '1').toLowerCase().trim();
-                  const targetSem = String(semester).toLowerCase().trim();
-                  if (eSem === targetSem) return true;
-                  if (targetSem === '1' && (eSem.includes('1st') || eSem.includes('first') || eSem === '1')) return true;
-                  if (targetSem === '2' && (eSem.includes('2nd') || eSem.includes('second') || eSem === '2')) return true;
-                  if ((targetSem === '3' || targetSem.includes('summer')) && eSem.includes('summer')) return true;
-                  return false;
-                });
-              
-              console.log(`[subscribeAllPlotEntriesForRoom] Dean ${deanName}/${sectionName} has ${entries.length} entries for room ${roomCode}`);
-              
-              // Store entries from this dean+section
-              const key = `${deanUid}_${sectionName}`;
-              deanData.set(key, entries);
-              
-              // Aggregate all entries from all deans and sections
-              const allEntries = Array.from(deanData.values()).flat();
-              console.log(`[subscribeAllPlotEntriesForRoom] Total aggregated entries: ${allEntries.length}`);
-              onData(allEntries);
-              isInitialized = true;
-            },
-            (err) => {
-              console.error(`[subscribeAllPlotEntriesForRoom] Error subscribing to dean ${deanName} section ${sectionName}:`, err);
-            }
-          );
-          
-          unsubscribers.push(unsubscribe);
-        });
-      }).catch(err => {
-        console.error(`[subscribeAllPlotEntriesForRoom] Error getting sections for dean ${deanName}:`, err);
-        processedDeans++;
-      });
-    });
-  }).catch(err => {
-    console.error('[subscribeAllPlotEntriesForRoom] Error getting deans:', err);
-    if (onError) onError(err);
-  });
 
-  // Return a function that unsubscribes from all listeners
-  return () => {
-    console.log('[subscribeAllPlotEntriesForRoom] Unsubscribing from all room schedule listeners');
-    unsubscribers.forEach(unsub => unsub());
-  };
+        // Match semester if specified
+        if (semester && entry.semester !== undefined && entry.semester !== null) {
+          const eSem = String(entry.semester).toLowerCase().trim();
+          const targetSem = String(semester).toLowerCase().trim();
+          const matchesSem =
+            eSem === targetSem ||
+            (targetSem === '1' && (eSem.includes('1st') || eSem.includes('first') || eSem === '1')) ||
+            (targetSem === '2' && (eSem.includes('2nd') || eSem.includes('second') || eSem === '2')) ||
+            ((targetSem === '3' || targetSem.includes('summer')) && eSem.includes('summer'));
+
+          if (!matchesSem) return false;
+        }
+
+        // Match scheduleMode if specified
+        if (scheduleMode) {
+          const entryMode = entry.scheduleMode || 'regular';
+          if (entryMode !== scheduleMode) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      console.log(`[subscribeAllPlotEntriesForRoom] Matched ${matchingEntries.length} entries for room ${roomCode}`);
+      onData(matchingEntries);
+    },
+    (err) => {
+      console.error(`[subscribeAllPlotEntriesForRoom] Error for room ${roomCode}:`, err);
+      if (onError) onError(err);
+    }
+  );
 }
 
 /**
@@ -1220,82 +1203,57 @@ export async function checkReservationConflict(roomCode, dateStr, timeStart, tim
  */
 export async function fetchPlotEntriesForMultipleRooms(roomCodes = [], semester, scheduleMode = 'regular') {
   if (!roomCodes || roomCodes.length === 0) return {};
-  
-  const roomCodeSet = new Set(roomCodes.map(rc => String(rc).toLowerCase().trim()));
+
+  const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
+
+  // Create dictionary for results keyed by each requested room code
   const schedulesByRoom = {};
-  roomCodes.forEach(rc => {
+  const normMap = new Map();
+  roomCodes.forEach((rc) => {
     schedulesByRoom[rc] = [];
+    normMap.set(normalizeRoom(rc), rc);
   });
 
   try {
-    const usersRef = collection(db, COLLECTIONS.USERS);
-    const deansQuery = query(usersRef, where('role', '==', 'dean'));
-    const deansSnapshot = await getDocs(deansQuery);
+    const entriesRef = collectionGroup(db, 'entries');
+    const snapshot = await getDocs(entriesRef);
+    const allEntries = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
 
-    if (deansSnapshot.empty) return schedulesByRoom;
+    allEntries.forEach((entry) => {
+      const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
+      if (!eRoomNorm) return;
 
-    // Fetch all sections across all deans
-    const sectionPromises = deansSnapshot.docs.map(async (deanDoc) => {
-      const deanUid = deanDoc.id;
-      const deanData = deanDoc.data();
-      const deanName = deanData.name || 'Unknown';
-      const college = deanData.college || deanData.department || 'Unknown';
-      const userRef = doc(db, COLLECTIONS.USERS, deanUid);
-      const schedulesColl = collection(userRef, 'course_schedules');
+      const matchedKey = normMap.get(eRoomNorm);
+      if (!matchedKey) return;
 
-      const sectionsSnapshot = await getDocs(schedulesColl);
-      if (sectionsSnapshot.empty) return [];
-
-      const entryPromises = sectionsSnapshot.docs.map(async (secDoc) => {
-        const sectionName = secDoc.id;
-        const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
-        let q = entriesRef;
-        if (scheduleMode) {
-          q = query(entriesRef, where('scheduleMode', '==', scheduleMode));
-        }
-        const entriesSnapshot = await getDocs(q);
-        return entriesSnapshot.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-          deanUid,
-          deanName,
-          college,
-          sectionName,
-        }));
-      });
-
-      const sectionEntries = await Promise.all(entryPromises);
-      return sectionEntries.flat();
-    });
-
-    const allDeanEntries = await Promise.all(sectionPromises);
-    const allEntries = allDeanEntries.flat();
-
-    // Filter by semester & room codes
-    allEntries.forEach(entry => {
-      if (!entry.roomCode) return;
-      const entryRoomCode = String(entry.roomCode).trim();
-      const lowerCode = entryRoomCode.toLowerCase();
-      if (!roomCodeSet.has(lowerCode)) return;
-
+      // Semester filtering
       if (semester) {
         const eSem = String(entry.semester || '1').toLowerCase().trim();
         const targetSem = String(semester).toLowerCase().trim();
-        const matchesSem = eSem === targetSem 
-          || (targetSem === '1' && (eSem.includes('1st') || eSem.includes('first') || eSem === '1'))
-          || (targetSem === '2' && (eSem.includes('2nd') || eSem.includes('second') || eSem === '2'))
-          || ((targetSem === '3' || targetSem.includes('summer')) && eSem.includes('summer'));
+        const matchesSem =
+          eSem === targetSem ||
+          (targetSem === '1' && (eSem.includes('1st') || eSem.includes('first') || eSem === '1')) ||
+          (targetSem === '2' && (eSem.includes('2nd') || eSem.includes('second') || eSem === '2')) ||
+          ((targetSem === '3' || targetSem.includes('summer')) && eSem.includes('summer'));
         if (!matchesSem) return;
       }
 
-      // Find matching room code key
-      const matchedKey = roomCodes.find(rc => rc.toLowerCase().trim() === lowerCode) || entryRoomCode;
+      // ScheduleMode filtering
+      if (scheduleMode) {
+        const entryMode = entry.scheduleMode || 'regular';
+        if (entryMode !== scheduleMode) return;
+      }
+
       if (!schedulesByRoom[matchedKey]) {
         schedulesByRoom[matchedKey] = [];
       }
       schedulesByRoom[matchedKey].push(entry);
     });
 
+    console.log('[fetchPlotEntriesForMultipleRooms] Fetched schedules for rooms:', schedulesByRoom);
     return schedulesByRoom;
   } catch (error) {
     console.error('Error fetching plot entries for multiple rooms:', error);

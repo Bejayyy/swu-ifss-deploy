@@ -70,6 +70,7 @@ export default function CollegeInventory() {
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  const [courseProgramFilter, setCourseProgramFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [semesterFilter, setSemesterFilter] = useState('All');
   const [courseCurrentPage, setCourseCurrentPage] = useState(1);
@@ -152,7 +153,7 @@ export default function CollegeInventory() {
 
   useEffect(() => {
     setCourseCurrentPage(1);
-  }, [courseSearchQuery, yearFilter, semesterFilter, courseItemsPerPage]);
+  }, [courseSearchQuery, courseProgramFilter, yearFilter, semesterFilter, courseItemsPerPage]);
 
   // Filtered & Paginated Colleges
   const filteredColleges = useMemo(() => {
@@ -175,6 +176,12 @@ export default function CollegeInventory() {
   // Filtered & Paginated Courses
   const filteredCourses = useMemo(() => {
     return collegeCourses.filter((c) => {
+      const matchesProg =
+        courseProgramFilter === 'All' ||
+        String(c.programCode || '').trim().toUpperCase() === courseProgramFilter.toUpperCase() ||
+        (!c.programCode && viewingCollegeCourses?.programs?.length === 1);
+      if (!matchesProg) return false;
+
       const matchesYear = yearFilter === 'All' || c.yearLevel === yearFilter;
       const matchesSem = semesterFilter === 'All' || (c.semester || '1st Semester') === semesterFilter;
       if (!matchesYear || !matchesSem) return false;
@@ -183,10 +190,11 @@ export default function CollegeInventory() {
       const q = courseSearchQuery.toLowerCase().trim();
       return (
         (c.code && c.code.toLowerCase().includes(q)) ||
-        (c.title && c.title.toLowerCase().includes(q))
+        (c.title && c.title.toLowerCase().includes(q)) ||
+        (c.programCode && c.programCode.toLowerCase().includes(q))
       );
     });
-  }, [collegeCourses, yearFilter, semesterFilter, courseSearchQuery]);
+  }, [collegeCourses, courseProgramFilter, yearFilter, semesterFilter, courseSearchQuery, viewingCollegeCourses]);
 
   const totalCoursePages = Math.max(1, Math.ceil(filteredCourses.length / courseItemsPerPage));
   const paginatedCourses = useMemo(() => {
@@ -240,6 +248,7 @@ export default function CollegeInventory() {
     setViewingCollegeCourses(college);
     setActiveCollegeTab('courses');
     setCourseSearchQuery('');
+    setCourseProgramFilter('All');
     setYearFilter('All');
     setSemesterFilter('All');
     // Reset sections state
@@ -676,7 +685,7 @@ export default function CollegeInventory() {
             </button>
           </div>
 
-          {/* ── COURSES TAB ── */}
+            {/* ── COURSES TAB ── */}
           {activeCollegeTab === 'courses' && (
             <div className="space-y-4">
               <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
@@ -684,209 +693,298 @@ export default function CollegeInventory() {
                   <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: '#2B3235' }}>
                     <BookOpen size={20} className="text-[#7A0808]" /> {viewingCollegeCourses.name} ({viewingCollegeCourses.code})
                   </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Manage course list, semester offerings, year levels, credit units, and course types.
-              </p>
-            </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Manage course list, semester offerings, year levels, credit units, and course types.
+                  </p>
+                </div>
 
-            {/* Filter & Search Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
-              <div className="relative flex-1 min-w-[220px]">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  className="w-full pl-10 pr-4 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 focus:bg-white focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] transition-all font-medium"
-                  placeholder="Search course code or title..."
-                  value={courseSearchQuery}
-                  onChange={(e) => setCourseSearchQuery(e.target.value)}
-                />
-                {courseSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setCourseSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-                  >
-                    <X size={14} />
-                  </button>
+                {/* Program Filter Bar (if college has programs) */}
+                {viewingCollegeCourses.programs?.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 bg-gray-50/60 p-3 rounded-xl border">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                        <GraduationCap size={16} className="text-[#7A0808]" /> Degree Program:
+                      </span>
+                      <div className="min-w-[260px]">
+                        <CustomSelect
+                          value={courseProgramFilter}
+                          onChange={(e) => {
+                            setCourseProgramFilter(e.target.value);
+                            setCourseCurrentPage(1);
+                          }}
+                          options={[
+                            { value: 'All', label: `All Programs (${collegeCourses.length} total courses)` },
+                            ...(viewingCollegeCourses.programs || []).map((p) => {
+                              const pCount = collegeCourses.filter(
+                                (c) => String(c.programCode || '').trim().toUpperCase() === p.code.toUpperCase()
+                              ).length;
+                              return {
+                                value: p.code,
+                                label: `${p.code} — ${p.name || p.code} (${pCount})`,
+                              };
+                            }),
+                          ]}
+                          placeholder="Filter by Program"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Program Pills */}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCourseProgramFilter('All');
+                          setCourseCurrentPage(1);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          courseProgramFilter === 'All'
+                            ? 'bg-[#7A0808] text-white shadow-2xs'
+                            : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        }`}
+                      >
+                        All ({collegeCourses.length})
+                      </button>
+                      {viewingCollegeCourses.programs.map((p) => {
+                        const isSelected = courseProgramFilter === p.code;
+                        const pCount = collegeCourses.filter(
+                          (c) => String(c.programCode || '').trim().toUpperCase() === p.code.toUpperCase()
+                        ).length;
+                        return (
+                          <button
+                            key={p.code}
+                            type="button"
+                            onClick={() => {
+                              setCourseProgramFilter(p.code);
+                              setCourseCurrentPage(1);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#7A0808] text-white shadow-2xs'
+                                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                            }`}
+                            title={`${p.code} - ${p.name}`}
+                          >
+                            {p.code} ({pCount})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
-              </div>
 
-              {/* Year Filter Pills */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1">
-                <button
-                  type="button"
-                  onClick={() => setYearFilter('All')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    yearFilter === 'All'
-                      ? 'bg-[#7A0808] text-white shadow-2xs'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  All Years
-                </button>
-                {YEAR_LEVELS.map((lvl) => {
-                  const count = collegeCourses.filter((c) => c.yearLevel === lvl).length;
-                  return (
+                {/* Filter & Search Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      className="w-full pl-10 pr-4 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 focus:bg-white focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] transition-all font-medium"
+                      placeholder="Search course code or title..."
+                      value={courseSearchQuery}
+                      onChange={(e) => setCourseSearchQuery(e.target.value)}
+                    />
+                    {courseSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCourseSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Year Filter Pills */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1">
                     <button
-                      key={lvl}
                       type="button"
-                      onClick={() => setYearFilter(lvl)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-                        yearFilter === lvl
+                      onClick={() => setYearFilter('All')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        yearFilter === 'All'
                           ? 'bg-[#7A0808] text-white shadow-2xs'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                     >
-                      {lvl} ({count})
+                      All Years
                     </button>
-                  );
-                })}
-              </div>
+                    {YEAR_LEVELS.map((lvl) => {
+                      const count = collegeCourses.filter((c) => {
+                        const matchesProg =
+                          courseProgramFilter === 'All' ||
+                          String(c.programCode || '').trim().toUpperCase() === courseProgramFilter.toUpperCase() ||
+                          (!c.programCode && viewingCollegeCourses?.programs?.length === 1);
+                        return matchesProg && c.yearLevel === lvl;
+                      }).length;
 
-              {/* Semester Filter Dropdown */}
-              <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
-                <span>Semester:</span>
-                <div className="w-[145px]">
-                  <CustomSelect
-                    value={semesterFilter}
-                    onChange={(e) => setSemesterFilter(e.target.value)}
-                    options={['All Semesters', ...SEMESTERS]}
-                    placeholder="All Semesters"
-                  />
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setYearFilter(lvl)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                            yearFilter === lvl
+                              ? 'bg-[#7A0808] text-white shadow-2xs'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {lvl} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Semester Filter Dropdown */}
+                  <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
+                    <span>Semester:</span>
+                    <div className="w-[145px]">
+                      <CustomSelect
+                        value={semesterFilter}
+                        onChange={(e) => setSemesterFilter(e.target.value)}
+                        options={['All Semesters', ...SEMESTERS]}
+                        placeholder="All Semesters"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Rows Per Page */}
+                  <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
+                    <span>Show:</span>
+                    <div className="w-[125px]">
+                      <CustomSelect
+                        value={`${courseItemsPerPage} per page`}
+                        onChange={(e) => {
+                          const val = Number(String(e.target.value).split(' ')[0]);
+                          if (val) setCourseItemsPerPage(val);
+                        }}
+                        options={[
+                          { value: '5 per page', label: '5 per page' },
+                          { value: '10 per page', label: '10 per page' },
+                          { value: '20 per page', label: '20 per page' },
+                        ]}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Rows Per Page */}
-              <div className="flex items-center gap-2 text-xs text-gray-600 font-semibold">
-                <span>Show:</span>
-                <div className="w-[125px]">
-                  <CustomSelect
-                    value={`${courseItemsPerPage} per page`}
-                    onChange={(e) => {
-                      const val = Number(String(e.target.value).split(' ')[0]);
-                      if (val) setCourseItemsPerPage(val);
-                    }}
-                    options={[
-                      { value: '5 per page', label: '5 per page' },
-                      { value: '10 per page', label: '10 per page' },
-                      { value: '20 per page', label: '20 per page' },
-                    ]}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Courses Table Grid */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {filteredCourses.length === 0 ? (
-              <div className="p-12 text-center">
-                <BookOpen size={48} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-sm font-semibold text-gray-500 mb-1">
-                  {courseSearchQuery || yearFilter !== 'All' || semesterFilter !== 'All'
-                    ? 'No courses match your filter criteria'
-                    : 'No courses added yet'}
-                </p>
-                <p className="text-xs text-gray-400 mb-4">
-                  {courseSearchQuery || yearFilter !== 'All' || semesterFilter !== 'All'
-                    ? 'Try resetting search or filters'
-                    : 'Start by adding your first course for this college'}
-                </p>
-                {courseSearchQuery || yearFilter !== 'All' || semesterFilter !== 'All' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCourseSearchQuery('');
-                      setYearFilter('All');
-                      setSemesterFilter('All');
-                    }}
-                    className="btn-outline-maroon text-xs px-4 py-2"
-                  >
-                    Reset Filters
-                  </button>
+              {/* Courses Table Grid */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                {filteredCourses.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <BookOpen size={48} className="mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm font-semibold text-gray-500 mb-1">
+                      {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
+                        ? 'No courses match your filter criteria'
+                        : 'No courses added yet'}
+                    </p>
+                    <p className="text-xs text-gray-400 mb-4">
+                      {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
+                        ? 'Try resetting search or filters'
+                        : 'Start by adding your first course for this college'}
+                    </p>
+                    {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCourseSearchQuery('');
+                          setCourseProgramFilter('All');
+                          setYearFilter('All');
+                          setSemesterFilter('All');
+                        }}
+                        className="btn-outline-maroon text-xs px-4 py-2"
+                      >
+                        Reset Filters
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleAddCourse}
+                        className="btn-maroon mx-auto flex items-center gap-2 text-xs"
+                      >
+                        <Plus size={16} /> Add Courses
+                      </button>
+                    )}
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleAddCourse}
-                    className="btn-maroon mx-auto flex items-center gap-2 text-xs"
-                  >
-                    <Plus size={16} /> Add Courses
-                  </button>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-50 text-gray-600 font-bold uppercase tracking-wider text-[10px] border-b border-gray-100">
+                        <tr>
+                          <th className="p-3.5 w-12 text-center">#</th>
+                          <th className="p-3.5 min-w-[110px]">Course Code</th>
+                          <th className="p-3.5 min-w-[200px]">Course Title</th>
+                          <th className="p-3.5 min-w-[110px]">Program</th>
+                          <th className="p-3.5 min-w-[100px]">Year Level</th>
+                          <th className="p-3.5 min-w-[120px]">Semester</th>
+                          <th className="p-3.5 min-w-[80px]">Units</th>
+                          <th className="p-3.5 min-w-[120px]">Course Type</th>
+                          <th className="p-3.5 text-center w-24">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 font-medium">
+                        {paginatedCourses.map((course, idx) => (
+                          <tr key={course.id} className="hover:bg-red-50/20 transition-colors">
+                            <td className="p-3.5 text-center font-bold text-gray-400">
+                              {(courseCurrentPage - 1) * courseItemsPerPage + idx + 1}
+                            </td>
+                            <td className="p-3.5 font-black text-[#7A0808]">
+                              <span className="px-2.5 py-1 bg-red-50 border border-red-100 rounded-lg inline-block">
+                                {course.code}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-bold text-[#2B3235]">
+                              {course.title}
+                            </td>
+                            <td className="p-3.5 font-bold">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-black">
+                                {course.programCode || viewingCollegeCourses.code}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-bold text-gray-700">
+                              {course.yearLevel || '1st Year'}
+                            </td>
+                            <td className="p-3.5 font-bold text-[#7A0808]">
+                              <span className="px-2.5 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-100 text-[10px]">
+                                {course.semester || '1st Semester'}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
+                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100 font-bold text-[11px]">
+                                {course.units} {course.units === 1 ? 'unit' : 'units'}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
+                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold text-[11px] capitalize">
+                                {course.type}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditCourse(course)}
+                                  className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-[#7A0808] transition-colors"
+                                  title="Edit course"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCourse(course)}
+                                  className="btn-delete-icon"
+                                  title="Delete course"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 text-gray-600 font-bold uppercase tracking-wider text-[10px] border-b border-gray-100">
-                    <tr>
-                      <th className="p-3.5 w-12 text-center">#</th>
-                      <th className="p-3.5 min-w-[110px]">Course Code</th>
-                      <th className="p-3.5 min-w-[220px]">Course Title</th>
-                      <th className="p-3.5 min-w-[100px]">Year Level</th>
-                      <th className="p-3.5 min-w-[120px]">Semester</th>
-                      <th className="p-3.5 min-w-[80px]">Units</th>
-                      <th className="p-3.5 min-w-[130px]">Course Type</th>
-                      <th className="p-3.5 text-center w-24">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 font-medium">
-                    {paginatedCourses.map((course, idx) => (
-                      <tr key={course.id} className="hover:bg-red-50/20 transition-colors">
-                        <td className="p-3.5 text-center font-bold text-gray-400">
-                          {(courseCurrentPage - 1) * courseItemsPerPage + idx + 1}
-                        </td>
-                        <td className="p-3.5 font-black text-[#7A0808]">
-                          <span className="px-2.5 py-1 bg-red-50 border border-red-100 rounded-lg inline-block">
-                            {course.code}
-                          </span>
-                        </td>
-                        <td className="p-3.5 font-bold text-[#2B3235]">
-                          {course.title}
-                        </td>
-                        <td className="p-3.5 font-bold text-gray-700">
-                          {course.yearLevel || '1st Year'}
-                        </td>
-                        <td className="p-3.5 font-bold text-[#7A0808]">
-                          <span className="px-2.5 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-100 text-[10px]">
-                            {course.semester || '1st Semester'}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100 font-bold text-[11px]">
-                            {course.units} {course.units === 1 ? 'unit' : 'units'}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold text-[11px] capitalize">
-                            {course.type}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleEditCourse(course)}
-                              className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-[#7A0808] transition-colors"
-                              title="Edit course"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCourse(course)}
-                              className="btn-delete-icon"
-                              title="Delete course"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
 
             {/* Courses Pagination Controls Footer */}
             {filteredCourses.length > 0 && (
@@ -1105,6 +1203,12 @@ export default function CollegeInventory() {
           }}
           collegeCode={viewingCollegeCourses.code}
           collegeName={viewingCollegeCourses.name}
+          programs={viewingCollegeCourses.programs || []}
+          defaultProgramCode={
+            courseProgramFilter !== 'All'
+              ? courseProgramFilter
+              : (viewingCollegeCourses.programs?.[0]?.code || '')
+          }
           existingCourses={collegeCourses}
           editingCourse={editingCourse}
           onSaveSuccess={(msg) => {

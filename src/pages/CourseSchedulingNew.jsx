@@ -48,6 +48,7 @@ import {
   grantAllRemainingAccess,
   hasSchedulingAccess,
   getAccessStatusMessage,
+  getAssignedRoomsForCollege,
   resetScheduleAccess,
 } from '../services/scheduleAccessService';
 import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
@@ -293,8 +294,21 @@ export default function CourseSchedulingNew() {
   }, [isDean, profile, selectedDeanUid, deansByCollege]);
 
   const selectedDean = useMemo(() => {
-    return staffUsers.find(u => u.uid === selectedDeanUid);
-  }, [staffUsers, selectedDeanUid]);
+    const found = staffUsers.find(u => u.uid === selectedDeanUid);
+    if (found) return found;
+    if (isDean && profile) {
+      return {
+        uid: profile.uid,
+        name: profile.displayName || profile.name || 'Dean',
+        email: profile.email || '',
+        college: profile.college || profile.department || '',
+        department: profile.department || profile.college || '',
+        role: 'Dean',
+        roleValue: 'dean',
+      };
+    }
+    return null;
+  }, [staffUsers, selectedDeanUid, isDean, profile]);
 
   // Active college info for selected dean
   const activeCollegeCode = useMemo(() => {
@@ -302,14 +316,34 @@ export default function CourseSchedulingNew() {
   }, [selectedDean, isDean, profile]);
 
   const activeCollegeObj = useMemo(() => {
+    // 1. Direct match by dean ID or email in colleges collection
+    if (selectedDeanUid) {
+      const byDean = colleges.find(
+        (c) =>
+          c.deanUid === selectedDeanUid ||
+          (c.deanEmail && selectedDean?.email && String(c.deanEmail).trim().toLowerCase() === String(selectedDean.email).trim().toLowerCase()) ||
+          (isDean && profile?.email && String(c.deanEmail || '').trim().toLowerCase() === String(profile.email).trim().toLowerCase())
+      );
+      if (byDean) return byDean;
+    }
+
     if (!activeCollegeCode) return null;
     const clean = String(activeCollegeCode).trim().toUpperCase();
     return colleges.find(
       (c) =>
         String(c.code || '').trim().toUpperCase() === clean ||
-        String(c.name || '').trim().toLowerCase() === String(activeCollegeCode).trim().toLowerCase()
+        String(c.name || '').trim().toLowerCase() === String(activeCollegeCode).trim().toLowerCase() ||
+        String(c.name || '').trim().toUpperCase().includes(clean) ||
+        clean.includes(String(c.name || '').trim().toUpperCase()) ||
+        String(c.code || '').trim().toUpperCase().includes(clean) ||
+        clean.includes(String(c.code || '').trim().toUpperCase()) ||
+        (Array.isArray(c.programs) && c.programs.some((p) => {
+          const pCode = String(p.code || '').trim().toUpperCase();
+          const pName = String(p.name || '').trim().toUpperCase();
+          return pCode === clean || pName === clean || pCode.includes(clean) || clean.includes(pCode);
+        }))
     ) || null;
-  }, [colleges, activeCollegeCode]);
+  }, [colleges, activeCollegeCode, selectedDeanUid, selectedDean, isDean, profile]);
 
   // Programs offered by this dean's college
   const availablePrograms = useMemo(() => {
@@ -375,12 +409,13 @@ export default function CourseSchedulingNew() {
   // Filter sections by selected program
   const displayedDeanSections = useMemo(() => {
     if (!selectedProgram) return [];
+    const currentProg = String(selectedProgram).trim().toUpperCase();
     return deanSections.filter((s) => {
       const pCode = String(s.programCode || '').trim().toUpperCase();
-      if (!pCode) {
-        return s.name.toUpperCase().startsWith(selectedProgram.toUpperCase());
+      if (pCode) {
+        return pCode === currentProg;
       }
-      return pCode === selectedProgram.toUpperCase();
+      return s.name.toUpperCase().startsWith(currentProg);
     });
   }, [deanSections, selectedProgram]);
 
@@ -419,7 +454,9 @@ export default function CourseSchedulingNew() {
       return undefined;
     }
 
-    const deanCollegeCode = selectedDean?.college || selectedDean?.department || '';
+    const deanCollegeCode = selectedDean?.college || selectedDean?.department || (isDean ? (profile?.college || profile?.department) : '') || '';
+    const collegeCode = activeCollegeObj?.code || '';
+    const programCodes = (activeCollegeObj?.programs || []).map((p) => String(p.code || '').trim().toUpperCase()).filter(Boolean);
 
     return subscribeDeanSections(
       selectedDeanUid,
@@ -435,10 +472,11 @@ export default function CourseSchedulingNew() {
         setExpandedYearLevels((prev) => ({ ...yearExpandState, ...prev }));
       },
       (err) => console.error('Error loading sections:', err),
-      deanCollegeCode
+      deanCollegeCode || collegeCode,
+      programCodes
     );
 
-  }, [selectedDeanUid, selectedDean]);
+  }, [selectedDeanUid, selectedDean, activeCollegeObj, isDean, profile]);
 
   // Subscribe to plot entries for selected dean and section
   useEffect(() => {
@@ -777,6 +815,15 @@ export default function CourseSchedulingNew() {
   const entryModalDayStatus = entryModal && scheduleTab === 'exam'
     ? getPlotDayStatus(entryModal.date, calendarData, semester, scheduleTab, selectedExamPeriod, selectedStudentCategory)
     : null;
+
+  const deanAssignedRooms = useMemo(() => {
+    const code =
+      activeCollegeObj?.code ||
+      selectedDean?.college ||
+      selectedDean?.department ||
+      (isDean ? (profile?.college || profile?.department) : '');
+    return getAssignedRoomsForCollege(scheduleAccess, code);
+  }, [scheduleAccess, activeCollegeObj, selectedDean, isDean, profile]);
 
   const subtitle = isRegistrar
     ? 'View course schedules plotted by college deans'
@@ -1517,6 +1564,7 @@ export default function CourseSchedulingNew() {
           date={entryModal.date}
           dayLabel={entryModal.dayLabel}
           scheduleMode={scheduleTab}
+          assignedRooms={deanAssignedRooms}
           dayBlockReason={entryModalDayStatus?.disabled ? entryModalDayStatus.reason : null}
           lockTimes={entryModal.lockTimes}
           deanCollege={selectedDean?.college || selectedDean?.department}
@@ -1539,7 +1587,7 @@ export default function CourseSchedulingNew() {
           dayLabel={entryModal.dayLabel}
           scheduleMode={scheduleTab}
           restrictRooms={false}
-          assignedRooms={[]}
+          assignedRooms={deanAssignedRooms}
           dayBlockReason={entryModalDayStatus?.disabled ? entryModalDayStatus.reason : null}
           lockTimes={entryModal.lockTimes}
         />
@@ -1570,6 +1618,7 @@ export default function CourseSchedulingNew() {
           initialCollegeCodes={scheduleAccess?.approvedColleges || []}
           initialStartDate={scheduleAccess?.startDate || scheduleAccess?.firstCollege?.startDate || ''}
           initialEndDate={scheduleAccess?.endDate || scheduleAccess?.firstCollege?.endDate || ''}
+          initialAssignedRooms={scheduleAccess?.assignedRooms || []}
           onReset={async () => {
             const confirmed = await showConfirm({
               title: 'Reset Access Control?',

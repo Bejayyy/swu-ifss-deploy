@@ -34,6 +34,8 @@ export default function AddCourseModal({
   existingCourses = [],
   onSaveSuccess,
   editingCourse = null,
+  programs = [],
+  defaultProgramCode = '',
 }) {
   const [activeTab, setActiveTab] = useState('individual'); // 'individual' | 'bulk'
 
@@ -41,6 +43,7 @@ export default function AddCourseModal({
   const [individualForm, setIndividualForm] = useState({
     code: editingCourse?.code || '',
     title: editingCourse?.title || '',
+    programCode: editingCourse?.programCode || defaultProgramCode || (programs?.[0]?.code || ''),
     yearLevel: editingCourse?.yearLevel || '1st Year',
     semester: editingCourse?.semester || '1st Semester',
     lecUnits: editingCourse?.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse?.type === 'laboratory' ? '0' : String(editingCourse?.units || '3')),
@@ -56,6 +59,7 @@ export default function AddCourseModal({
       setIndividualForm({
         code: editingCourse.code || '',
         title: editingCourse.title || '',
+        programCode: editingCourse.programCode || defaultProgramCode || (programs?.[0]?.code || ''),
         yearLevel: editingCourse.yearLevel || '1st Year',
         semester: editingCourse.semester || '1st Semester',
         lecUnits: editingCourse.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse.type === 'laboratory' ? '0' : String(editingCourse.units || '3')),
@@ -64,8 +68,13 @@ export default function AddCourseModal({
         type: editingCourse.type || 'lecture',
       });
       setActiveTab('individual');
+    } else if (defaultProgramCode) {
+      setIndividualForm((prev) => ({
+        ...prev,
+        programCode: defaultProgramCode,
+      }));
     }
-  }, [editingCourse]);
+  }, [editingCourse, defaultProgramCode, programs]);
 
   // Bulk Upload State
   const [isDragOver, setIsDragOver] = useState(false);
@@ -117,6 +126,7 @@ export default function AddCourseModal({
       const coursePayload = {
         code,
         title,
+        programCode: individualForm.programCode || defaultProgramCode || '',
         yearLevel: individualForm.yearLevel,
         semester: individualForm.semester,
         lecUnits: numLec,
@@ -179,76 +189,58 @@ export default function AddCourseModal({
     }
   };
 
-  // Inline Editing in Bulk Preview Grid
-  const updateParsedRow = (id, field, value) => {
-    setParsedRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== id) return row;
-        let val = value;
-        if (field === 'code') val = value.toUpperCase();
-        if (field === 'title') val = toTitleCase(value);
-        const updated = { ...row, [field]: val };
-
-        // Re-validate row
-        const rowErrors = [];
-        if (!updated.code.trim()) {
-          rowErrors.push('Course code is required');
-        } else {
-          const duplicateInFile = prev.some(
-            (r) => r.id !== id && r.code.toUpperCase() === updated.code.trim().toUpperCase()
-          );
-          if (duplicateInFile) rowErrors.push(`Duplicate code "${updated.code.trim().toUpperCase()}" in file`);
-        }
-
-        if (!updated.title.trim()) rowErrors.push('Course title is required');
-        const numUnits = parseFloat(updated.units);
-        if (isNaN(numUnits) || numUnits <= 0) rowErrors.push('Units must be a positive number');
-
-        updated.isValid = rowErrors.length === 0;
-        updated.errors = rowErrors;
-        return updated;
-      })
-    );
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
   };
 
-  const removeParsedRow = (id) => {
-    setParsedRows((prev) => prev.filter((r) => r.id !== id));
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadBulkCourseTemplate(existingCourses);
   };
 
   // Execute Bulk Import
   const handleBulkImport = async () => {
     const validRows = parsedRows.filter((r) => r.isValid);
-    if (validRows.length === 0) return;
+    if (validRows.length === 0) {
+      setParseError('No valid rows to import.');
+      return;
+    }
 
     setIsBulkImporting(true);
     setImportedProgress(0);
+    let successCount = 0;
 
-    try {
-      let count = 0;
-      for (const r of validRows) {
+    for (let i = 0; i < validRows.length; i++) {
+      const r = validRows[i];
+      try {
         await addCourse({
           code: r.code.trim().toUpperCase(),
           title: toTitleCase(r.title),
+          programCode: r.programCode || defaultProgramCode || '',
           yearLevel: r.yearLevel,
           semester: r.semester,
+          lecUnits: r.lecUnits || 0,
+          labUnits: r.labUnits || 0,
           units: Number(r.units) || 3,
           type: r.type,
           collegeCode,
         });
-        count++;
-        setImportedProgress(count);
+        successCount++;
+        setImportedProgress(Math.round(((i + 1) / validRows.length) * 100));
+      } catch (err) {
+        console.error(`Failed to import course ${r.code}:`, err);
       }
-
-      if (onSaveSuccess) {
-        onSaveSuccess(`Successfully imported ${validRows.length} courses to ${collegeCode}.`);
-      }
-      onClose();
-    } catch (err) {
-      console.error('Error importing bulk courses:', err);
-      setParseError(err.message || 'An error occurred during bulk import.');
-    } finally {
-      setIsBulkImporting(false);
     }
+
+    setIsBulkImporting(false);
+    if (onSaveSuccess) {
+      onSaveSuccess(`Successfully imported ${successCount} of ${validRows.length} course(s).`);
+    }
+    onClose();
   };
 
   const validCount = parsedRows.filter((r) => r.isValid).length;
@@ -322,6 +314,24 @@ export default function AddCourseModal({
               {individualError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
                   <p className="text-xs font-bold text-red-700">{individualError}</p>
+                </div>
+              )}
+
+              {/* Program Selector if College has programs */}
+              {programs && programs.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
+                    Degree Program <span className="text-red-500">*</span>
+                  </label>
+                  <CustomSelect
+                    value={individualForm.programCode || ''}
+                    onChange={(e) => setIndividualForm({ ...individualForm, programCode: e.target.value })}
+                    options={programs.map((p) => ({
+                      value: p.code,
+                      label: `${p.code} — ${p.name || p.code}`,
+                    }))}
+                    placeholder="Select Program"
+                  />
                 </div>
               )}
 

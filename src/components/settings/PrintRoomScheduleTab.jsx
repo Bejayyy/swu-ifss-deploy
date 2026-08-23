@@ -276,19 +276,22 @@ export default function PrintRoomScheduleTab({
     const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
     roomsToPrint.forEach((roomItem) => {
-      const roomEntries = schedulesByRoom[roomItem.roomCode] || schedulesByRoom[roomItem.roomName] || [];
+      const roomEntries =
+        schedulesByRoom[roomItem.roomCode] ||
+        schedulesByRoom[roomItem.roomName] ||
+        schedulesByRoom[roomItem.docId] ||
+        [];
 
       // Convert entries to day indexed blocks
       const blocksByDay = Array.from({ length: 7 }, () => []);
       roomEntries.forEach((entry) => {
         let dayIdx = entry.day;
         if (dayIdx === undefined || dayIdx === null || dayIdx < 0 || dayIdx >= 7) {
-          if (entry.date) {
-            const foundIdx = dayNames.indexOf(String(entry.date).toLowerCase().trim());
-            if (foundIdx >= 0) dayIdx = foundIdx;
-          }
+          const str = String(entry.date || entry.dayLabel || '').toLowerCase().trim();
+          const foundIdx = dayNames.findIndex((d) => str.includes(d) || d.includes(str));
+          if (foundIdx >= 0) dayIdx = foundIdx;
         }
-        if (dayIdx >= 0 && dayIdx <= 6) {
+        if (dayIdx !== undefined && dayIdx !== null && dayIdx >= 0 && dayIdx <= 6) {
           blocksByDay[dayIdx].push(entry);
         }
       });
@@ -304,7 +307,7 @@ export default function PrintRoomScheduleTab({
           if (startHour <= 0 || endHour <= 0 || endHour <= startHour) return;
 
           const slotsFromStart = (startHour - START_HOUR) * 2;
-          const durationSlots = (endHour - startHour) * 2;
+          const durationSlots = Math.max(1, Math.round((endHour - startHour) * 2) + 1);
           const top = Math.max(0, slotsFromStart * CELL_H);
           const height = Math.max(CELL_H, durationSlots * CELL_H);
           const left = `calc(60px + ${dayIdx} * ((100% - 60px) / 7) + 2px)`;
@@ -497,7 +500,7 @@ export default function PrintRoomScheduleTab({
     setPrintStatus(`Fetching schedules for ${targetRooms.length} room${targetRooms.length > 1 ? 's' : ''}...`);
 
     try {
-      const roomCodes = targetRooms.map((r) => r.roomCode);
+      const roomCodes = targetRooms.map((r) => r.roomCode || r.roomName || r.docId);
       const schedulesByRoom = await fetchPlotEntriesForMultipleRooms(roomCodes, selectedSemester, 'regular');
 
       setPrintStatus('Generating printable schedule sheets...');

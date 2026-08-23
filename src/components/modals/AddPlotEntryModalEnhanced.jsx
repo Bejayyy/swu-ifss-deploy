@@ -74,6 +74,7 @@ export default function AddPlotEntryModalEnhanced({
   initialRoom,
   initialType,
   lockRoom = false,
+  assignedRooms = [],
   sections = [],
   initialSection = '',
   skipTypeStep = false,
@@ -111,10 +112,10 @@ export default function AddPlotEntryModalEnhanced({
   const [selectedBuilding, setSelectedBuilding] = useState(initialBuilding || null);
   const [selectedRoom, setSelectedRoom] = useState(initialRoom || null);
   const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
-  // Only pre-populate time if user dragged on grid or editing existing schedule
   const [startTime, setStartTime] = useState(fromDrag || initial?.title ? initial?.startTime : null);
   const [endTime, setEndTime] = useState(fromDrag || initial?.title ? initial?.endTime : null);
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex !== undefined ? dayIndex : 0); // Track which day user selected
+  const [roomConflicts, setRoomConflicts] = useState([]); // Track conflicting schedules for selected room/day/time
 
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
@@ -269,9 +270,28 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [availableTeachers, teacherSearch]);
 
-  // Filtered buildings by search query AND selected class type
+  // Filtered buildings by search query AND selected class type AND assignedRooms
   const displayedBuildings = useMemo(() => {
     let filtered = buildings;
+
+    const isRoomInAssignedList = (r, list) => {
+      if (!list || list.length === 0) return true;
+      const c = String(r?.roomCode || r?.name || r?.id || '').trim().toUpperCase();
+      return list.some((item) => String(item || '').trim().toUpperCase() === c);
+    };
+
+    // Filter by assignedRooms if configured for this college
+    if (assignedRooms && assignedRooms.length > 0) {
+      filtered = filtered.filter((b) => {
+        const floors = Array.isArray(b.floorData) ? b.floorData : [];
+        const roomsDirect = Array.isArray(b.rooms) ? b.rooms : [];
+        const hasAssignedInFloors = floors.some((f) =>
+          (f.rooms || []).some((r) => isRoomInAssignedList(r, assignedRooms))
+        );
+        if (hasAssignedInFloors) return true;
+        return roomsDirect.some((r) => isRoomInAssignedList(r, assignedRooms));
+      });
+    }
 
     // Filter buildings to only those containing at least 1 room matching selectedType
     if (selectedType) {
@@ -280,13 +300,25 @@ export default function AddPlotEntryModalEnhanced({
         const roomsDirect = Array.isArray(b.rooms) ? b.rooms : [];
 
         const hasMatchingRoomInFloors = floors.some((f) =>
-          (f.rooms || []).some((r) => matchesRoomType(r.type || r.roomType, selectedType))
+          (f.rooms || []).some((r) => {
+            const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
+            if (!matchesType) return false;
+            if (assignedRooms && assignedRooms.length > 0) {
+              return isRoomInAssignedList(r, assignedRooms);
+            }
+            return true;
+          })
         );
         if (hasMatchingRoomInFloors) return true;
 
-        const hasMatchingDirectRoom = roomsDirect.some((r) =>
-          matchesRoomType(r.type || r.roomType, selectedType)
-        );
+        const hasMatchingDirectRoom = roomsDirect.some((r) => {
+          const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
+          if (!matchesType) return false;
+          if (assignedRooms && assignedRooms.length > 0) {
+            return isRoomInAssignedList(r, assignedRooms);
+          }
+          return true;
+        });
         if (hasMatchingDirectRoom) return true;
 
         // Fallback for buildings with no rooms array populated yet
@@ -305,13 +337,19 @@ export default function AddPlotEntryModalEnhanced({
     }
 
     return filtered;
-  }, [buildings, selectedType, buildingSearch]);
+  }, [buildings, selectedType, buildingSearch, assignedRooms]);
 
-  // Get all floors & rooms for selected building, strictly filtered by selected class type
+  // Get all floors & rooms for selected building, strictly filtered by selected class type & assignedRooms
   const availableFloors = useMemo(() => {
     if (!selectedBuilding) return [];
 
     let rawFloors = [];
+
+    const isRoomInAssignedList = (r, list) => {
+      if (!list || list.length === 0) return true;
+      const c = String(r?.roomCode || r?.name || r?.id || '').trim().toUpperCase();
+      return list.some((item) => String(item || '').trim().toUpperCase() === c);
+    };
 
     // 1. If floorData array exists on building object
     if (Array.isArray(selectedBuilding.floorData) && selectedBuilding.floorData.length > 0) {
@@ -347,19 +385,24 @@ export default function AddPlotEntryModalEnhanced({
       });
     }
 
-    // Filter rooms by selected class type (Lecture vs Laboratory)
+    // Filter rooms by selected class type (Lecture vs Laboratory) AND assignedRooms
     return rawFloors
       .map((f) => {
-        const matchingRooms = f.rooms.filter((r) =>
-          matchesRoomType(r.type || r.roomType, selectedType)
-        );
+        const matchingRooms = f.rooms.filter((r) => {
+          const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
+          if (!matchesType) return false;
+          if (assignedRooms && assignedRooms.length > 0) {
+            return isRoomInAssignedList(r, assignedRooms);
+          }
+          return true;
+        });
         return {
           ...f,
           rooms: matchingRooms,
         };
       })
       .filter((f) => f.rooms.length > 0 || rawFloors.length === 1);
-  }, [selectedBuilding, selectedType]);
+  }, [selectedBuilding, selectedType, assignedRooms]);
 
   // Pre-select building ONCE if initialBuilding or initialBuildingId is passed
   useEffect(() => {
@@ -477,6 +520,13 @@ export default function AddPlotEntryModalEnhanced({
       setError('Please click or drag on the room schedule grid to set your schedule time & day.');
       return;
     }
+    if (step === 4 && roomConflicts.length > 0) {
+      const conflictSummary = roomConflicts
+        .map((c) => `${c.course || c.title}${c.instructor ? ` (${c.instructor})` : ''} [${formatScheduleHour(c.start)} – ${formatScheduleHour(c.end)}]`)
+        .join(', ');
+      setError(`⚠️ Time Conflict: Room ${selectedRoom.roomCode || selectedRoom.name} is already occupied during this time (${conflictSummary}). Please choose an available time slot or another room.`);
+      return;
+    }
 
     const nextStepObj = stepConfig[currentStepIndex + 1];
     if (nextStepObj) {
@@ -502,6 +552,11 @@ export default function AddPlotEntryModalEnhanced({
 
     if (!selectedCourse || !selectedTeacher || !selectedType || !selectedBuilding || !selectedRoom) {
       setError('Please complete all steps');
+      return;
+    }
+
+    if (roomConflicts.length > 0) {
+      setError('Cannot save schedule: Room conflict detected. Please select an available time slot or room.');
       return;
     }
 
@@ -945,9 +1000,16 @@ export default function AddPlotEntryModalEnhanced({
                           Select Building
                         </h3>
                       </div>
-                      <p className="text-xs font-semibold text-[#7A0808] mt-1 bg-red-50/80 px-2.5 py-1 rounded-lg border border-red-200/80 inline-block">
-                        Showing buildings with {selectedType} rooms
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
+                        <p className="text-xs font-semibold text-[#7A0808] bg-red-50/80 px-2.5 py-0.5 rounded-lg border border-red-200/80 inline-block">
+                          Showing buildings with {selectedType} rooms
+                        </p>
+                        {assignedRooms && assignedRooms.length > 0 && (
+                          <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 size={12} /> {assignedRooms.length} Registrar-Assigned Rooms Only
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-lg">
@@ -1269,7 +1331,7 @@ export default function AddPlotEntryModalEnhanced({
                           </div>
 
                           <RoomScheduleViewer
-                            roomCode={selectedRoom.roomCode}
+                            roomCode={selectedRoom.roomCode || selectedRoom.name || selectedRoom.id}
                             roomType={selectedRoom.type || selectedRoom.roomType}
                             scheduleMode={scheduleMode}
                             semester={semester}
@@ -1288,6 +1350,7 @@ export default function AddPlotEntryModalEnhanced({
                               setStartTime(hourToTimeInput(startHour));
                               setEndTime(hourToTimeInput(endHour));
                             }}
+                            onConflictsChange={setRoomConflicts}
                           />
                         </div>
                       ) : (
@@ -1436,7 +1499,13 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={handleNext}
-                className="btn-maroon flex items-center gap-2 text-xs"
+                disabled={saving || (step === 4 && roomConflicts.length > 0)}
+                className={`btn-maroon flex items-center gap-2 text-xs transition-all ${
+                  step === 4 && roomConflicts.length > 0
+                    ? 'opacity-50 cursor-not-allowed bg-red-950/70 border border-red-800'
+                    : ''
+                }`}
+                title={step === 4 && roomConflicts.length > 0 ? 'Cannot proceed: Room is already scheduled at this time' : undefined}
               >
                 Next <ChevronRight size={16} />
               </button>

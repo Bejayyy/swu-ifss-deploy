@@ -158,6 +158,8 @@ export async function grantFirstCollegeAccess({
   startDate = '',
   endDate = '',
   sendEmail = true,
+  assignedRooms = [],
+  assignedRoomsByCollege = {},
   grantedBy,
 }) {
   const ref = accessControlRef(schoolYearId, semester);
@@ -187,6 +189,8 @@ export async function grantFirstCollegeAccess({
       approvedColleges: finalCollegeCodes,
       startDate: startDate || null,
       endDate: endDate || null,
+      assignedRooms: Array.isArray(assignedRooms) ? assignedRooms : [],
+      assignedRoomsByCollege: assignedRoomsByCollege || {},
       updatedBy: grantedBy,
       updatedAt: serverTimestamp(),
     });
@@ -205,6 +209,8 @@ export async function grantFirstCollegeAccess({
       approvedColleges: finalCollegeCodes,
       startDate,
       endDate,
+      assignedRooms: Array.isArray(assignedRooms) ? assignedRooms : [],
+      assignedRoomsByCollege: assignedRoomsByCollege || {},
     };
   }
 
@@ -224,6 +230,8 @@ export async function grantFirstCollegeAccess({
     approvedColleges: finalCollegeCodes,
     startDate: startDate || null,
     endDate: endDate || null,
+    assignedRooms: Array.isArray(assignedRooms) ? assignedRooms : [],
+    assignedRoomsByCollege: assignedRoomsByCollege || {},
     status: 'first_only',
     
     allAccessGrantedAt: null,
@@ -402,5 +410,34 @@ export async function resetScheduleAccess(schoolYearId, semester) {
   const ref = accessControlRef(schoolYearId, semester);
   const { deleteDoc } = await import('firebase/firestore');
   await deleteDoc(ref);
+}
+
+/**
+ * Get assigned room codes for a specific college
+ */
+export function getAssignedRoomsForCollege(accessControl, collegeCode) {
+  if (!accessControl) return [];
+
+  if (accessControl.assignedRoomsByCollege && collegeCode) {
+    const code = String(collegeCode).trim().toUpperCase();
+    if (Array.isArray(accessControl.assignedRoomsByCollege[code]) && accessControl.assignedRoomsByCollege[code].length > 0) {
+      return accessControl.assignedRoomsByCollege[code];
+    }
+    for (const [k, v] of Object.entries(accessControl.assignedRoomsByCollege)) {
+      if (Array.isArray(v) && v.length > 0) {
+        const kUpper = k.toUpperCase();
+        if (kUpper === code || kUpper.includes(code) || code.includes(kUpper)) {
+          return v;
+        }
+      }
+    }
+  }
+
+  // Fallback to global assignedRooms array
+  if (Array.isArray(accessControl.assignedRooms) && accessControl.assignedRooms.length > 0) {
+    return accessControl.assignedRooms;
+  }
+
+  return [];
 }
 

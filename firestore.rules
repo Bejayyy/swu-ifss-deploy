@@ -436,14 +436,20 @@ service cloud.firestore {
 
     // Colleges inventory - Registrar can manage, all staff can read
     match /colleges/{collegeId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+      allow read: if isSignedIn();
+      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+    }
+
+    // Program Sections - Registrar can manage, all staff (including Deans) can read
+    match /program_sections/{sectionId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
     }
 
     // Courses - Registrar can manage, Deans can read and assign teachers for their college courses
     match /courses/{courseId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+      allow read: if isSignedIn();
+      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
       allow update: if isDean() && isPhinmaedEmail() 
         && userDocExists()
         && (
@@ -527,8 +533,8 @@ service cloud.firestore {
     // No Class Days Collection - Registrar/Developer can write, all staff can read
     match /no_class_days/{dayId} {
       allow read: if isMainRole() && isPhinmaedEmail();
-      allow create, update, delete: if isSignedIn() && isPhinmaedEmail()
-        && (getRole() == 'registrar' || getRole() == 'developer');
+      allow create, update, delete: if isPhinmaedEmail()
+        && (isRegistrar() || isDeveloper());
     }
 
     // Chat Messages Collection - All signed-in authenticated staff can read and write chat messages

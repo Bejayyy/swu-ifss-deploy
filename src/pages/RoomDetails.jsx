@@ -259,16 +259,15 @@ export default function RoomDetails() {
 
   // Subscribe to course schedules for this room (from ALL deans)
   useEffect(() => {
-    if (!displayRoom?.id && !displayRoom?.roomCode) return;
+    const roomCode = displayRoom?.roomCode || displayRoom?.id || displayRoom?.name;
+    if (!roomCode) return;
     
-    const roomCode = displayRoom.id || displayRoom.roomCode;
-    
-    console.log('[RoomDetails] Subscribing to course schedules for room:', roomCode);
+    console.log('[RoomDetails] Subscribing to course schedules for room:', roomCode, { semesterTab, scheduleTab });
     
     const unsubscribe = subscribeAllPlotEntriesForRoom(
       roomCode,
       semesterTab,
-      'regular', // Only get regular schedules (not exam schedules)
+      scheduleTab, // Sync with active scheduleTab ('regular' or 'exam')
       (schedules) => {
         console.log(`[RoomDetails] Loaded ${schedules.length} course schedules for room ${roomCode}:`, schedules);
         setCourseSchedules(schedules);
@@ -280,7 +279,7 @@ export default function RoomDetails() {
       console.log('[RoomDetails] Unsubscribing from course schedules');
       unsubscribe();
     };
-  }, [displayRoom?.id, displayRoom?.roomCode, semesterTab]);
+  }, [displayRoom?.id, displayRoom?.roomCode, displayRoom?.name, semesterTab, scheduleTab]);
 
   // Subscribe to maintenance schedules for this room
   useEffect(() => {
