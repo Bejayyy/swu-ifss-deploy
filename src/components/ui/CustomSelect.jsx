@@ -64,7 +64,7 @@ export default function CustomSelect({
   const isSmall = size === 'sm';
 
   return (
-    <div ref={containerRef} className={`relative inline-block w-full font-sans select-none ${className}`}>
+    <div ref={containerRef} className={`relative inline-block w-full font-sans select-none ${isOpen ? 'z-[90]' : 'z-[10]'} ${className}`}>
       {/* Hidden input for HTML form validation if required */}
       {required && (
         <input
@@ -108,7 +108,7 @@ export default function CustomSelect({
         <div
           className={`absolute left-0 right-0 ${
             placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } bg-white rounded-2xl border border-slate-200/90 shadow-2xl p-2 z-[80] animate-in fade-in zoom-in-95 duration-150 min-w-[160px] max-h-[280px] overflow-y-auto space-y-1 ${menuClassName}`}
+          } bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-[100] animate-in fade-in zoom-in-95 duration-150 min-w-[160px] max-h-[280px] overflow-y-auto space-y-1 ${menuClassName}`}
         >
           {label && (
             <div className="px-4 pt-2 pb-1.5 border-b border-slate-100 mb-1">

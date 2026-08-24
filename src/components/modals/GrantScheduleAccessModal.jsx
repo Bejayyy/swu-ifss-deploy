@@ -43,6 +43,7 @@ export default function GrantScheduleAccessModal({
   initialEndDate = '',
   initialAssignedRooms = [],
   onReset,
+  onSave,
   onSuccess,
 }) {
   const { profile } = useAuth();
@@ -60,16 +61,16 @@ export default function GrantScheduleAccessModal({
   const [endDate, setEndDate] = useState('');
   const [sendEmailNotification, setSendEmailNotification] = useState(true);
 
-  // Tab 2: Buildings, Rooms, Search, Filter & AI State
+  // Tab 2: Building & Room Allocation State
   const [buildings, setBuildings] = useState([]);
   const [loadingBuildings, setLoadingBuildings] = useState(true);
-  const [selectedRooms, setSelectedRooms] = useState([]); // Array of roomCode strings
-  const [roomSearch, setRoomSearch] = useState('');
-  const [buildingFilter, setBuildingFilter] = useState('ALL');
-  const [roomTypeFilter, setRoomTypeFilter] = useState('ALL');
+  const [selectedRooms, setSelectedRooms] = useState([]); // array of roomCode strings
   const [expandedBuildings, setExpandedBuildings] = useState({});
+  const [roomSearch, setRoomSearch] = useState('');
+  const [buildingFilter, setBuildingFilter] = useState('ALL'); // 'ALL' | buildingId
+  const [roomTypeFilter, setRoomTypeFilter] = useState('ALL'); // 'ALL' | 'Lecture' | 'Laboratory'
 
-  // AI Suggestion State
+  // AI Curriculum Analyzer State
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [expandedPrograms, setExpandedPrograms] = useState({});
@@ -82,10 +83,11 @@ export default function GrantScheduleAccessModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const dropdownRef = useRef(null);
+  const wasOpenRef = useRef(false);
 
-  // Initialize initial values
+  // Initialize initial values ONLY once when modal opens (prevents tab jump to tab 1 during saving)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       setActiveTab('dean');
       setSelectedCollegeCodes(initialCollegeCodes || []);
       setSelectedRooms(initialAssignedRooms || []);
@@ -95,6 +97,7 @@ export default function GrantScheduleAccessModal({
       setEndDate(initialEndDate || sevenDays);
       setError('');
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, initialCollegeCodes, initialStartDate, initialEndDate, initialAssignedRooms]);
 
   // Subscribe to Colleges
@@ -445,7 +448,7 @@ export default function GrantScheduleAccessModal({
         assignedRoomsByCollege[code] = selectedRooms;
       });
 
-      await grantFirstCollegeAccess({
+      const payload = {
         schoolYearId,
         schoolYearLabel: `SY ${schoolYearId}`,
         semester,
@@ -457,10 +460,16 @@ export default function GrantScheduleAccessModal({
         assignedRooms: selectedRooms,
         assignedRoomsByCollege,
         grantedBy: profile?.uid,
-      });
+      };
 
-      if (onSuccess) onSuccess();
-      onClose();
+      if (onSave) {
+        onClose();
+        await onSave(payload);
+      } else {
+        await grantFirstCollegeAccess(payload);
+        if (onSuccess) onSuccess();
+        onClose();
+      }
     } catch (err) {
       console.error('Error granting access:', err);
       setError(err.message || 'Failed to grant access.');

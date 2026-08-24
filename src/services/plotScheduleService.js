@@ -397,24 +397,51 @@ function deanSectionEntriesRef(deanUid, section) {
   );
 }
 
+function matchSchoolYear(entry, schoolYearId) {
+  if (!schoolYearId) return true;
+  if (entry.schoolYearId) {
+    return entry.schoolYearId === schoolYearId;
+  }
+  if (entry.schoolYear) {
+    const cleanEntrySy = String(entry.schoolYear).replace(/^sy\s+/i, '').replace(/[\s_-]+/g, '').toLowerCase();
+    const cleanTargetSy = String(schoolYearId).replace(/^sy_/i, '').replace(/^sy\s+/i, '').replace(/[\s_-]+/g, '').toLowerCase();
+    return cleanEntrySy === cleanTargetSy || cleanTargetSy.includes(cleanEntrySy);
+  }
+  // Legacy entries without schoolYear field belong to original 2026-2027 school year
+  return schoolYearId.includes('2026') || schoolYearId === 'sy_2026-2027';
+}
+
 /**
  * Subscribe to plot entries for a specific dean and section
- * For regular schedule: returns all entries regardless of semester (weekly basis)
- * For exam schedule: filters by semester, scheduleMode, and optionally examPeriod
+ * Filtered strictly by schoolYearId, semester, and scheduleMode
  */
-export function subscribePlotEntriesForDeanSection(deanUid, section, semester, scheduleMode, examPeriod, onData, onError) {
+export function subscribePlotEntriesForDeanSection(
+  deanUid,
+  section,
+  semester,
+  scheduleMode,
+  examPeriod,
+  schoolYearIdOrOnData,
+  onDataOrOnError,
+  possibleOnError
+) {
   if (!deanUid || !section) {
-    onData([]);
+    if (typeof schoolYearIdOrOnData === 'function') schoolYearIdOrOnData([]);
     return () => {};
   }
 
-  console.log('subscribePlotEntriesForDeanSection called with:', {
-    deanUid,
-    section,
-    semester,
-    scheduleMode,
-    examPeriod
-  });
+  // Handle optional schoolYearId argument
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
+  }
 
   let q;
   
@@ -437,8 +464,7 @@ export function subscribePlotEntriesForDeanSection(deanUid, section, semester, s
       );
     }
   } else {
-    // Regular schedule: get all entries and filter by semester in memory
-    // We can't use where('semester', '==', semester) because many old entries don't have semester field
+    // Regular schedule
     q = query(
       deanSectionEntriesRef(deanUid, section),
       orderBy('createdAt', 'desc')
@@ -449,34 +475,40 @@ export function subscribePlotEntriesForDeanSection(deanUid, section, semester, s
     q,
     (snap) => {
       const allEntries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      console.log('Raw entries from Firestore:', allEntries);
       
-      // For regular schedule, filter to only include regular entries for this semester
-      let filteredEntries = allEntries;
-      if (scheduleMode === 'regular') {
-        filteredEntries = allEntries.filter(entry => {
-          // Must be regular schedule mode
+      const filteredEntries = allEntries.filter((entry) => {
+        // 1. Filter by school year
+        if (!matchSchoolYear(entry, schoolYearId)) {
+          return false;
+        }
+
+        // 2. Filter by regular / exam mode
+        if (scheduleMode === 'regular') {
           const isRegularMode = !entry.scheduleMode || entry.scheduleMode === 'regular';
           if (!isRegularMode) return false;
-          
-          // If entry has a valid semester field, it must match selected semester
+
           const hasSemester = entry.semester !== undefined && entry.semester !== null && entry.semester !== '';
           if (hasSemester) {
             return Number(entry.semester) === Number(semester);
           }
-          
-          // If entry has no semester field (old entries), don't show them
-          // User needs to re-create or update these entries with a semester
           return false;
-        });
-      }
-      
-      console.log('Filtered entries:', filteredEntries);
-      onData(filteredEntries);
+        } else if (scheduleMode === 'exam') {
+          const isExamMode = entry.scheduleMode === 'exam';
+          if (!isExamMode) return false;
+
+          if (Number(entry.semester) !== Number(semester)) return false;
+          if (examPeriod && entry.examPeriod && entry.examPeriod !== examPeriod) return false;
+          return true;
+        }
+
+        return true;
+      });
+
+      if (onData) onData(filteredEntries);
     },
     (err) => {
       console.error('Error in subscribePlotEntriesForDeanSection:', err);
-      onError(err);
+      if (onError) onError(err);
     }
   );
 }
@@ -874,17 +906,37 @@ export async function resetMultipleDeansSchedules(deanUids, semester) {
  * Subscribe to all plot entries for a specific room across all deans and sections
  * Used by RoomScheduleViewer to show real-time room occupancy and prevent conflicts
  */
-export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, deanUid, onData, onError) {
+export function subscribePlotEntriesForRoom(
+  roomCode,
+  semester,
+  scheduleMode,
+  deanUid,
+  schoolYearIdOrOnData,
+  onDataOrOnError,
+  possibleOnError
+) {
   if (!roomCode) {
-    onData([]);
+    if (typeof schoolYearIdOrOnData === 'function') schoolYearIdOrOnData([]);
     return () => {};
+  }
+
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
   }
 
   const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
   const targetRoomNorm = normalizeRoom(roomCode);
 
   if (!targetRoomNorm) {
-    onData([]);
+    if (onData) onData([]);
     return () => {};
   }
 
@@ -899,6 +951,11 @@ export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, de
       }));
 
       const matchingEntries = allDocs.filter((e) => {
+        // Match school year
+        if (!matchSchoolYear(e, schoolYearId)) {
+          return false;
+        }
+
         // Match room code / name (normalized to ignore spacing and dashes, e.g. "MB - 101" vs "MB-101")
         const eRoomNorm = normalizeRoom(e.roomCode || e.room || e.roomId || e.roomName || '');
         if (eRoomNorm !== targetRoomNorm) {
@@ -931,7 +988,7 @@ export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, de
         return (a.startHour ?? 0) - (b.startHour ?? 0);
       });
 
-      onData(matchingEntries);
+      if (onData) onData(matchingEntries);
     },
     (err) => {
       console.error(`subscribePlotEntriesForRoom error for room ${roomCode}:`, err);
@@ -941,15 +998,124 @@ export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, de
 }
 
 /**
+ * Subscribe to all plot entries for BOTH a specific room AND a specific section
+ * Returns { roomEntries: [...], sectionEntries: [...] }
+ * Used by RoomScheduleViewer to prevent room occupancy conflicts AND section double-booking
+ */
+export function subscribePlotEntriesForRoomAndSection(
+  roomCode,
+  sectionName,
+  semester,
+  scheduleMode,
+  deanUid,
+  schoolYearIdOrOnData,
+  onDataOrOnError,
+  possibleOnError
+) {
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
+  }
+
+  const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
+  const targetRoomNorm = normalizeRoom(roomCode);
+  const targetSecNorm = String(sectionName || '').trim().toUpperCase();
+
+  const entriesRef = collectionGroup(db, 'entries');
+
+  return onSnapshot(
+    entriesRef,
+    (snapshot) => {
+      const allDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Filter by school year, semester, and scheduleMode
+      const relevantDocs = allDocs.filter((e) => {
+        if (!matchSchoolYear(e, schoolYearId)) {
+          return false;
+        }
+        if (semester && e.semester !== undefined && e.semester !== null) {
+          if (String(e.semester) !== String(semester)) {
+            return false;
+          }
+        }
+        if (scheduleMode) {
+          const entryMode = e.scheduleMode || 'regular';
+          if (entryMode !== scheduleMode) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // 1. Room matching entries
+      const roomEntries = targetRoomNorm
+        ? relevantDocs.filter((e) => {
+            const eRoomNorm = normalizeRoom(e.roomCode || e.room || e.roomId || e.roomName || '');
+            return eRoomNorm === targetRoomNorm;
+          })
+        : [];
+
+      // 2. Section matching entries
+      const sectionEntries = targetSecNorm
+        ? relevantDocs.filter((e) => {
+            const eSecNorm = String(e.section || e.sectionName || '').trim().toUpperCase();
+            return eSecNorm === targetSecNorm;
+          })
+        : [];
+
+      // Sort by day and startHour
+      const sortFn = (a, b) => {
+        const dayA = a.day ?? 0;
+        const dayB = b.day ?? 0;
+        if (dayA !== dayB) return dayA - dayB;
+        return (a.startHour ?? 0) - (b.startHour ?? 0);
+      };
+
+      roomEntries.sort(sortFn);
+      sectionEntries.sort(sortFn);
+
+      if (onData) onData({ roomEntries, sectionEntries });
+    },
+    (err) => {
+      console.error(`subscribePlotEntriesForRoomAndSection error:`, err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
  * Subscribe to all plot entries for a specific teacher across all sections
  * Used for displaying teacher's personal schedule view
- * @param {string} teacherName - Full name of the teacher
- * @param {string} semester - Semester number ('1' or '2')
- * @param {function} onData - Callback with array of entries
- * @param {function} onError - Error callback
- * @returns {function} Unsubscribe function
  */
-export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, onError) {
+export function subscribePlotEntriesForTeacher(
+  teacherInput,
+  semester,
+  schoolYearIdOrOnData,
+  onDataOrOnError,
+  possibleOnError
+) {
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
+  }
+
   const teacherName = typeof teacherInput === 'object' ? (teacherInput?.name || teacherInput?.displayName || '') : String(teacherInput || '');
   const teacherEmail = typeof teacherInput === 'object' ? (teacherInput?.email || '') : '';
   const cleanName = teacherName.trim();
@@ -957,7 +1123,7 @@ export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, o
 
   if (!cleanName && !cleanEmail) {
     console.warn('subscribePlotEntriesForTeacher: teacher name or email is required');
-    onData([]);
+    if (onData) onData([]);
     return () => {};
   }
 
@@ -972,6 +1138,11 @@ export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, o
       }));
 
       entries = entries.filter((e) => {
+        // Match school year
+        if (!matchSchoolYear(e, schoolYearId)) {
+          return false;
+        }
+
         const inst = (e.instructor || '').trim().toLowerCase();
         if (!inst) return false;
 
@@ -1009,22 +1180,38 @@ export function subscribePlotEntriesForTeacher(teacherInput, semester, onData, o
  * Subscribe to ALL course schedule entries for a specific room (from ALL deans and sections)
  * Used in Room Details page to show the complete schedule for a room
  */
-export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode, onData, onError) {
+export function subscribeAllPlotEntriesForRoom(
+  roomCode,
+  semester,
+  scheduleMode,
+  schoolYearIdOrOnData,
+  onDataOrOnError,
+  possibleOnError
+) {
   if (!roomCode) {
-    console.warn('[subscribeAllPlotEntriesForRoom] No roomCode provided');
-    onData([]);
+    if (typeof schoolYearIdOrOnData === 'function') schoolYearIdOrOnData([]);
     return () => {};
+  }
+
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
   }
 
   const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
   const targetRoomNorm = normalizeRoom(roomCode);
 
   if (!targetRoomNorm) {
-    onData([]);
+    if (onData) onData([]);
     return () => {};
   }
-
-  console.log('[subscribeAllPlotEntriesForRoom] Starting subscription for room:', roomCode, { targetRoomNorm, semester, scheduleMode });
 
   const entriesRef = collectionGroup(db, 'entries');
 
@@ -1037,6 +1224,11 @@ export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode,
       }));
 
       const matchingEntries = allDocs.filter((entry) => {
+        // Match school year
+        if (!matchSchoolYear(entry, schoolYearId)) {
+          return false;
+        }
+
         // Match room code / name / ID (normalized to ignore spacing, dashes, underscores)
         const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
         if (eRoomNorm !== targetRoomNorm) {
@@ -1067,8 +1259,7 @@ export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode,
         return true;
       });
 
-      console.log(`[subscribeAllPlotEntriesForRoom] Matched ${matchingEntries.length} entries for room ${roomCode}`);
-      onData(matchingEntries);
+      if (onData) onData(matchingEntries);
     },
     (err) => {
       console.error(`[subscribeAllPlotEntriesForRoom] Error for room ${roomCode}:`, err);

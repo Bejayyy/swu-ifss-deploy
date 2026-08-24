@@ -16,11 +16,13 @@ import CustomSelect from '../components/ui/CustomSelect';
 import {
   buildSchoolYearId,
   saveSchoolYearConfig,
+  deleteSchoolYear,
   saveExamPeriodRange,
   subscribeSchoolCalendarPdf,
   saveSchoolCalendarPdf,
   deleteSchoolCalendarPdf,
 } from '../services/academicCalendarService';
+import { resolveActiveSchoolYearId } from '../utils/schoolYearResolver';
 import {
   formatExamRange,
   normalizeExamPeriods,
@@ -94,11 +96,12 @@ export default function SystemSettings() {
   // Subscribe to No Class Days history
   useEffect(() => {
     const unsub = subscribeNoClassDays(
+      activeSchoolYearId,
       (data) => setNoClassHistory(data),
       (err) => console.error('Error loading no class days:', err)
     );
     return () => unsub();
-  }, []);
+  }, [activeSchoolYearId]);
 
   // Scan reservations for the selected date
   const handleScanNoClassDate = async () => {
@@ -150,7 +153,7 @@ export default function SystemSettings() {
 
     setIsDeclaring(true);
     try {
-      const result = await declareNoClassDay(noClassDate, noClassReason, profile, scannedReservations);
+      const result = await declareNoClassDay(noClassDate, noClassReason, profile, scannedReservations, activeSchoolYearId);
       showNotification({
         type: 'success',
         title: 'No Class Day Declared!',
@@ -315,6 +318,7 @@ export default function SystemSettings() {
       (err) => console.error('Error loading colleges:', err)
     );
     const unsubActivities = subscribeActivities(
+      activeSchoolYearId,
       (data) => setActivities(data),
       (err) => console.error('Error loading activities:', err)
     );
@@ -322,7 +326,7 @@ export default function SystemSettings() {
       unsubColleges();
       unsubActivities();
     };
-  }, []);
+  }, [activeSchoolYearId]);
 
   const handleOpenAddActivity = (category) => {
     setEditingActivityId(null);
@@ -455,6 +459,7 @@ export default function SystemSettings() {
           objective: activityForm.objective.trim(),
           colleges: activityForm.colleges,
           collegeNames,
+          schoolYearId: activeSchoolYearId || null,
           createdBy: profile?.email || null,
         });
         showNotification({
@@ -636,6 +641,53 @@ export default function SystemSettings() {
     }
   };
 
+  // Delete School Year
+  const handleDeleteSchoolYear = async () => {
+    if (!activeSchoolYearId) return;
+
+    if (schoolYears.length <= 1) {
+      showNotification({
+        type: 'warning',
+        title: 'Cannot Delete',
+        message: 'You must keep at least one school year in the system.',
+      });
+      return;
+    }
+
+    const syToDelete = schoolYears.find((sy) => sy.id === activeSchoolYearId);
+    const syName = syToDelete?.displayLabel || (syToDelete?.label ? `SY ${syToDelete.label}` : activeSchoolYearId);
+
+    const confirmed = await showConfirm({
+      title: 'Delete School Year?',
+      message: `Are you sure you want to permanently delete "${syName}"? This will remove all associated semester terms, examination periods, schedule access permissions, and calendar events for this school year.`,
+      confirmText: 'Delete School Year',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await deleteSchoolYear(activeSchoolYearId);
+
+      const remaining = schoolYears.filter((sy) => sy.id !== activeSchoolYearId);
+      const nextSyId = resolveActiveSchoolYearId(remaining, new Date());
+      setActiveSchoolYearId(nextSyId);
+
+      showNotification({
+        type: 'success',
+        title: 'School Year Deleted',
+        message: `School Year "${syName}" has been permanently deleted.`,
+      });
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Delete Failed',
+        message: err.message || 'Failed to delete school year.',
+      });
+    }
+  };
+
   // Save Exam Period Date Range
   const handleSaveExamRangeFor = async (periodKey, level) => {
     if (!activeSchoolYearId || !examDraft.start || !examDraft.end) {
@@ -789,54 +841,81 @@ export default function SystemSettings() {
               <label className="block text-[10px] font-black uppercase tracking-wider text-gray-400">
                 Select School Year
               </label>
-              {!isCreatingSy && (
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingSy(true)}
-                  className="text-[11px] font-bold text-[#7A0808] hover:underline flex items-center gap-0.5"
-                >
-                  <Plus size={13} /> Add
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isCreatingSy && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingSy(true)}
+                    className="text-[11px] font-bold text-[#7A0808] hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Plus size={13} /> Add
+                  </button>
+                )}
+                {!isCreatingSy && schoolYears.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteSchoolYear}
+                    className="text-[11px] font-bold text-red-600 hover:text-red-800 hover:underline flex items-center gap-0.5 cursor-pointer"
+                    title="Delete Current School Year"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+              </div>
             </div>
 
-            {isCreatingSy ? (
-              <div className="p-3 bg-red-50/50 border border-red-200 rounded-xl space-y-2">
+            {/* Always visible dropdown showing all stacked school years */}
+            <CustomSelect
+              value={activeSchoolYearId || ''}
+              onChange={(e) => setActiveSchoolYearId(e.target.value)}
+              options={schoolYears.map((sy) => ({
+                value: sy.id,
+                label: sy.displayLabel || `SY ${sy.label}`,
+              }))}
+              placeholder="Select School Year"
+            />
+
+            {/* Inline Add School Year Form */}
+            {isCreatingSy && (
+              <div className="p-3 bg-red-50/60 border border-red-200 rounded-xl space-y-2 animate-fadeIn">
+                <label className="block text-[9px] font-black uppercase tracking-wider text-[#7A0808]">
+                  New School Year Label
+                </label>
                 <input
                   type="text"
                   value={newSyLabel}
                   onChange={(e) => setNewSyLabel(e.target.value)}
-                  placeholder="e.g. 2026-2027"
+                  placeholder="e.g. 2027-2028"
                   className="form-input w-full text-xs font-bold"
                   autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateNewSy();
+                    if (e.key === 'Escape') {
+                      setIsCreatingSy(false);
+                      setNewSyLabel('');
+                    }
+                  }}
                 />
                 <div className="flex items-center justify-end gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setIsCreatingSy(false)}
-                    className="px-2.5 py-1 text-[11px] font-bold text-gray-500 hover:bg-gray-100 rounded-lg"
+                    onClick={() => {
+                      setIsCreatingSy(false);
+                      setNewSyLabel('');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold text-gray-500 hover:bg-gray-100 rounded-lg cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={handleCreateNewSy}
-                    className="px-3 py-1 bg-[#7A0808] text-white rounded-lg text-[11px] font-bold hover:bg-[#600000]"
+                    className="px-3 py-1 bg-[#7A0808] text-white rounded-lg text-[11px] font-bold hover:bg-[#600000] cursor-pointer"
                   >
                     Create
                   </button>
                 </div>
               </div>
-            ) : (
-              <CustomSelect
-                value={activeSchoolYearId || ''}
-                onChange={(e) => setActiveSchoolYearId(e.target.value)}
-                options={schoolYears.map((sy) => ({
-                  value: sy.id,
-                  label: sy.displayLabel || `SY ${sy.label}`,
-                }))}
-                placeholder="Select School Year"
-              />
             )}
           </div>
 
@@ -1036,14 +1115,27 @@ export default function SystemSettings() {
                     Manage active school year, add any number of semesters or terms (e.g. Summer), and set operational date ranges.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleAddSemester}
-                  className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-[#7A0808] font-bold text-xs transition-all flex items-center gap-1.5 self-start sm:self-auto border border-red-200 shadow-2xs"
-                >
-                  <Plus size={15} />
-                  Add Semester
-                </button>
+                <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                  {schoolYears.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSchoolYear}
+                      className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition-all flex items-center gap-1.5 border border-red-200 shadow-2xs cursor-pointer"
+                      title="Delete Current School Year"
+                    >
+                      <Trash2 size={14} />
+                      Delete School Year
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddSemester}
+                    className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-[#7A0808] font-bold text-xs transition-all flex items-center gap-1.5 border border-red-200 shadow-2xs cursor-pointer"
+                  >
+                    <Plus size={15} />
+                    Add Semester
+                  </button>
+                </div>
               </div>
 
               {/* Semester Cards Grid */}
@@ -1287,6 +1379,7 @@ export default function SystemSettings() {
                 schoolYearId={activeSchoolYearId}
                 schoolYearLabel={activeSchoolYear?.displayLabel || syForm.label || '2026-2027'}
                 isRegistrar={true}
+                examPeriods={calendarData.examPeriods}
               />
             </div>
           )}

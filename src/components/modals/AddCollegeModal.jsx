@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  Clock,
   Users,
 } from 'lucide-react';
 import { addCollege, updateCollege } from '../../services/collegeService';
@@ -45,6 +46,9 @@ const createEmptyCourse = () => ({
   lecUnits: '3',
   labUnits: '0',
   units: '3',
+  lecHours: '3',
+  labHours: '0',
+  totalHours: '3',
   type: 'lecture',
 });
 
@@ -104,15 +108,24 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                 (c) => c.code && c.code.toUpperCase() === crs.code.toUpperCase()
               );
               if (!existsInPrg) {
+                const lecU = crs.lecUnits !== undefined ? Number(crs.lecUnits) : (crs.type === 'laboratory' ? 0 : Number(crs.units || 3));
+                const labU = crs.labUnits !== undefined ? Number(crs.labUnits) : (crs.type === 'laboratory' ? Number(crs.units || 3) : 0);
+                const lecH = crs.lecHours !== undefined ? Number(crs.lecHours) : (lecU > 0 ? lecU * 1 : 0);
+                const labH = crs.labHours !== undefined ? Number(crs.labHours) : (labU > 0 ? labU * 3 : 0);
+                const totalH = crs.totalHours !== undefined ? Number(crs.totalHours) : (lecH + labH);
+
                 const formattedCrs = {
                   ...crs,
                   title: toTitleCase(crs.title),
                   yearLevel: crs.yearLevel || '1st Year',
                   semester: crs.semester || '1st Semester',
-                  lecUnits: crs.lecUnits !== undefined ? String(crs.lecUnits) : (crs.type === 'laboratory' ? '0' : String(crs.units || 3)),
-                  labUnits: crs.labUnits !== undefined ? String(crs.labUnits) : (crs.type === 'laboratory' ? String(crs.units || 3) : '0'),
-                  units: String(crs.units || 3),
-                  type: crs.type || 'lecture',
+                  lecUnits: String(lecU),
+                  labUnits: String(labU),
+                  units: String(crs.units || (lecU + labU) || 3),
+                  lecHours: String(lecH),
+                  labHours: String(labH),
+                  totalHours: String(totalH),
+                  type: crs.type || (labU > 0 && lecU > 0 ? 'both' : (labU > 0 ? 'laboratory' : 'lecture')),
                 };
                 if (
                   updatedPrograms[targetIdx].courses.length === 1 &&
@@ -248,6 +261,21 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         } else {
           currentCrs.type = 'lecture';
         }
+
+        // Dynamically set default contact hours: if 0, do not ask for hours (set to 0)
+        const autoLecH = numLec > 0 ? numLec * 1.0 : 0;
+        const autoLabH = numLab > 0 ? numLab * 3.0 : 0;
+        currentCrs.lecHours = String(autoLecH);
+        currentCrs.labHours = String(autoLabH);
+        currentCrs.totalHours = String(autoLecH + autoLabH);
+      }
+
+      if (field === 'lecHours' || field === 'labHours') {
+        const cleanVal = val.replace(/[^0-9.]/g, '');
+        currentCrs[field] = cleanVal;
+        const numLecH = parseFloat(field === 'lecHours' ? cleanVal : (currentCrs.lecHours || '0')) || 0;
+        const numLabH = parseFloat(field === 'labHours' ? cleanVal : (currentCrs.labHours || '0')) || 0;
+        currentCrs.totalHours = String(numLecH + numLabH);
       }
 
       updatedCourses[cIdx] = currentCrs;
@@ -313,15 +341,28 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         return;
       }
 
-      const formattedNewCourses = validRows.map((r) => ({
-        id: `crs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        code: r.code.trim().toUpperCase(),
-        title: toTitleCase(r.title),
-        yearLevel: r.yearLevel,
-        semester: r.semester,
-        units: String(r.units),
-        type: r.type,
-      }));
+      const formattedNewCourses = validRows.map((r) => {
+        const lecU = r.lecUnits !== undefined ? Number(r.lecUnits) : (r.type === 'laboratory' ? 0 : Number(r.units || 3));
+        const labU = r.labUnits !== undefined ? Number(r.labUnits) : (r.type === 'laboratory' ? Number(r.units || 3) : 0);
+        const lecH = r.lecHours !== undefined ? Number(r.lecHours) : (lecU > 0 ? lecU * 1 : 0);
+        const labH = r.labHours !== undefined ? Number(r.labHours) : (labU > 0 ? labU * 3 : 0);
+        const totalH = r.totalHours !== undefined ? Number(r.totalHours) : (lecH + labH);
+
+        return {
+          id: `crs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          code: r.code.trim().toUpperCase(),
+          title: toTitleCase(r.title),
+          yearLevel: r.yearLevel,
+          semester: r.semester,
+          lecUnits: String(lecU),
+          labUnits: String(labU),
+          units: String(r.units || (lecU + labU)),
+          lecHours: String(lecH),
+          labHours: String(labH),
+          totalHours: String(totalH),
+          type: r.type,
+        };
+      });
 
       // AUTOMATICALLY POPULATE INTO form.programs[pIdx].courses
       setForm((prev) => {
@@ -358,8 +399,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   const handleDrop = (e, pIdx) => {
     e.preventDefault();
     setIsDragOver((prev) => ({ ...prev, [pIdx]: false }));
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleProgramSheetUpload(e.dataTransfer.files[0], pIdx);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleProgramSheetUpload(files[0], pIdx);
     }
   };
 
@@ -370,12 +412,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
     const code = form.code.trim().toUpperCase();
     const name = toTitleCase(form.name);
 
-    if (!name) {
-      setError('College Name is required.');
-      return;
-    }
-    if (!code) {
-      setError('College Code is required.');
+    if (!code || !name) {
+      setError('College code and name are required.');
       return;
     }
 
@@ -431,6 +469,10 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             const numLab = parseFloat(crs.labUnits) || (crs.type === 'laboratory' ? parseFloat(crs.units) || 3 : 0);
             const totalUnits = parseFloat(crs.units) || (numLec + numLab);
 
+            const lecHours = numLec > 0 ? (crs.lecHours !== undefined && crs.lecHours !== '' ? Number(crs.lecHours) : numLec * 1.0) : 0;
+            const labHours = numLab > 0 ? (crs.labHours !== undefined && crs.labHours !== '' ? Number(crs.labHours) : numLab * 3.0) : 0;
+            const totalHours = lecHours + labHours;
+
             const coursePayload = {
               code: crs.code.trim().toUpperCase(),
               title: toTitleCase(crs.title),
@@ -439,6 +481,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               lecUnits: numLec,
               labUnits: numLab,
               units: totalUnits,
+              lecHours,
+              labHours,
+              totalHours,
               type: crs.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
               collegeCode: code,
               programCode: prgCode,
@@ -680,8 +725,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                 <div className="sm:col-span-4">Subject Title <span className="text-red-500">*</span></div>
                                 <div className="sm:col-span-2">Year Level</div>
                                 <div className="sm:col-span-2">Semester</div>
-                                <div className="sm:col-span-1 text-center">Lec</div>
-                                <div className="sm:col-span-1 text-center">Lab</div>
+                                <div className="sm:col-span-1 text-center" title="Lecture Credit Units">Lec Units</div>
+                                <div className="sm:col-span-1 text-center" title="Laboratory Credit Units">Lab Units</div>
                               </div>
 
                               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -754,7 +799,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                         placeholder="3"
                                         value={crs.lecUnits ?? '3'}
                                         onChange={(e) => updateCourseField(pIdx, cIdx, 'lecUnits', e.target.value)}
-                                        title="Lecture Units"
+                                        title="Lecture Credit Units"
                                       />
                                     </div>
 
@@ -768,21 +813,74 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                         placeholder="0"
                                         value={crs.labUnits ?? '0'}
                                         onChange={(e) => updateCourseField(pIdx, cIdx, 'labUnits', e.target.value)}
-                                        title="Laboratory Units"
+                                        title="Laboratory Credit Units"
                                       />
                                     </div>
 
-                                    {/* Total Units (Disabled) & Delete button */}
-                                    <div className="sm:col-span-12 flex items-center justify-between pt-1 border-t border-gray-100 text-[11px] text-gray-500">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-gray-600">Total Units:</span>
-                                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-black border border-blue-100 text-xs">
-                                          {crs.units ?? '3'} {Number(crs.units) === 1 ? 'unit' : 'units'}
-                                        </span>
-                                        <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-100 text-[10px] capitalize">
-                                          {crs.type || 'lecture'}
-                                        </span>
+                                    {/* Sub-row: Total Units, Course Type, Conditional Required Contact Hours & Delete button */}
+                                    <div className="sm:col-span-12 flex flex-wrap items-center justify-between pt-2 border-t border-gray-100 gap-2 text-[11px]">
+                                      <div className="flex flex-wrap items-center gap-2.5">
+                                        {/* Academic Credit Units Summary */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-gray-500">Total Credit Units:</span>
+                                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-black border border-blue-100 text-xs">
+                                            {crs.units ?? '3'} {Number(crs.units) === 1 ? 'unit' : 'units'}
+                                          </span>
+                                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-100 text-[10px] capitalize">
+                                            {crs.type || 'lecture'}
+                                          </span>
+                                        </div>
+
+                                        {/* Required Contact Hours: ONLY ask/show Lec Hours if Lec > 0, and ONLY ask/show Lab Hours if Lab > 0 */}
+                                        {(Number(crs.lecUnits || 0) > 0 || Number(crs.labUnits || 0) > 0) ? (
+                                          <div className="flex flex-wrap items-center gap-2 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1 rounded-lg">
+                                            <span className="font-black text-amber-950 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                                              <Clock size={11} className="text-amber-700" /> Required Time:
+                                            </span>
+
+                                            {/* Only ask for Lecture Hours if Lec Units > 0 */}
+                                            {Number(crs.lecUnits || 0) > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <label className="text-[10px] font-bold text-amber-900" title="Required Lecture Hours per Week">Lec Time:</label>
+                                                <input
+                                                  type="text"
+                                                  inputMode="numeric"
+                                                  value={crs.lecHours !== undefined ? crs.lecHours : String(Number(crs.lecUnits || 0) * 1)}
+                                                  onChange={(e) => updateCourseField(pIdx, cIdx, 'lecHours', e.target.value)}
+                                                  placeholder="1"
+                                                  className="w-10 text-center font-bold text-xs py-0.5 px-1 bg-white border border-amber-300 rounded focus:border-[#7A0808]"
+                                                  title="Required Lecture Contact Hours per Week"
+                                                />
+                                                <span className="text-[10px] text-amber-800 font-semibold">hr/wk</span>
+                                              </div>
+                                            )}
+
+                                            {/* Only ask for Lab Hours if Lab Units > 0 */}
+                                            {Number(crs.labUnits || 0) > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <label className="text-[10px] font-bold text-amber-900" title="Required Laboratory Hours per Week">Lab Time:</label>
+                                                <input
+                                                  type="text"
+                                                  inputMode="numeric"
+                                                  value={crs.labHours !== undefined ? crs.labHours : String(Number(crs.labUnits || 0) * 3)}
+                                                  onChange={(e) => updateCourseField(pIdx, cIdx, 'labHours', e.target.value)}
+                                                  placeholder="3"
+                                                  className="w-10 text-center font-bold text-xs py-0.5 px-1 bg-white border border-amber-300 rounded focus:border-[#7A0808]"
+                                                  title="Required Laboratory Contact Hours per Week"
+                                                />
+                                                <span className="text-[10px] text-amber-800 font-semibold">hr/wk</span>
+                                              </div>
+                                            )}
+
+                                            {/* Total Weekly Hours Badge */}
+                                            <span className="text-[10px] font-black text-amber-900 ml-0.5">
+                                              = {(Number(crs.lecUnits || 0) > 0 ? (parseFloat(crs.lecHours ?? (Number(crs.lecUnits) * 1)) || 0) : 0) +
+                                                 (Number(crs.labUnits || 0) > 0 ? (parseFloat(crs.labHours ?? (Number(crs.labUnits) * 3)) || 0) : 0)} hrs/wk total
+                                            </span>
+                                          </div>
+                                        ) : null}
                                       </div>
+
                                       <button
                                         type="button"
                                         onClick={() => removeCourseFromProgram(pIdx, cIdx)}

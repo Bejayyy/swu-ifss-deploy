@@ -7,7 +7,7 @@ import { useAcademicCalendar } from '../../hooks/useAcademicCalendar';
 import CustomSelect from '../ui/CustomSelect';
 
 export default function TeacherScheduleModal({ teacher, onClose, initialSemester = '1', collegeCode }) {
-  const { calendarData } = useAcademicCalendar();
+  const { calendarData, activeSchoolYearId } = useAcademicCalendar();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [semester, setSemester] = useState(initialSemester);
@@ -34,12 +34,13 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
       return;
     }
 
-    console.log('Fetching schedules for teacher:', teacher.name, 'semester:', semester);
+    console.log('Fetching schedules for teacher:', teacher.name, 'semester:', semester, 'schoolYear:', activeSchoolYearId);
     setLoading(true);
 
     return subscribePlotEntriesForTeacher(
       teacher.name, // Teacher's full name
       semester,
+      activeSchoolYearId,
       (data) => {
         console.log('Teacher schedule entries:', data);
         setEntries(data);
@@ -50,7 +51,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
         setLoading(false);
       }
     );
-  }, [teacher?.name, semester]);
+  }, [teacher?.name, semester, activeSchoolYearId]);
 
   // Get unique sections from entries
   const sections = useMemo(() => {

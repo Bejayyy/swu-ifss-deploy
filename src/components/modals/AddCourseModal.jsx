@@ -39,33 +39,80 @@ export default function AddCourseModal({
 }) {
   const [activeTab, setActiveTab] = useState('individual'); // 'individual' | 'bulk'
 
+  // Helper functions for initial parsing of units and hours
+  const getInitialLecUnits = (course) => {
+    if (!course) return '3';
+    if (course.lecUnits !== undefined && course.lecUnits !== null && course.lecUnits !== '') return String(course.lecUnits);
+    if (course.type === 'laboratory') return '0';
+    return String(course.units || '3');
+  };
+
+  const getInitialLabUnits = (course) => {
+    if (!course) return '0';
+    if (course.labUnits !== undefined && course.labUnits !== null && course.labUnits !== '') return String(course.labUnits);
+    if (course.type === 'laboratory') return String(course.units || '3');
+    return '0';
+  };
+
+  const getInitialLecHours = (course, lecUnitsStr) => {
+    if (course?.lecHours !== undefined && course?.lecHours !== null && course?.lecHours !== '') return String(course.lecHours);
+    const u = parseFloat(lecUnitsStr) || 0;
+    return String(u * 1.0);
+  };
+
+  const getInitialLabHours = (course, labUnitsStr) => {
+    if (course?.labHours !== undefined && course?.labHours !== null && course?.labHours !== '') return String(course.labHours);
+    const u = parseFloat(labUnitsStr) || 0;
+    return String(u * 3.0);
+  };
+
   // Individual Form State
+  const initialLecUnits = getInitialLecUnits(editingCourse);
+  const initialLabUnits = getInitialLabUnits(editingCourse);
+  const initialLecHours = getInitialLecHours(editingCourse, initialLecUnits);
+  const initialLabHours = getInitialLabHours(editingCourse, initialLabUnits);
+  const initialTotalUnits = String((parseFloat(initialLecUnits) || 0) + (parseFloat(initialLabUnits) || 0));
+  const initialTotalHours = String((parseFloat(initialLecHours) || 0) + (parseFloat(initialLabHours) || 0));
+
   const [individualForm, setIndividualForm] = useState({
     code: editingCourse?.code || '',
     title: editingCourse?.title || '',
     programCode: editingCourse?.programCode || defaultProgramCode || (programs?.[0]?.code || ''),
     yearLevel: editingCourse?.yearLevel || '1st Year',
     semester: editingCourse?.semester || '1st Semester',
-    lecUnits: editingCourse?.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse?.type === 'laboratory' ? '0' : String(editingCourse?.units || '3')),
-    labUnits: editingCourse?.labUnits !== undefined ? String(editingCourse.labUnits) : (editingCourse?.type === 'laboratory' ? String(editingCourse?.units || '3') : '0'),
-    units: editingCourse?.units ? String(editingCourse.units) : '3',
-    type: editingCourse?.type || 'lecture',
+    lecUnits: initialLecUnits,
+    labUnits: initialLabUnits,
+    units: initialTotalUnits,
+    lecHours: initialLecHours,
+    labHours: initialLabHours,
+    totalHours: initialTotalHours,
+    type: editingCourse?.type || (parseFloat(initialLabUnits) > 0 && parseFloat(initialLecUnits) > 0 ? 'both' : (parseFloat(initialLabUnits) > 0 ? 'laboratory' : 'lecture')),
   });
   const [individualError, setIndividualError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (editingCourse) {
+      const lUnits = getInitialLecUnits(editingCourse);
+      const lbUnits = getInitialLabUnits(editingCourse);
+      const lHours = getInitialLecHours(editingCourse, lUnits);
+      const lbHours = getInitialLabHours(editingCourse, lbUnits);
+      const tUnits = String((parseFloat(lUnits) || 0) + (parseFloat(lbUnits) || 0));
+      const tHours = String((parseFloat(lHours) || 0) + (parseFloat(lbHours) || 0));
+
       setIndividualForm({
         code: editingCourse.code || '',
         title: editingCourse.title || '',
         programCode: editingCourse.programCode || defaultProgramCode || (programs?.[0]?.code || ''),
         yearLevel: editingCourse.yearLevel || '1st Year',
         semester: editingCourse.semester || '1st Semester',
-        lecUnits: editingCourse.lecUnits !== undefined ? String(editingCourse.lecUnits) : (editingCourse.type === 'laboratory' ? '0' : String(editingCourse.units || '3')),
-        labUnits: editingCourse.labUnits !== undefined ? String(editingCourse.labUnits) : (editingCourse.type === 'laboratory' ? String(editingCourse.units || '3') : '0'),
-        units: editingCourse.units ? String(editingCourse.units) : '3',
-        type: editingCourse.type || 'lecture',
+        lecUnits: lUnits,
+        labUnits: lbUnits,
+        units: tUnits,
+        lecHours: lHours,
+        labHours: lbHours,
+        totalHours: tHours,
+        type: editingCourse.type || (parseFloat(lbUnits) > 0 && parseFloat(lUnits) > 0 ? 'both' : (parseFloat(lbUnits) > 0 ? 'laboratory' : 'lecture')),
       });
       setActiveTab('individual');
     } else if (defaultProgramCode) {
@@ -84,6 +131,36 @@ export default function AddCourseModal({
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [importedProgress, setImportedProgress] = useState(0);
 
+  const updateParsedRow = (id, field, value) => {
+    setParsedRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const updated = { ...row, [field]: value };
+        if (field === 'lecUnits' || field === 'labUnits') {
+          const lec = parseFloat(field === 'lecUnits' ? value : updated.lecUnits) || 0;
+          const lab = parseFloat(field === 'labUnits' ? value : updated.labUnits) || 0;
+          updated.units = lec + lab;
+          updated.lecHours = lec * 1.0;
+          updated.labHours = lab * 3.0;
+          updated.totalHours = updated.lecHours + updated.labHours;
+          if (lab > 0 && lec > 0) updated.type = 'both';
+          else if (lab > 0) updated.type = 'laboratory';
+          else updated.type = 'lecture';
+        }
+        if (field === 'lecHours' || field === 'labHours') {
+          const lH = parseFloat(field === 'lecHours' ? value : updated.lecHours) || 0;
+          const labH = parseFloat(field === 'labHours' ? value : updated.labHours) || 0;
+          updated.totalHours = lH + labH;
+        }
+        return updated;
+      })
+    );
+  };
+
+  const removeParsedRow = (id) => {
+    setParsedRows((prev) => prev.filter((r) => r.id !== id));
+  };
+
   // ----------------------------------------------------
   // INDIVIDUAL SAVE / UPDATE HANDLER
   // ----------------------------------------------------
@@ -93,7 +170,16 @@ export default function AddCourseModal({
 
     const code = individualForm.code.trim().toUpperCase();
     const title = toTitleCase(individualForm.title);
-    const units = parseFloat(individualForm.units);
+    const numLec = parseFloat(individualForm.lecUnits) || 0;
+    const numLab = parseFloat(individualForm.labUnits) || 0;
+    const totalUnits = parseFloat(individualForm.units) || (numLec + numLab);
+    const numLecHours = parseFloat(individualForm.lecHours) !== undefined && !isNaN(parseFloat(individualForm.lecHours))
+      ? parseFloat(individualForm.lecHours)
+      : numLec * 1.0;
+    const numLabHours = parseFloat(individualForm.labHours) !== undefined && !isNaN(parseFloat(individualForm.labHours))
+      ? parseFloat(individualForm.labHours)
+      : numLab * 3.0;
+    const totalHours = parseFloat(individualForm.totalHours) || (numLecHours + numLabHours);
 
     if (!code) {
       setIndividualError('Course code is required.');
@@ -103,8 +189,8 @@ export default function AddCourseModal({
       setIndividualError('Course title is required.');
       return;
     }
-    if (isNaN(units) || units <= 0) {
-      setIndividualError('Units must be a positive number.');
+    if (isNaN(totalUnits) || totalUnits <= 0) {
+      setIndividualError('Total units must be a positive number greater than 0.');
       return;
     }
 
@@ -117,10 +203,6 @@ export default function AddCourseModal({
       return;
     }
 
-    const numLec = parseFloat(individualForm.lecUnits) || 0;
-    const numLab = parseFloat(individualForm.labUnits) || 0;
-    const totalUnits = parseFloat(individualForm.units) || (numLec + numLab);
-
     setIsSubmitting(true);
     try {
       const coursePayload = {
@@ -132,6 +214,9 @@ export default function AddCourseModal({
         lecUnits: numLec,
         labUnits: numLab,
         units: totalUnits,
+        lecHours: numLecHours,
+        labHours: numLabHours,
+        totalHours: totalHours,
         type: individualForm.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
         collegeCode,
       };
@@ -199,7 +284,7 @@ export default function AddCourseModal({
   };
 
   const handleDownloadTemplate = () => {
-    downloadBulkCourseTemplate(existingCourses);
+    downloadBulkCourseTemplate(collegeCode);
   };
 
   // Execute Bulk Import
@@ -217,15 +302,25 @@ export default function AddCourseModal({
     for (let i = 0; i < validRows.length; i++) {
       const r = validRows[i];
       try {
+        const lUnits = Number(r.lecUnits) || 0;
+        const lbUnits = Number(r.labUnits) || 0;
+        const tUnits = Number(r.units) || (lUnits + lbUnits) || 3;
+        const lHours = r.lecHours !== undefined ? Number(r.lecHours) : lUnits * 1.0;
+        const lbHours = r.labHours !== undefined ? Number(r.labHours) : lbUnits * 3.0;
+        const tHours = r.totalHours !== undefined ? Number(r.totalHours) : (lHours + lbHours);
+
         await addCourse({
           code: r.code.trim().toUpperCase(),
           title: toTitleCase(r.title),
           programCode: r.programCode || defaultProgramCode || '',
           yearLevel: r.yearLevel,
           semester: r.semester,
-          lecUnits: r.lecUnits || 0,
-          labUnits: r.labUnits || 0,
-          units: Number(r.units) || 3,
+          lecUnits: lUnits,
+          labUnits: lbUnits,
+          units: tUnits,
+          lecHours: lHours,
+          labHours: lbHours,
+          totalHours: tHours,
           type: r.type,
           collegeCode,
         });
@@ -395,90 +490,196 @@ export default function AddCourseModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
-                    Lecture Units
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={individualForm.lecUnits}
-                    onChange={(e) => {
-                      const cleanLec = e.target.value.replace(/[^0-9.]/g, '');
-                      const numLec = parseFloat(cleanLec) || 0;
-                      const numLab = parseFloat(individualForm.labUnits || '0') || 0;
-                      const total = numLec + numLab;
-                      let type = individualForm.type;
-                      if (numLab > 0 && numLec > 0) type = 'both';
-                      else if (numLab > 0 && numLec === 0) type = 'laboratory';
-                      else if (numLec > 0 && numLab === 0) type = 'lecture';
-                      setIndividualForm({
-                        ...individualForm,
-                        lecUnits: cleanLec,
-                        units: String(total),
-                        type,
-                      });
-                    }}
-                    placeholder="3"
-                    className="form-input w-full font-bold bg-white text-center"
-                  />
+              {/* Section 1: Academic Units (Credit Breakdown) */}
+              <div className="bg-gray-50/70 border border-gray-200/80 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-gray-800 uppercase tracking-wider">
+                    1. Academic Credit Units
+                  </span>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    Total units = Lec + Lab Units (Auto-calculated)
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
-                    Laboratory Units
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={individualForm.labUnits}
-                    onChange={(e) => {
-                      const cleanLab = e.target.value.replace(/[^0-9.]/g, '');
-                      const numLab = parseFloat(cleanLab) || 0;
-                      const numLec = parseFloat(individualForm.lecUnits || '0') || 0;
-                      const total = numLec + numLab;
-                      let type = individualForm.type;
-                      if (numLab > 0 && numLec > 0) type = 'both';
-                      else if (numLab > 0 && numLec === 0) type = 'laboratory';
-                      else if (numLec > 0 && numLab === 0) type = 'lecture';
-                      setIndividualForm({
-                        ...individualForm,
-                        labUnits: cleanLab,
-                        units: String(total),
-                        type,
-                      });
-                    }}
-                    placeholder="0"
-                    className="form-input w-full font-bold bg-white text-center"
-                  />
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1" style={{ color: '#2B3235' }}>
+                      Lecture Units (Lec)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={individualForm.lecUnits}
+                      onChange={(e) => {
+                        const cleanLec = e.target.value.replace(/[^0-9.]/g, '');
+                        const numLec = parseFloat(cleanLec) || 0;
+                        const numLab = parseFloat(individualForm.labUnits || '0') || 0;
+                        const total = numLec + numLab;
+                        const autoLecHours = numLec > 0 ? numLec * 1.0 : 0;
+                        const currentLabHours = numLab > 0 ? (parseFloat(individualForm.labHours || '0') || (numLab * 3.0)) : 0;
+                        let type = individualForm.type;
+                        if (numLab > 0 && numLec > 0) type = 'both';
+                        else if (numLab > 0 && numLec === 0) type = 'laboratory';
+                        else if (numLec > 0 && numLab === 0) type = 'lecture';
+                        setIndividualForm({
+                          ...individualForm,
+                          lecUnits: cleanLec,
+                          units: String(total),
+                          lecHours: String(autoLecHours),
+                          totalHours: String(autoLecHours + currentLabHours),
+                          type,
+                        });
+                      }}
+                      placeholder="3"
+                      className="form-input w-full font-bold bg-white text-center text-xs py-1.5"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
-                    Total Units <span className="text-gray-400 font-normal">(Auto)</span>
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    readOnly
-                    value={individualForm.units}
-                    className="form-input w-full font-black bg-gray-100/90 text-gray-800 cursor-not-allowed text-center"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1" style={{ color: '#2B3235' }}>
+                      Laboratory Units (Lab)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={individualForm.labUnits}
+                      onChange={(e) => {
+                        const cleanLab = e.target.value.replace(/[^0-9.]/g, '');
+                        const numLab = parseFloat(cleanLab) || 0;
+                        const numLec = parseFloat(individualForm.lecUnits || '0') || 0;
+                        const total = numLec + numLab;
+                        const autoLabHours = numLab > 0 ? numLab * 3.0 : 0;
+                        const currentLecHours = numLec > 0 ? (parseFloat(individualForm.lecHours || '0') || (numLec * 1.0)) : 0;
+                        let type = individualForm.type;
+                        if (numLab > 0 && numLec > 0) type = 'both';
+                        else if (numLab > 0 && numLec === 0) type = 'laboratory';
+                        else if (numLec > 0 && numLab === 0) type = 'lecture';
+                        setIndividualForm({
+                          ...individualForm,
+                          labUnits: cleanLab,
+                          units: String(total),
+                          labHours: String(autoLabHours),
+                          totalHours: String(currentLecHours + autoLabHours),
+                          type,
+                        });
+                      }}
+                      placeholder="0"
+                      className="form-input w-full font-bold bg-white text-center text-xs py-1.5"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#2B3235' }}>
-                    Course Type <span className="text-red-500">*</span>
-                  </label>
-                  <CustomSelect
-                    value={individualForm.type}
-                    onChange={(e) => setIndividualForm({ ...individualForm, type: e.target.value })}
-                    options={COURSE_TYPES}
-                    placeholder="Select Course Type"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1" style={{ color: '#2B3235' }}>
+                      Total Units <span className="text-gray-400 font-normal">(Disabled)</span>
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={individualForm.units}
+                      className="form-input w-full font-black bg-gray-100 text-gray-800 cursor-not-allowed text-center text-xs py-1.5 border-dashed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1" style={{ color: '#2B3235' }}>
+                      Course Type <span className="text-red-500">*</span>
+                    </label>
+                    <CustomSelect
+                      size="sm"
+                      value={individualForm.type}
+                      onChange={(e) => setIndividualForm({ ...individualForm, type: e.target.value })}
+                      options={COURSE_TYPES}
+                      placeholder="Select Type"
+                    />
+                  </div>
                 </div>
               </div>
+
+              {/* Section 2: Required Contact Hours (Weekly Duration) - Conditional on Lec/Lab Units */}
+              {(parseFloat(individualForm.lecUnits || '0') > 0 || parseFloat(individualForm.labUnits || '0') > 0) && (
+                <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
+                      2. Required Contact Hours (Weekly Duration)
+                    </span>
+                    <span className="text-[11px] text-amber-800/80 font-medium">
+                      Standard: 1 Lec unit = 1 hr/wk, 1 Lab unit = 3 hrs/wk
+                    </span>
+                  </div>
+
+                  <div className={`grid grid-cols-1 ${
+                    parseFloat(individualForm.lecUnits || '0') > 0 && parseFloat(individualForm.labUnits || '0') > 0
+                      ? 'sm:grid-cols-3'
+                      : 'sm:grid-cols-2'
+                  } gap-3`}>
+                    {/* Only ask for Lec Hours if Lec Units > 0 */}
+                    {parseFloat(individualForm.lecUnits || '0') > 0 && (
+                      <div>
+                        <label className="block text-[11px] font-bold mb-1 text-gray-700">
+                          Lecture Contact Hours / Wk
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={individualForm.lecHours}
+                          onChange={(e) => {
+                            const cleanLecH = e.target.value.replace(/[^0-9.]/g, '');
+                            const numLecH = parseFloat(cleanLecH) || 0;
+                            const numLabH = parseFloat(individualForm.labHours || '0') || 0;
+                            setIndividualForm({
+                              ...individualForm,
+                              lecHours: cleanLecH,
+                              totalHours: String(numLecH + numLabH),
+                            });
+                          }}
+                          placeholder="3"
+                          className="form-input w-full font-bold bg-white text-center text-xs py-1.5"
+                        />
+                      </div>
+                    )}
+
+                    {/* Only ask for Lab Hours if Lab Units > 0 */}
+                    {parseFloat(individualForm.labUnits || '0') > 0 && (
+                      <div>
+                        <label className="block text-[11px] font-bold mb-1 text-gray-700">
+                          Laboratory Contact Hours / Wk
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={individualForm.labHours}
+                          onChange={(e) => {
+                            const cleanLabH = e.target.value.replace(/[^0-9.]/g, '');
+                            const numLabH = parseFloat(cleanLabH) || 0;
+                            const numLecH = parseFloat(individualForm.lecHours || '0') || 0;
+                            setIndividualForm({
+                              ...individualForm,
+                              labHours: cleanLabH,
+                              totalHours: String(numLecH + numLabH),
+                            });
+                          }}
+                          placeholder="3"
+                          className="form-input w-full font-bold bg-white text-center text-xs py-1.5"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[11px] font-bold mb-1 text-gray-700">
+                        Total Weekly Hours <span className="text-gray-400 font-normal">(Disabled)</span>
+                      </label>
+                      <input
+                        type="text"
+                        disabled
+                        readOnly
+                        value={individualForm.totalHours}
+                        className="form-input w-full font-black bg-amber-100/50 text-amber-900 cursor-not-allowed text-center text-xs py-1.5 border-dashed"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4 border-t border-gray-100 font-bold">
                 <button
@@ -595,17 +796,21 @@ export default function AddCourseModal({
                   </div>
 
                   <div className="border border-gray-200 rounded-xl overflow-x-auto overflow-y-auto max-h-72 shadow-2xs">
-                    <table className="w-full text-left text-xs min-w-[840px]">
+                    <table className="w-full text-left text-xs min-w-[980px]">
                       <thead className="bg-gray-100 text-gray-600 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10">
                         <tr>
                           <th className="p-2.5 w-10 text-center">#</th>
-                          <th className="p-2.5 min-w-[110px]">Code</th>
-                          <th className="p-2.5 min-w-[200px]">Title</th>
+                          <th className="p-2.5 min-w-[100px]">Code</th>
+                          <th className="p-2.5 min-w-[180px]">Title</th>
                           <th className="p-2.5 min-w-[110px]">Year Level</th>
                           <th className="p-2.5 min-w-[120px]">Semester</th>
-                          <th className="p-2.5 w-16 text-center">Units</th>
+                          <th className="p-2.5 w-14 text-center">Lec U</th>
+                          <th className="p-2.5 w-14 text-center">Lab U</th>
+                          <th className="p-2.5 w-14 text-center">Total U</th>
+                          <th className="p-2.5 w-16 text-center">Lec Hr</th>
+                          <th className="p-2.5 w-16 text-center">Lab Hr</th>
                           <th className="p-2.5 min-w-[110px]">Type</th>
-                          <th className="p-2.5 min-w-[120px]">Status</th>
+                          <th className="p-2.5 min-w-[110px]">Status</th>
                           <th className="p-2.5 w-10 text-center"></th>
                         </tr>
                       </thead>
@@ -629,7 +834,7 @@ export default function AddCourseModal({
                                 onChange={(e) => updateParsedRow(row.id, 'title', e.target.value)}
                               />
                             </td>
-                            <td className="p-2 min-w-[130px]">
+                            <td className="p-2 min-w-[115px]">
                               <CustomSelect
                                 size="sm"
                                 value={row.yearLevel}
@@ -638,7 +843,7 @@ export default function AddCourseModal({
                                 placeholder="Year Level"
                               />
                             </td>
-                            <td className="p-2 min-w-[140px]">
+                            <td className="p-2 min-w-[125px]">
                               <CustomSelect
                                 size="sm"
                                 value={row.semester}
@@ -647,17 +852,52 @@ export default function AddCourseModal({
                                 placeholder="Semester"
                               />
                             </td>
-                            <td className="p-2 text-center min-w-[70px]">
+                            <td className="p-2 text-center min-w-[55px]">
                               <input
                                 type="text"
                                 inputMode="numeric"
-                                className="form-input bg-white text-xs font-bold text-center py-1 w-16 mx-auto"
-                                value={row.units}
-                                onChange={(e) => updateParsedRow(row.id, 'units', e.target.value.replace(/[^0-9.]/g, ''))}
+                                className="form-input bg-white text-xs font-bold text-center py-1 w-12 mx-auto"
+                                value={row.lecUnits !== undefined ? row.lecUnits : 3}
+                                onChange={(e) => updateParsedRow(row.id, 'lecUnits', e.target.value.replace(/[^0-9.]/g, ''))}
                                 placeholder="3"
                               />
                             </td>
-                            <td className="p-2 min-w-[150px]">
+                            <td className="p-2 text-center min-w-[55px]">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                className="form-input bg-white text-xs font-bold text-center py-1 w-12 mx-auto"
+                                value={row.labUnits !== undefined ? row.labUnits : 0}
+                                onChange={(e) => updateParsedRow(row.id, 'labUnits', e.target.value.replace(/[^0-9.]/g, ''))}
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="p-2 text-center min-w-[55px]">
+                              <span className="font-black text-gray-800 text-xs">
+                                {row.units || 3}
+                              </span>
+                            </td>
+                            <td className="p-2 text-center min-w-[60px]">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                className="form-input bg-white text-xs font-bold text-center py-1 w-12 mx-auto"
+                                value={row.lecHours !== undefined ? row.lecHours : (Number(row.lecUnits || 3) * 1.0)}
+                                onChange={(e) => updateParsedRow(row.id, 'lecHours', e.target.value.replace(/[^0-9.]/g, ''))}
+                                placeholder="3"
+                              />
+                            </td>
+                            <td className="p-2 text-center min-w-[60px]">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                className="form-input bg-white text-xs font-bold text-center py-1 w-12 mx-auto"
+                                value={row.labHours !== undefined ? row.labHours : (Number(row.labUnits || 0) * 3.0)}
+                                onChange={(e) => updateParsedRow(row.id, 'labHours', e.target.value.replace(/[^0-9.]/g, ''))}
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="p-2 min-w-[130px]">
                               <CustomSelect
                                 size="sm"
                                 value={row.type}

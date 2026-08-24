@@ -493,6 +493,7 @@ export default function CourseSchedulingNew() {
       semester,
       scheduleTab, // Pass scheduleMode (regular or exam)
       scheduleTab === 'exam' ? selectedExamPeriod : null, // Pass exam period for filtering
+      activeSchoolYearId, // Filter by active selected school year
       (entries) => {
         setPlotEntries(entries);
         setLoading(false);
@@ -502,7 +503,7 @@ export default function CourseSchedulingNew() {
         setLoading(false);
       }
     );
-  }, [selectedDeanUid, selectedSection, semester, scheduleTab, selectedExamPeriod]);
+  }, [selectedDeanUid, selectedSection, semester, scheduleTab, selectedExamPeriod, activeSchoolYearId]);
 
   // Check if current dean has scheduling access
   const myCollege = isDean ? (profile?.college || profile?.department) : null;
@@ -704,6 +705,8 @@ export default function CourseSchedulingNew() {
       ...payload,
       day: dayIdx,
       semester: Number(semester), // Always store semester for both regular and exam schedules
+      schoolYearId: activeSchoolYearId || null,
+      schoolYear: selectedSchoolYear?.label || selectedSchoolYear?.displayLabel || activeSchoolYearId || null,
       section: selectedSection,
       studentCategory: scheduleTab === 'exam' ? selectedStudentCategory : null, // Store category for exam filtering
       examPeriod: scheduleTab === 'exam' ? selectedExamPeriod : null, // Store exam period (p1, p2, p3, rbe)
@@ -1574,6 +1577,7 @@ export default function CourseSchedulingNew() {
           sections={displayedDeanSections}
           initialSection={selectedSection || ''}
           semester={semester}
+          schoolYearId={activeSchoolYearId}
           sectionYearLevel={currentSectionObj?.yearLevel || '1st Year'}
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
         />
@@ -1620,6 +1624,7 @@ export default function CourseSchedulingNew() {
           initialEndDate={scheduleAccess?.endDate || scheduleAccess?.firstCollege?.endDate || ''}
           initialAssignedRooms={scheduleAccess?.assignedRooms || []}
           onReset={async () => {
+            setShowGrantAccessModal(false);
             const confirmed = await showConfirm({
               title: 'Reset Access Control?',
               message: 'This will remove all granted permissions so you can start fresh. Existing schedules will NOT be deleted.',
@@ -1629,15 +1634,18 @@ export default function CourseSchedulingNew() {
             });
             if (!confirmed) return;
 
+            setIsLoading(true);
+            setLoadingMessage('Resetting access control...');
             try {
               await resetScheduleAccess(activeSchoolYearId, semester);
-              setShowGrantAccessModal(false);
+              setIsLoading(false);
               showNotification({
                 type: 'success',
                 title: 'Access Control Reset',
                 message: 'Schedule access control has been reset. You can now grant access again.',
               });
             } catch (err) {
+              setIsLoading(false);
               showNotification({
                 type: 'error',
                 title: 'Reset Failed',
@@ -1645,15 +1653,28 @@ export default function CourseSchedulingNew() {
               });
             }
           }}
-          onSuccess={() => {
+          onSave={async (payload) => {
             setShowGrantAccessModal(false);
-            showNotification({
-              type: 'success',
-              title: scheduleAccess ? 'Access Updated' : 'Access Granted',
-              message: scheduleAccess
-                ? 'Granted college access updated successfully.'
-                : 'The selected college(s) have been granted scheduling access.',
-            });
+            setIsLoading(true);
+            setLoadingMessage(scheduleAccess ? 'Updating schedule access...' : 'Granting college access...');
+            try {
+              await grantFirstCollegeAccess(payload);
+              setIsLoading(false);
+              showNotification({
+                type: 'success',
+                title: scheduleAccess ? 'Access Updated' : 'Access Granted',
+                message: scheduleAccess
+                  ? 'Granted college access and room allocations have been updated successfully.'
+                  : 'The selected college(s) have been granted scheduling access.',
+              });
+            } catch (err) {
+              setIsLoading(false);
+              showNotification({
+                type: 'error',
+                title: 'Save Failed',
+                message: err.message || 'Failed to save schedule access.',
+              });
+            }
           }}
         />
       )}

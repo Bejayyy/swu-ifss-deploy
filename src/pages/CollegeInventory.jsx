@@ -908,58 +908,86 @@ export default function CollegeInventory() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
+                    <table className="w-full text-left text-xs min-w-[900px]">
                       <thead className="bg-gray-50 text-gray-600 font-bold uppercase tracking-wider text-[10px] border-b border-gray-100">
                         <tr>
                           <th className="p-3.5 w-12 text-center">#</th>
-                          <th className="p-3.5 min-w-[110px]">Course Code</th>
-                          <th className="p-3.5 min-w-[200px]">Course Title</th>
-                          <th className="p-3.5 min-w-[110px]">Program</th>
-                          <th className="p-3.5 min-w-[100px]">Year Level</th>
-                          <th className="p-3.5 min-w-[120px]">Semester</th>
-                          <th className="p-3.5 min-w-[80px]">Units</th>
-                          <th className="p-3.5 min-w-[120px]">Course Type</th>
+                          <th className="p-3.5 min-w-[100px]">Course Code</th>
+                          <th className="p-3.5 min-w-[180px]">Course Title</th>
+                          <th className="p-3.5 min-w-[90px]">Program</th>
+                          <th className="p-3.5 min-w-[90px]">Year Level</th>
+                          <th className="p-3.5 min-w-[110px]">Semester</th>
+                          <th className="p-3.5 min-w-[110px]">Credit Units</th>
+                          <th className="p-3.5 min-w-[110px]">Contact Hours</th>
+                          <th className="p-3.5 min-w-[100px]">Course Type</th>
                           <th className="p-3.5 text-center w-24">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 font-medium">
-                        {paginatedCourses.map((course, idx) => (
-                          <tr key={course.id} className="hover:bg-red-50/20 transition-colors">
-                            <td className="p-3.5 text-center font-bold text-gray-400">
-                              {(courseCurrentPage - 1) * courseItemsPerPage + idx + 1}
-                            </td>
-                            <td className="p-3.5 font-black text-[#7A0808]">
-                              <span className="px-2.5 py-1 bg-red-50 border border-red-100 rounded-lg inline-block">
-                                {course.code}
-                              </span>
-                            </td>
-                            <td className="p-3.5 font-bold text-[#2B3235]">
-                              {course.title}
-                            </td>
-                            <td className="p-3.5 font-bold">
-                              <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-black">
-                                {course.programCode || viewingCollegeCourses.code}
-                              </span>
-                            </td>
-                            <td className="p-3.5 font-bold text-gray-700">
-                              {course.yearLevel || '1st Year'}
-                            </td>
-                            <td className="p-3.5 font-bold text-[#7A0808]">
-                              <span className="px-2.5 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-100 text-[10px]">
-                                {course.semester || '1st Semester'}
-                              </span>
-                            </td>
-                            <td className="p-3.5">
-                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100 font-bold text-[11px]">
-                                {course.units} {course.units === 1 ? 'unit' : 'units'}
-                              </span>
-                            </td>
-                            <td className="p-3.5">
-                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold text-[11px] capitalize">
-                                {course.type}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-center">
+                        {paginatedCourses.map((course, idx) => {
+                          const totalU = course.units || (Number(course.lecUnits || 0) + Number(course.labUnits || 0)) || 3;
+                          const lecU = course.lecUnits !== undefined ? course.lecUnits : (course.type === 'laboratory' ? 0 : totalU);
+                          const labU = course.labUnits !== undefined ? course.labUnits : (course.type === 'laboratory' ? totalU : 0);
+                          const lecH = course.lecHours !== undefined ? Number(course.lecHours) : (Number(lecU) * 1);
+                          const labH = course.labHours !== undefined ? Number(course.labHours) : (Number(labU) * 3);
+                          const totalH = course.totalHours || (lecH + labH);
+
+                          return (
+                            <tr key={course.id} className="hover:bg-red-50/20 transition-colors">
+                              <td className="p-3.5 text-center font-bold text-gray-400">
+                                {(courseCurrentPage - 1) * courseItemsPerPage + idx + 1}
+                              </td>
+                              <td className="p-3.5 font-black text-[#7A0808]">
+                                <span className="px-2.5 py-1 bg-red-50 border border-red-100 rounded-lg inline-block">
+                                  {course.code}
+                                </span>
+                              </td>
+                              <td className="p-3.5 font-bold text-[#2B3235]">
+                                {course.title}
+                              </td>
+                              <td className="p-3.5 font-bold">
+                                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-black">
+                                  {course.programCode || viewingCollegeCourses.code}
+                                </span>
+                              </td>
+                              <td className="p-3.5 font-bold text-gray-700">
+                                {course.yearLevel || '1st Year'}
+                              </td>
+                              <td className="p-3.5 font-bold text-[#7A0808]">
+                                <span className="px-2.5 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-100 text-[10px]">
+                                  {course.semester || '1st Semester'}
+                                </span>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100 font-black text-[11px] inline-block">
+                                    {totalU} {totalU === 1 ? 'unit' : 'units'}
+                                  </span>
+                                  <div className="text-[10px] text-gray-500 font-semibold flex items-center gap-1">
+                                    <span>Lec: {lecU}</span>
+                                    <span>•</span>
+                                    <span>Lab: {labU}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 font-black text-[11px] inline-block">
+                                    {totalH} hrs/wk
+                                  </span>
+                                  <div className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
+                                    <span>Lec: {lecH}h</span>
+                                    <span>•</span>
+                                    <span>Lab: {labH}h</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold text-[11px] capitalize">
+                                  {course.type}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
@@ -980,7 +1008,8 @@ export default function CollegeInventory() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        );
+                      })}
                       </tbody>
                     </table>
                   </div>

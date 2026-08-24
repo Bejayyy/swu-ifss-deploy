@@ -35,7 +35,7 @@ export default function RoomDetails() {
   const { state } = useLocation();
   const { id } = useParams();
   const { buildingList, requests = [] } = useApp();
-  const { calendarData } = useAcademicCalendar();
+  const { calendarData, activeSchoolYearId } = useAcademicCalendar();
 
   let room = state?.room;
   let buildingId = state?.buildingId;
@@ -262,12 +262,13 @@ export default function RoomDetails() {
     const roomCode = displayRoom?.roomCode || displayRoom?.id || displayRoom?.name;
     if (!roomCode) return;
     
-    console.log('[RoomDetails] Subscribing to course schedules for room:', roomCode, { semesterTab, scheduleTab });
+    console.log('[RoomDetails] Subscribing to course schedules for room:', roomCode, { semesterTab, scheduleTab, activeSchoolYearId });
     
     const unsubscribe = subscribeAllPlotEntriesForRoom(
       roomCode,
       semesterTab,
       scheduleTab, // Sync with active scheduleTab ('regular' or 'exam')
+      activeSchoolYearId,
       (schedules) => {
         console.log(`[RoomDetails] Loaded ${schedules.length} course schedules for room ${roomCode}:`, schedules);
         setCourseSchedules(schedules);
@@ -279,7 +280,7 @@ export default function RoomDetails() {
       console.log('[RoomDetails] Unsubscribing from course schedules');
       unsubscribe();
     };
-  }, [displayRoom?.id, displayRoom?.roomCode, displayRoom?.name, semesterTab, scheduleTab]);
+  }, [displayRoom?.id, displayRoom?.roomCode, displayRoom?.name, semesterTab, scheduleTab, activeSchoolYearId]);
 
   // Subscribe to maintenance schedules for this room
   useEffect(() => {

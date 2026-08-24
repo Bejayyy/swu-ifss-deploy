@@ -258,9 +258,14 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   const headers = [
     'Course Code *',
     'Course Title *',
+    'Degree Program (Optional)',
     'Year Level *',
     'Semester *',
-    'Units *',
+    'Lecture Units (Lec)',
+    'Laboratory Units (Lab)',
+    'Total Credit Units (Sum)',
+    'Lec Hours/Wk (Default: Lec x 1)',
+    'Lab Hours/Wk (Default: Lab x 3)',
     'Course Type *',
   ];
 
@@ -268,10 +273,15 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
     [
       'IT101',
       'Programming 1',
+      'BSIT',
       '1st Year',
       '1st Semester',
+      2,
+      1,
       3,
-      'lecture',
+      2,
+      3,
+      'both',
     ],
   ];
 
@@ -281,9 +291,14 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   worksheet['!cols'] = [
     { wch: 16 },
     { wch: 32 },
+    { wch: 24 },
     { wch: 16 },
     { wch: 18 },
-    { wch: 10 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 30 },
+    { wch: 30 },
     { wch: 16 },
   ];
 
@@ -292,14 +307,20 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   const validTypes = ['lecture', 'laboratory', 'both'];
 
   const optionsData = [
-    ['Year Levels', 'Semesters', 'Course Types'],
-    ['1st Year', '1st Semester', 'lecture'],
-    ['2nd Year', '2nd Semester', 'laboratory'],
-    ['3rd Year', 'Summer', 'both'],
-    ['4th Year', '', ''],
-    ['5th Year', '', ''],
+    ['Year Levels', 'Semesters', 'Course Types', 'Template Guidelines / Notes'],
+    ['1st Year', '1st Semester', 'lecture', '• Lecture Units: Academic credit for lecture components.'],
+    ['2nd Year', '2nd Semester', 'laboratory', '• Laboratory Units: Academic credit for laboratory components.'],
+    ['3rd Year', 'Summer', 'both', '• Total Units: Combined credit units (Lec + Lab).'],
+    ['4th Year', '', '', '• Lec Hours/Wk: Weekly contact time (Defaults to 1.0 hr per Lec Unit).'],
+    ['5th Year', '', '', '• Lab Hours/Wk: Weekly contact time (Defaults to 3.0 hrs per Lab Unit).'],
   ];
   const optionsWorksheet = XLSX.utils.aoa_to_sheet(optionsData);
+  optionsWorksheet['!cols'] = [
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 60 },
+  ];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Course Import Template');
@@ -307,7 +328,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
 
   worksheet['!dataValidation'] = [
     {
-      sqref: 'C2:C1000',
+      sqref: 'D2:D1000',
       type: 'list',
       formula1: "'Reference Options'!$A$2:$A$6",
       showErrorMessage: true,
@@ -315,7 +336,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       error: 'Please select a valid Year Level from the dropdown list.',
     },
     {
-      sqref: 'D2:D1000',
+      sqref: 'E2:E1000',
       type: 'list',
       formula1: "'Reference Options'!$B$2:$B$4",
       showErrorMessage: true,
@@ -323,7 +344,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       error: 'Please select a valid Semester from the dropdown list.',
     },
     {
-      sqref: 'F2:F1000',
+      sqref: 'K2:K1000',
       type: 'list',
       formula1: "'Reference Options'!$C$2:$C$4",
       showErrorMessage: true,
@@ -363,10 +384,25 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
 
         // Locate header row
         let headerIndex = -1;
+        let colMap = {};
         for (let i = 0; i < rawRows.length; i++) {
-          const rowStr = rawRows[i].map((c) => String(c).toLowerCase()).join(' ');
-          if (rowStr.includes('course code') || rowStr.includes('course title') || rowStr.includes('units')) {
+          const rowStrings = rawRows[i].map((c) => String(c).toLowerCase());
+          const rowCombined = rowStrings.join(' ');
+          if (rowCombined.includes('course code') || rowCombined.includes('course title') || rowCombined.includes('units') || rowCombined.includes('subject')) {
             headerIndex = i;
+            rowStrings.forEach((colHeader, cIdx) => {
+              if (colHeader.includes('code')) colMap.code = cIdx;
+              else if (colHeader.includes('title') || colHeader.includes('name') || colHeader.includes('desc')) colMap.title = cIdx;
+              else if (colHeader.includes('program') || colHeader.includes('deg')) colMap.program = cIdx;
+              else if (colHeader.includes('year')) colMap.year = cIdx;
+              else if (colHeader.includes('sem')) colMap.sem = cIdx;
+              else if (colHeader.includes('lec') && (colHeader.includes('unit') || colHeader.includes('u')) && !colHeader.includes('hour') && !colHeader.includes('hr') && !colHeader.includes('time')) colMap.lecUnits = cIdx;
+              else if (colHeader.includes('lab') && (colHeader.includes('unit') || colHeader.includes('u')) && !colHeader.includes('hour') && !colHeader.includes('hr') && !colHeader.includes('time')) colMap.labUnits = cIdx;
+              else if ((colHeader.includes('total') && colHeader.includes('unit')) || colHeader === 'units' || colHeader === 'units *') colMap.totalUnits = cIdx;
+              else if (colHeader.includes('lec') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.lecHours = cIdx;
+              else if (colHeader.includes('lab') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.labHours = cIdx;
+              else if (colHeader.includes('type')) colMap.type = cIdx;
+            });
             break;
           }
         }
@@ -380,13 +416,20 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
             return;
           }
 
-          const rawCode = String(row[0] || '').trim().toUpperCase();
-          // Smart Title Case: Capitalizes first letter of each word
-          const rawTitle = toTitleCase(String(row[1] || ''));
-          const rawYear = String(row[2] || '').trim();
-          const rawSem = String(row[3] || '').trim();
-          const rawUnits = Number(row[4]);
-          const rawType = String(row[5] || '').trim();
+          const rawCode = String(colMap.code !== undefined ? row[colMap.code] : row[0] || '').trim().toUpperCase();
+          const rawTitle = toTitleCase(String(colMap.title !== undefined ? row[colMap.title] : row[1] || ''));
+          const rawProgram = String(colMap.program !== undefined ? row[colMap.program] : '').trim().toUpperCase();
+          const rawYear = String(colMap.year !== undefined ? row[colMap.year] : (row[2] || '')).trim();
+          const rawSem = String(colMap.sem !== undefined ? row[colMap.sem] : (row[3] || '')).trim();
+
+          const rawLecU = colMap.lecUnits !== undefined ? Number(row[colMap.lecUnits]) : null;
+          const rawLabU = colMap.labUnits !== undefined ? Number(row[colMap.labUnits]) : null;
+          const rawTotalU = colMap.totalUnits !== undefined ? Number(row[colMap.totalUnits]) : Number(row[4]);
+
+          const rawLecH = colMap.lecHours !== undefined ? Number(row[colMap.lecHours]) : null;
+          const rawLabH = colMap.labHours !== undefined ? Number(row[colMap.labHours]) : null;
+
+          const rawType = String(colMap.type !== undefined ? row[colMap.type] : (row[5] || '')).trim();
 
           // Auto-exclude sample row ("IT101", "Programming 1")
           if (rawCode === 'IT101' && rawTitle.toLowerCase() === 'programming 1') {
@@ -412,20 +455,39 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
           // Smart Normalizers
           const yearLevel = normalizeYearLevel(rawYear);
           const semester = normalizeSemester(rawSem);
-          const type = normalizeCourseType(rawType);
+          let type = normalizeCourseType(rawType);
 
-          let units = isNaN(rawUnits) || rawUnits <= 0 ? 3 : rawUnits;
-          if (isNaN(rawUnits) || rawUnits <= 0) {
-            rowErrors.push('Units must be a positive number');
+          // Units calculation
+          let lecUnits = rawLecU !== null && !isNaN(rawLecU) ? rawLecU : (type === 'laboratory' ? 0 : 3);
+          let labUnits = rawLabU !== null && !isNaN(rawLabU) ? rawLabU : (type === 'laboratory' ? (rawTotalU || 3) : 0);
+
+          if (rawLecU !== null && rawLabU !== null) {
+            if (labUnits > 0 && lecUnits > 0) type = 'both';
+            else if (labUnits > 0) type = 'laboratory';
+            else type = 'lecture';
           }
+
+          let units = !isNaN(rawTotalU) && rawTotalU > 0 ? rawTotalU : (lecUnits + labUnits);
+          if (units <= 0) units = 3;
+
+          // Hours calculation
+          let lecHours = rawLecH !== null && !isNaN(rawLecH) ? rawLecH : (lecUnits * 1.0);
+          let labHours = rawLabH !== null && !isNaN(rawLabH) ? rawLabH : (labUnits * 3.0);
+          let totalHours = lecHours + labHours;
 
           parsedRows.push({
             id: `bulk_crs_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
             code: rawCode,
             title: rawTitle,
+            programCode: rawProgram,
             yearLevel,
             semester,
+            lecUnits,
+            labUnits,
             units,
+            lecHours,
+            labHours,
+            totalHours,
             type,
             isValid: rowErrors.length === 0,
             errors: rowErrors,

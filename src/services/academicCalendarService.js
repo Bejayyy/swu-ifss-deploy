@@ -29,15 +29,102 @@ function noClassRef(schoolYearId) {
 }
 
 export function buildSchoolYearId(label) {
-  return `sy_${(label || '').replace(/\s+/g, '_').toLowerCase()}`;
+  return `sy_${(label || '').replace(/^sy\s+/i, '').replace(/\s+/g, '_').toLowerCase()}`;
+}
+
+/**
+ * Finds an existing school year in Firestore matching a target label (e.g. "2026-2027" or "SY 2026-2027")
+ */
+export async function findExistingSchoolYearByLabel(label) {
+  if (!label) return null;
+  const clean = String(label).replace(/^sy\s+/i, '').replace(/\s+/g, '').toLowerCase();
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.ACADEMIC_CALENDARS));
+    for (const docSnap of snap.docs) {
+      if (docSnap.id === 'school_calendar_pdf') continue;
+      const data = docSnap.data();
+      const docLabel = (data.label || '').replace(/^sy\s+/i, '').replace(/\s+/g, '').toLowerCase();
+      if (docLabel === clean || docSnap.id.toLowerCase() === `sy_${clean}` || docSnap.id.toLowerCase() === `sy_${clean.replace('-', '_')}`) {
+        return { id: docSnap.id, ...data };
+      }
+    }
+  } catch (err) {
+    console.error('Error finding school year by label:', err);
+  }
+  return null;
+}
+
+/**
+ * Fetches summary of existing calendar data for a school year
+ */
+export async function getSchoolYearDataSummary(schoolYearId) {
+  if (!schoolYearId) return { exists: false, eventCount: 0, hasSemesters: false };
+  try {
+    const syDoc = await getDoc(schoolYearRef(schoolYearId));
+    if (!syDoc.exists()) return { exists: false, eventCount: 0, hasSemesters: false };
+    const eventsSnap = await getDocs(calendarEventsRef(schoolYearId));
+    const data = syDoc.data();
+    const hasSemesters = Array.isArray(data.semesters) && data.semesters.some((s) => s.start || s.end);
+    return {
+      exists: true,
+      label: data.label || '',
+      displayLabel: data.displayLabel || (data.label ? `SY ${data.label}` : schoolYearId),
+      eventCount: eventsSnap.size,
+      hasSemesters,
+    };
+  } catch (err) {
+    console.error('Error fetching SY summary:', err);
+    return { exists: false, eventCount: 0, hasSemesters: false };
+  }
 }
 
 export function subscribeSchoolYears(onData, onError) {
-  const q = query(collection(db, COLLECTIONS.ACADEMIC_CALENDARS), orderBy('label'));
+  const colRef = collection(db, COLLECTIONS.ACADEMIC_CALENDARS);
   return onSnapshot(
-    q,
+    colRef,
     (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const list = snap.docs
+        .filter((d) => d.id !== 'school_calendar_pdf' && !d.id.includes('_pdf'))
+        .map((d) => {
+          const data = d.data() || {};
+          const rawLabel = data.label || data.displayLabel || data.name || d.id.replace(/^sy_/i, '').replace(/_/g, '-');
+          const cleanLabel = String(rawLabel).replace(/^sy\s+/i, '');
+          return {
+            id: d.id,
+            label: cleanLabel,
+            displayLabel: data.displayLabel || (cleanLabel.startsWith('SY ') ? cleanLabel : `SY ${cleanLabel}`),
+            ...data,
+          };
+        });
+
+      // Sort chronologically (e.g. 2026-2027 before 2027-2028)
+      list.sort((a, b) => {
+        const getYearNum = (str) => {
+          const m = String(str).match(/(\d{4})/);
+          return m ? parseInt(m[1], 10) : 0;
+        };
+        const yearA = getYearNum(a.label || a.id);
+        const yearB = getYearNum(b.label || b.id);
+        if (yearA && yearB && yearA !== yearB) return yearA - yearB;
+        return (a.label || a.id).localeCompare(b.label || b.id);
+      });
+
+      // Auto-restore default SY 2026-2027 if not present in collection
+      const has2026 = list.some((sy) => sy.id.includes('2026') || (sy.label && sy.label.includes('2026')));
+      if (!has2026) {
+        saveSchoolYearConfig('sy_2026-2027', {
+          label: '2026-2027',
+          semester1Start: '2026-07-06',
+          semester1End: '2026-11-07',
+          semester2Start: '2026-11-16',
+          semester2End: '2027-04-10',
+          semesters: [
+            { id: 'sem_1', name: 'Semester 1', start: '2026-07-06', end: '2026-11-07' },
+            { id: 'sem_2', name: 'Semester 2', start: '2026-11-16', end: '2027-04-10' },
+          ],
+        }).catch((err) => console.error('Error restoring default SY 2026-2027:', err));
+      }
+
       onData(list);
     },
     onError,
@@ -115,7 +202,7 @@ export async function saveSchoolYearConfig(schoolYearId, {
   const formattedSemesters = Array.isArray(semesters)
     ? semesters.map((s, idx) => ({
         id: s.id || `sem_${idx + 1}`,
-        name: (s.name || '').trim() || `Semester ${idx + 1}`,
+        name: (s.name || '').trim() || (idx === 2 ? 'Summer' : `Semester ${idx + 1}`),
         start: s.start || '',
         end: s.end || '',
       }))
@@ -146,6 +233,50 @@ export async function saveSchoolYearConfig(schoolYearId, {
   if (!snap.data()?.examPeriods) {
     await updateDoc(schoolYearRef(schoolYearId), { examPeriods: EMPTY_EXAM_PERIODS });
   }
+}
+
+/**
+ * Permanently delete a school year and all its subcollections and access control documents
+ */
+export async function deleteSchoolYear(schoolYearId) {
+  if (!schoolYearId || schoolYearId === 'school_calendar_pdf') return;
+
+  const batch = writeBatch(db);
+
+  // 1. Delete events
+  try {
+    const eventsSnap = await getDocs(calendarEventsRef(schoolYearId));
+    eventsSnap.forEach((d) => batch.delete(d.ref));
+  } catch (e) {
+    console.warn('Error reading events to delete:', e);
+  }
+
+  // 2. Delete holidays
+  try {
+    const holidaysSnap = await getDocs(holidaysRef(schoolYearId));
+    holidaysSnap.forEach((d) => batch.delete(d.ref));
+  } catch (e) {
+    console.warn('Error reading holidays to delete:', e);
+  }
+
+  // 3. Delete no_class_periods
+  try {
+    const noClassSnap = await getDocs(noClassRef(schoolYearId));
+    noClassSnap.forEach((d) => batch.delete(d.ref));
+  } catch (e) {
+    console.warn('Error reading no class periods to delete:', e);
+  }
+
+  // 4. Delete access control documents for standard semesters
+  for (let sem = 1; sem <= 4; sem++) {
+    const accDoc = doc(db, 'schedule_access_control', `${schoolYearId}_sem${sem}`);
+    batch.delete(accDoc);
+  }
+
+  // 5. Delete parent school year document
+  batch.delete(schoolYearRef(schoolYearId));
+
+  await batch.commit();
 }
 
 export async function addHoliday(schoolYearId, { date, name, desc }) {
@@ -387,21 +518,34 @@ export async function deleteCalendarEvent(schoolYearId, eventId) {
 
 /**
  * Apply AI-parsed calendar data to Firestore:
- * - Upserts school year configuration (semesters, label)
- * - Updates exam period date ranges if detected
+ * - Upserts school year configuration (semesters, label) to the exact matching doc
+ * - Updates exam period date ranges
+ * - If clearExisting is true, wipes old events and previous duplicate entries cleanly
  * - Batches all parsed events, holidays, and no-class records
  */
-export async function applyAiParsedCalendar(schoolYearId, parsedData, options = {}) {
-  const { clearExisting = false } = options;
+export async function applyAiParsedCalendar(targetSchoolYearId, parsedData, options = {}) {
+  const { clearExisting = true } = options;
+
+  // Resolve correct school year document ID
+  let syId = targetSchoolYearId;
+  if (!syId && parsedData.schoolYear) {
+    const existing = await findExistingSchoolYearByLabel(parsedData.schoolYear);
+    syId = existing ? existing.id : buildSchoolYearId(parsedData.schoolYear);
+  }
+
+  if (!syId) {
+    syId = buildSchoolYearId(parsedData.schoolYear || '2026-2027');
+  }
+
   const batch = writeBatch(db);
 
   // 1. Update School Year Configuration & Semesters
-  const syDocRef = schoolYearRef(schoolYearId);
+  const syDocRef = schoolYearRef(syId);
   const sySnap = await getDoc(syDocRef);
   const existingSy = sySnap.exists() ? sySnap.data() : {};
 
-  const label = parsedData.schoolYear || existingSy.label || '2026-2027';
-  const displayLabel = label.startsWith('SY ') ? label : `SY ${label}`;
+  const label = (parsedData.schoolYear || existingSy.label || '2026-2027').replace(/^sy\s+/i, '').trim();
+  const displayLabel = `SY ${label}`;
 
   const semestersToSave = Array.isArray(parsedData.semesters) && parsedData.semesters.length > 0
     ? parsedData.semesters.map((s, idx) => ({
@@ -436,17 +580,27 @@ export async function applyAiParsedCalendar(schoolYearId, parsedData, options = 
 
   batch.set(syDocRef, syUpdates, { merge: true });
 
-  // 2. Clear existing events if requested
+  // 2. Clear existing events & previous AI holidays if requested (avoids doubling)
   if (clearExisting) {
-    const existingEventsSnap = await getDocs(calendarEventsRef(schoolYearId));
-    existingEventsSnap.forEach((d) => batch.delete(d.ref));
+    try {
+      const existingEventsSnap = await getDocs(calendarEventsRef(syId));
+      existingEventsSnap.forEach((d) => batch.delete(d.ref));
+
+      const existingHolidaysSnap = await getDocs(holidaysRef(syId));
+      existingHolidaysSnap.forEach((d) => {
+        // Clear all holidays or AI-scanned holidays
+        batch.delete(d.ref);
+      });
+    } catch (clearErr) {
+      console.warn('Notice when clearing previous events:', clearErr);
+    }
   }
 
   // 3. Batch Save All Events
   if (Array.isArray(parsedData.events)) {
     for (const ev of parsedData.events) {
       if (!ev.title || !ev.startDate) continue;
-      const evRef = doc(calendarEventsRef(schoolYearId));
+      const evRef = doc(calendarEventsRef(syId));
       batch.set(evRef, {
         title: (ev.title || '').trim(),
         startDate: ev.startDate || '',
@@ -461,7 +615,7 @@ export async function applyAiParsedCalendar(schoolYearId, parsedData, options = 
 
       // If it's a holiday, also sync to holidays collection
       if (ev.category === 'holiday' || ev.isNoClass) {
-        const holRef = doc(holidaysRef(schoolYearId));
+        const holRef = doc(holidaysRef(syId));
         batch.set(holRef, {
           date: ev.startDate,
           endDate: ev.endDate || ev.startDate,
@@ -477,6 +631,5 @@ export async function applyAiParsedCalendar(schoolYearId, parsedData, options = 
   }
 
   await batch.commit();
-  return { success: true, count: parsedData.events?.length || 0 };
+  return { success: true, schoolYearId: syId, count: parsedData.events?.length || 0 };
 }
-

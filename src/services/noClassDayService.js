@@ -57,7 +57,7 @@ export async function fetchApprovedReservationsByDate(date) {
  * @param {object}   registrar   { uid, displayName, email }
  * @param {array}    reservations  Pre-fetched approved reservations for this date
  */
-export async function declareNoClassDay(date, reason, registrar, reservations = []) {
+export async function declareNoClassDay(date, reason, registrar, reservations = [], schoolYearId = null) {
   if (!date || !reason) throw new Error('Date and reason are required.');
 
   const affectedIds = reservations.map((r) => r.id);
@@ -66,6 +66,7 @@ export async function declareNoClassDay(date, reason, registrar, reservations = 
   const ncdRef = await addDoc(noClassDaysCollection(), {
     date,
     reason: reason.trim(),
+    schoolYearId: schoolYearId || null,
     declaredBy: registrar.uid || null,
     declaredByName: registrar.displayName || registrar.email || 'Registrar',
     affectedReservationCount: affectedIds.length,
@@ -133,18 +134,36 @@ export async function declareNoClassDay(date, reason, registrar, reservations = 
 
 // ─── Subscribe to No Class Days history ─────────────────────────────────
 
-export function subscribeNoClassDays(onData, onError) {
+export function subscribeNoClassDays(schoolYearIdOrOnData, onDataOrOnError, possibleOnError) {
+  let schoolYearId = null;
+  let onData = schoolYearIdOrOnData;
+  let onError = onDataOrOnError;
+
+  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
+    if (typeof onDataOrOnError === 'function') {
+      schoolYearId = schoolYearIdOrOnData;
+      onData = onDataOrOnError;
+      onError = possibleOnError;
+    }
+  }
+
   const q = query(noClassDaysCollection());
   return onSnapshot(
     q,
     (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      if (schoolYearId) {
+        items = items.filter((item) => {
+          if (item.schoolYearId) return item.schoolYearId === schoolYearId;
+          return schoolYearId.includes('2026') || schoolYearId === 'sy_2026-2027';
+        });
+      }
       items.sort((a, b) => {
         const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
         const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
         return bTime - aTime;
       });
-      onData(items);
+      if (onData) onData(items);
     },
     (err) => {
       console.warn('subscribeNoClassDays listener warning:', err);

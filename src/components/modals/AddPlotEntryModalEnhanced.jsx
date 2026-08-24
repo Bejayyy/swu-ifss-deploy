@@ -16,12 +16,15 @@ import {
   Eye,
   Check,
   GraduationCap,
+  ArrowRight,
+  Pencil,
 } from 'lucide-react';
 import {
   parseTimeToHour,
   validateScheduleHours,
   hourToTimeInput,
   subscribeDeanSections,
+  subscribePlotEntriesForDeanSection,
 } from '../../services/plotScheduleService';
 import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
@@ -32,6 +35,92 @@ import RoomScheduleViewer from '../scheduling/RoomScheduleViewer';
 import CustomSelect from '../ui/CustomSelect';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
+
+export const DAY_PAIR_PRESETS = [
+  { label: 'Mon & Thu', days: [0, 3] },
+  { label: 'Tue & Fri', days: [1, 4] },
+  { label: 'Wed & Sat', days: [2, 5] },
+  { label: 'Mon & Tue', days: [0, 1] },
+  { label: 'Mon, Wed & Fri', days: [0, 2, 4] },
+  { label: 'Single Day', days: [0] },
+];
+
+/**
+ * Calculates lecture and lab unit breakdown and required contact hours for a course
+ */
+export function getCourseUnitBreakdown(course) {
+  if (!course) {
+    return {
+      numLec: 3,
+      numLab: 0,
+      totalUnits: 3,
+      courseType: 'lecture',
+      isLecOnly: true,
+      isLabOnly: false,
+      isCombined: false,
+      targetLecHours: 3.0,
+      targetLabHours: 0,
+      targetHoursForType: () => 3.0,
+    };
+  }
+
+  const rawLec = course.lecUnits !== undefined && course.lecUnits !== null && course.lecUnits !== '' ? Number(course.lecUnits) : null;
+  const rawLab = course.labUnits !== undefined && course.labUnits !== null && course.labUnits !== '' ? Number(course.labUnits) : null;
+  const rawUnits = Number(course.units) || 0;
+  const typeStr = String(course.type || '').toLowerCase();
+
+  let numLec = 0;
+  let numLab = 0;
+
+  if (rawLec !== null && !isNaN(rawLec)) {
+    numLec = rawLec;
+  } else if (typeStr === 'laboratory') {
+    numLec = 0;
+  } else {
+    numLec = rawUnits > 0 ? rawUnits : 3;
+  }
+
+  if (rawLab !== null && !isNaN(rawLab)) {
+    numLab = rawLab;
+  } else if (typeStr === 'laboratory') {
+    numLab = rawUnits > 0 ? rawUnits : 3;
+  } else {
+    numLab = 0;
+  }
+
+  const totalUnits = rawUnits > 0 ? rawUnits : (numLec + numLab);
+  const isLecOnly = numLec > 0 && numLab === 0;
+  const isLabOnly = numLab > 0 && numLec === 0;
+  const isCombined = numLec > 0 && numLab > 0;
+
+  const courseType = isCombined ? 'both' : (isLabOnly ? 'laboratory' : 'lecture');
+
+  // Contact hours: Use explicit course.lecHours / course.labHours if configured, otherwise standard ratio (1 Lec unit = 1.0 hr/wk, 1 Lab unit = 3.0 hr/wk)
+  const targetLecHours = course.lecHours !== undefined && course.lecHours !== null && course.lecHours !== ''
+    ? Number(course.lecHours)
+    : numLec * 1.0;
+  const targetLabHours = course.labHours !== undefined && course.labHours !== null && course.labHours !== ''
+    ? Number(course.labHours)
+    : (numLab > 0 ? numLab * 3.0 : (typeStr === 'laboratory' ? (rawUnits > 0 ? rawUnits * 3.0 : 3.0) : 0));
+
+  const targetHoursForType = (type) => {
+    const isLab = String(type || '').toLowerCase().includes('lab');
+    return isLab ? (targetLabHours || (numLab > 0 ? numLab * 3.0 : 3.0)) : (targetLecHours || (numLec > 0 ? numLec * 1.0 : 1.0));
+  };
+
+  return {
+    numLec,
+    numLab,
+    totalUnits,
+    courseType,
+    isLecOnly,
+    isLabOnly,
+    isCombined,
+    targetLecHours,
+    targetLabHours,
+    targetHoursForType,
+  };
+}
 
 // Helper function to match room type with selected class type
 function matchesRoomType(roomTypeRaw, selectedType) {
@@ -78,16 +167,27 @@ export default function AddPlotEntryModalEnhanced({
   sections = [],
   initialSection = '',
   skipTypeStep = false,
+  schoolYearId = null,
 }) {
   // Multi-step form state
-  const [step, setStep] = useState(1); // 1: Course, 2: Teacher, 3: Type, 4: Building & Room, 5: Summary
+  const [step, setStep] = useState(1); // 1: Course, 3: Type, 4: Building & Room, 2: Teacher (optional), 5: Summary
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Year level and section filters
-  const [activeYearLevel, setActiveYearLevel] = useState(sectionYearLevel || 'All');
   const [deanSections, setDeanSections] = useState(sections || []);
   const [selectedSection, setSelectedSection] = useState(initialSection || (sections?.[0]?.name || ''));
+  const [sectionPlotEntries, setSectionPlotEntries] = useState([]); // Live plot entries of selectedSection
+  const [viewScheduleCourse, setViewScheduleCourse] = useState(null); // Preview modal for Eye button
+
+  // Active section object and automatic year level (fixed to selected section)
+  const currentSectionObj = useMemo(() => {
+    return deanSections.find((s) => s.name === selectedSection);
+  }, [deanSections, selectedSection]);
+
+  const activeYearLevel = useMemo(() => {
+    return currentSectionObj?.yearLevel || sectionYearLevel || '1st Year';
+  }, [currentSectionObj, sectionYearLevel]);
 
   // Data loading states
   const [courses, setCourses] = useState([]);
@@ -102,6 +202,8 @@ export default function AddPlotEntryModalEnhanced({
   const [buildingSearch, setBuildingSearch] = useState('');
 
   // Form data
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState(null);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [selectedType, setSelectedType] = useState(() => {
@@ -112,10 +214,19 @@ export default function AddPlotEntryModalEnhanced({
   const [selectedBuilding, setSelectedBuilding] = useState(initialBuilding || null);
   const [selectedRoom, setSelectedRoom] = useState(initialRoom || null);
   const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
-  const [startTime, setStartTime] = useState(fromDrag || initial?.title ? initial?.startTime : null);
-  const [endTime, setEndTime] = useState(fromDrag || initial?.title ? initial?.endTime : null);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex !== undefined ? dayIndex : 0); // Track which day user selected
+  
+  // Multi-day and time state
+  const [selectedDays, setSelectedDays] = useState(() => {
+    if (fromDrag && dayIndex !== undefined && dayIndex >= 0 && dayIndex <= 6) return [dayIndex];
+    return []; // Start clean - no pre-selected day
+  });
+  const [timeMode, setTimeMode] = useState('combined'); // 'combined' | 'individual'
+  const [combinedStartTime, setCombinedStartTime] = useState(fromDrag && initial?.startTime ? initial.startTime : '');
+  const [combinedEndTime, setCombinedEndTime] = useState(fromDrag && initial?.endTime ? initial.endTime : '');
+  const [dayTimes, setDayTimes] = useState({}); // { [dayIndex]: { startTime, endTime } }
   const [roomConflicts, setRoomConflicts] = useState([]); // Track conflicting schedules for selected room/day/time
+  const [completedTypes, setCompletedTypes] = useState([]); // Tracks saved components (e.g. ['Laboratory']) for combined courses
+  const [transitionBanner, setTransitionBanner] = useState(null); // Notice after saving first part of combined course
 
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
@@ -123,6 +234,7 @@ export default function AddPlotEntryModalEnhanced({
   // Refs to ensure pre-selection only runs once on mount
   const initializedBuildingRef = useRef(false);
   const initializedRoomRef = useRef(false);
+  const initializedCourseRef = useRef(false);
 
   // Subscribe to staff teachers for fallback if course isn't pre-assigned
   useEffect(() => {
@@ -144,14 +256,29 @@ export default function AddPlotEntryModalEnhanced({
         setDeanSections(secs);
         if (!selectedSection && secs.length > 0) {
           setSelectedSection(secs[0].name);
-          if (secs[0].yearLevel && (!sectionYearLevel || sectionYearLevel === '1st Year')) {
-            setActiveYearLevel(secs[0].yearLevel);
-          }
         }
       },
       (err) => console.error('Error loading dean sections:', err)
     );
   }, [deanUid, sections]);
+
+  // Subscribe to section plot entries in current semester & scheduleMode
+  useEffect(() => {
+    if (!deanUid || !selectedSection) {
+      setSectionPlotEntries([]);
+      return undefined;
+    }
+    return subscribePlotEntriesForDeanSection(
+      deanUid,
+      selectedSection,
+      semester,
+      scheduleMode,
+      null,
+      schoolYearId,
+      (entries) => setSectionPlotEntries(entries),
+      (err) => console.warn('Error loading section plot entries:', err)
+    );
+  }, [deanUid, selectedSection, semester, scheduleMode, schoolYearId]);
 
   // Subscribe to courses for the Dean's college
   useEffect(() => {
@@ -218,6 +345,25 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [deanCollege, semester, activeYearLevel, programCode, selectedSection, deanSections]);
 
+  // Pre-select course and enter edit mode if initial course is passed on mount
+  useEffect(() => {
+    if (initializedCourseRef.current) return;
+    if (!courses || courses.length === 0) return;
+
+    if (initial?.courseCode || initial?.title) {
+      const cCode = String(initial.courseCode || initial.title || '').trim().toUpperCase();
+      const match = courses.find(
+        (c) =>
+          String(c.code || '').trim().toUpperCase() === cCode ||
+          String(c.title || '').trim().toUpperCase() === cCode
+      );
+      if (match) {
+        initializedCourseRef.current = true;
+        startEditingCourse(match, initial);
+      }
+    }
+  }, [courses, initial]);
+
   // Subscribe to buildings
   useEffect(() => {
     setLoadingBuildings(true);
@@ -233,16 +379,126 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, []);
 
-  // Filtered courses by search query
+  // Calculates plotted hours and schedule status for a course in the current section
+  const getCourseScheduleStatus = (course) => {
+    if (!course) {
+      return {
+        plottedLecHours: 0,
+        plottedLabHours: 0,
+        totalPlottedHours: 0,
+        targetLec: 0,
+        targetLab: 0,
+        targetTotal: 0,
+        lecDone: false,
+        labDone: false,
+        isFullyPlotted: false,
+        isPartiallyPlotted: false,
+        matchingEntries: [],
+        remainingType: null,
+      };
+    }
+
+    const cu = getCourseUnitBreakdown(course);
+    const codeNorm = String(course.code || '').trim().toUpperCase();
+    const titleNorm = String(course.title || '').trim().toUpperCase();
+
+    const matchingEntries = (sectionPlotEntries || []).filter((e) => {
+      const eCode = String(e.courseCode || '').trim().toUpperCase();
+      const eTitle = String(e.title || '').trim().toUpperCase();
+      return (codeNorm && eCode === codeNorm) || (titleNorm && eTitle === titleNorm);
+    });
+
+    let plottedLecHours = 0;
+    let plottedLabHours = 0;
+
+    matchingEntries.forEach((e) => {
+      const sH = e.startHour ?? parseTimeToHour(e.startTime || '08:00');
+      const eH = e.endHour ?? parseTimeToHour(e.endTime || '09:00');
+      const duration = Math.max(0, eH - sH);
+      const eType = String(e.type || '').toLowerCase();
+      if (eType.includes('lab')) {
+        plottedLabHours += duration;
+      } else {
+        plottedLecHours += duration;
+      }
+    });
+
+    plottedLecHours = Math.round(plottedLecHours * 10) / 10;
+    plottedLabHours = Math.round(plottedLabHours * 10) / 10;
+    const totalPlottedHours = Math.round((plottedLecHours + plottedLabHours) * 10) / 10;
+
+    const targetLec = cu.targetLecHours || 0;
+    const targetLab = cu.targetLabHours || 0;
+    const targetTotal = Math.round((targetLec + targetLab) * 10) / 10;
+
+    let isFullyPlotted = false;
+    let isPartiallyPlotted = false;
+    let remainingType = null;
+
+    if (cu.isCombined) {
+      const lecDone = targetLec > 0 ? plottedLecHours >= targetLec : true;
+      const labDone = targetLab > 0 ? plottedLabHours >= targetLab : true;
+      isFullyPlotted = (plottedLecHours >= targetLec) && (plottedLabHours >= targetLab);
+      isPartiallyPlotted = (plottedLecHours > 0 || plottedLabHours > 0) && !isFullyPlotted;
+      if (isPartiallyPlotted) {
+        remainingType = plottedLabHours < targetLab ? 'Laboratory' : 'Lecture';
+      }
+    } else if (cu.isLabOnly) {
+      isFullyPlotted = targetLab > 0 ? plottedLabHours >= targetLab : plottedLabHours > 0;
+      isPartiallyPlotted = plottedLabHours > 0 && !isFullyPlotted;
+      remainingType = 'Laboratory';
+    } else {
+      isFullyPlotted = targetLec > 0 ? plottedLecHours >= targetLec : plottedLecHours > 0;
+      isPartiallyPlotted = plottedLecHours > 0 && !isFullyPlotted;
+      remainingType = 'Lecture';
+    }
+
+    return {
+      plottedLecHours,
+      plottedLabHours,
+      totalPlottedHours,
+      targetLec,
+      targetLab,
+      targetTotal,
+      lecDone: targetLec > 0 ? plottedLecHours >= targetLec : true,
+      labDone: targetLab > 0 ? plottedLabHours >= targetLab : true,
+      isFullyPlotted,
+      isPartiallyPlotted,
+      matchingEntries,
+      remainingType,
+    };
+  };
+
+  // Filtered and sorted courses:
+  // 1. Filter by search query
+  // 2. Sort so available / incomplete courses are at the top, and fully plotted courses are at the bottom
   const displayedCourses = useMemo(() => {
-    if (!courseSearch.trim()) return courses;
-    const q = courseSearch.toLowerCase().trim();
-    return courses.filter(
-      (c) =>
-        (c.code && c.code.toLowerCase().includes(q)) ||
-        (c.title && c.title.toLowerCase().includes(q))
-    );
-  }, [courses, courseSearch]);
+    let list = courses;
+    if (courseSearch.trim()) {
+      const q = courseSearch.toLowerCase().trim();
+      list = list.filter(
+        (c) =>
+          (c.code && c.code.toLowerCase().includes(q)) ||
+          (c.title && c.title.toLowerCase().includes(q))
+      );
+    }
+
+    return [...list].sort((a, b) => {
+      const aStatus = getCourseScheduleStatus(a);
+      const bStatus = getCourseScheduleStatus(b);
+
+      // Incomplete courses first (0), Fully plotted courses at the bottom (1)
+      if (aStatus.isFullyPlotted !== bStatus.isFullyPlotted) {
+        return aStatus.isFullyPlotted ? 1 : -1;
+      }
+      // Partially plotted courses above completely unplotted
+      if (aStatus.isPartiallyPlotted !== bStatus.isPartiallyPlotted) {
+        return aStatus.isPartiallyPlotted ? -1 : 1;
+      }
+      // Natural order by course code
+      return (a.code || '').localeCompare(b.code || '');
+    });
+  }, [courses, courseSearch, sectionPlotEntries]);
 
   // Get teachers for selected course
   const availableTeachers = useMemo(() => {
@@ -465,22 +721,37 @@ export default function AddPlotEntryModalEnhanced({
     }));
   };
 
-  const isTypeSkipped = skipTypeStep || Boolean(initialRoom || initialRoomCode);
+  const courseUnits = useMemo(() => getCourseUnitBreakdown(selectedCourse), [selectedCourse]);
 
+  const availableTypes = useMemo(() => {
+    if (!selectedCourse) return COURSE_TYPES;
+    const cu = getCourseUnitBreakdown(selectedCourse);
+    if (cu.isCombined) return ['Lecture', 'Laboratory'];
+    if (cu.isLabOnly) return ['Laboratory'];
+    return ['Lecture'];
+  }, [selectedCourse]);
+
+  const isTypeSkipped = useMemo(() => {
+    if (skipTypeStep || Boolean(initialRoom || initialRoomCode)) return true;
+    if (!selectedCourse) return false;
+    return courseUnits.isLecOnly || courseUnits.isLabOnly;
+  }, [skipTypeStep, initialRoom, initialRoomCode, selectedCourse, courseUnits]);
+
+  // Step Configuration
   const stepConfig = useMemo(() => {
     if (isTypeSkipped) {
       return [
         { id: 1, title: 'Select Course' },
-        { id: 2, title: 'Select Teacher' },
         { id: 4, title: 'Select Building & Room' },
+        { id: 2, title: 'Select Teacher' },
         { id: 5, title: 'Summary' },
       ];
     }
     return [
       { id: 1, title: 'Select Course' },
-      { id: 2, title: 'Select Teacher' },
       { id: 3, title: 'Select Type' },
       { id: 4, title: 'Select Building & Room' },
+      { id: 2, title: 'Select Teacher' },
       { id: 5, title: 'Summary' },
     ];
   }, [isTypeSkipped]);
@@ -493,39 +764,313 @@ export default function AddPlotEntryModalEnhanced({
   const totalSteps = stepConfig.length;
   const currentStepTitle = stepConfig[currentStepIndex]?.title || '';
 
+  // Calculate day slots with startHour, endHour, and duration
+  const selectedDaySlots = useMemo(() => {
+    if (!selectedDays || selectedDays.length === 0) return [];
+
+    if (timeMode === 'combined') {
+      if (!combinedStartTime || !combinedEndTime) return [];
+      const sHour = parseTimeToHour(combinedStartTime);
+      const eHour = parseTimeToHour(combinedEndTime);
+      if (eHour <= sHour) return [];
+      const duration = Math.max(0, eHour - sHour);
+
+      return selectedDays.map((d) => ({
+        day: d,
+        dayName: SCHEDULE_DAYS[d],
+        startTime: combinedStartTime,
+        endTime: combinedEndTime,
+        startHour: sHour,
+        endHour: eHour,
+        duration: Math.round(duration * 10) / 10,
+      }));
+    } else {
+      const slots = [];
+      selectedDays.forEach((d) => {
+        const sTime = dayTimes[d]?.startTime || combinedStartTime;
+        const eTime = dayTimes[d]?.endTime || combinedEndTime;
+        if (sTime && eTime) {
+          const sHour = parseTimeToHour(sTime);
+          const eHour = parseTimeToHour(eTime);
+          if (eHour > sHour) {
+            slots.push({
+              day: d,
+              dayName: SCHEDULE_DAYS[d],
+              startTime: sTime,
+              endTime: eTime,
+              startHour: sHour,
+              endHour: eHour,
+              duration: Math.round((eHour - sHour) * 10) / 10,
+            });
+          }
+        }
+      });
+      return slots;
+    }
+  }, [selectedDays, timeMode, combinedStartTime, combinedEndTime, dayTimes]);
+
+  const totalPlottedHours = useMemo(() => {
+    return Math.round(selectedDaySlots.reduce((acc, slot) => acc + slot.duration, 0) * 10) / 10;
+  }, [selectedDaySlots]);
+
+  const targetHours = useMemo(() => {
+    return courseUnits.targetHoursForType(selectedType);
+  }, [courseUnits, selectedType]);
+
+  const otherType = useMemo(() => {
+    if (!courseUnits?.isCombined) return null;
+    if (selectedType === 'Laboratory') return 'Lecture';
+    if (selectedType === 'Lecture') return 'Laboratory';
+    return null;
+  }, [courseUnits, selectedType]);
+
+  const isOtherTypePending = useMemo(() => {
+    return Boolean(otherType && !completedTypes.includes(otherType));
+  }, [otherType, completedTypes]);
+
+  const hoursStatus = useMemo(() => {
+    if (selectedDaySlots.length === 0) {
+      return {
+        type: 'empty',
+        message: '👉 Please select schedule day(s) and start/end time above, or click & drag on the room schedule grid below.',
+        badge: 'No Time Set',
+        color: 'gray',
+      };
+    }
+
+    const roundedPlotted = totalPlottedHours;
+    const roundedTarget = Math.round(targetHours * 10) / 10;
+    const diff = Math.round(Math.abs(roundedPlotted - roundedTarget) * 10) / 10;
+
+    if (roundedPlotted === roundedTarget) {
+      return {
+        type: 'match',
+        message: `✓ Perfect: Exactly ${roundedPlotted} hrs plotted matches the required ${roundedTarget} hrs for ${selectedCourse?.code || 'this course'} (${selectedType}).`,
+        badge: 'Exact Match',
+        color: 'emerald',
+      };
+    } else if (roundedPlotted > roundedTarget) {
+      return {
+        type: 'exceed',
+        message: `⚠️ Notice: Plotted time (${roundedPlotted} hrs) exceeds the required ${roundedTarget} hrs for this course by ${diff} hr(s). You can still proceed if intended.`,
+        badge: `+${diff} hrs over`,
+        color: 'amber',
+      };
+    } else {
+      return {
+        type: 'lack',
+        message: `ℹ️ Notice: Plotted time (${roundedPlotted} hrs) is less than the required ${roundedTarget} hrs (${diff} hr(s) remaining). You can still proceed or plot another day block later.`,
+        badge: `-${diff} hrs remaining`,
+        color: 'blue',
+      };
+    }
+  }, [selectedDaySlots, totalPlottedHours, targetHours, selectedCourse, selectedType]);
+
+  // Allows freely clicking between any steps in the stepper header
+  const handleStepClick = (targetStepId) => {
+    setError('');
+    if (targetStepId === 1) {
+      setStep(1);
+      return;
+    }
+    if (!selectedCourse) {
+      setError('Please select a course first before moving to other steps.');
+      return;
+    }
+    setStep(targetStepId);
+  };
+
+  // Helper to switch type and automatically load existing schedule configuration (Building, Room, Time, Days, Instructor) for that type
+  const handleTypeSelect = (type, targetCourse = selectedCourse, specificEntry = null) => {
+    setSelectedType(type);
+    const courseToInspect = targetCourse || selectedCourse;
+    if (!courseToInspect) return;
+
+    setRoomConflicts([]);
+
+    const status = getCourseScheduleStatus(courseToInspect);
+    const typeEntries = specificEntry
+      ? [specificEntry]
+      : (status.matchingEntries || []).filter((e) => {
+          const isLab = String(e.type || '').toLowerCase().includes('lab');
+          return type === 'Laboratory' ? isLab : !isLab;
+        });
+
+    if (typeEntries.length > 0) {
+      const primaryEntry = typeEntries[0];
+      setEditingEntryId(primaryEntry.id || null);
+
+      // Pre-fill building if available
+      if (primaryEntry.buildingId || primaryEntry.buildingName) {
+        const b = buildings.find(
+          (bld) =>
+            bld.id === primaryEntry.buildingId ||
+            bld.name === primaryEntry.buildingName ||
+            bld.code === primaryEntry.buildingName
+        );
+        if (b) {
+          setSelectedBuilding(b);
+        } else if (primaryEntry.buildingName) {
+          setSelectedBuilding({ name: primaryEntry.buildingName, code: primaryEntry.buildingName, id: primaryEntry.buildingId });
+        }
+      }
+
+      // Pre-fill room if available
+      if (primaryEntry.roomCode) {
+        setSelectedRoom({
+          roomCode: primaryEntry.roomCode,
+          name: primaryEntry.roomCode,
+          id: primaryEntry.roomCode,
+          type: primaryEntry.type,
+        });
+      }
+
+      // Pre-fill all scheduled days for this component
+      const days = Array.from(
+        new Set(
+          typeEntries
+            .map((e) => Number(e.day))
+            .filter((d) => !isNaN(d) && d >= 0 && d <= 6)
+        )
+      );
+      setSelectedDays(days.length > 0 ? days : (primaryEntry.day !== undefined ? [Number(primaryEntry.day)] : []));
+
+      // Pre-fill start and end time from existing entry
+      if (primaryEntry.startHour !== undefined && primaryEntry.endHour !== undefined) {
+        setCombinedStartTime(hourToTimeInput(primaryEntry.startHour));
+        setCombinedEndTime(hourToTimeInput(primaryEntry.endHour));
+      } else if (primaryEntry.startTime && primaryEntry.endTime) {
+        setCombinedStartTime(primaryEntry.startTime);
+        setCombinedEndTime(primaryEntry.endTime);
+      }
+
+      // Pre-fill individual dayTimes if slots vary
+      const dTimes = {};
+      typeEntries.forEach((e) => {
+        if (e.day !== undefined) {
+          const sT = e.startHour !== undefined ? hourToTimeInput(e.startHour) : (e.startTime || '');
+          const eT = e.endHour !== undefined ? hourToTimeInput(e.endHour) : (e.endTime || '');
+          if (sT && eT) {
+            dTimes[e.day] = { startTime: sT, endTime: eT };
+          }
+        }
+      });
+      setDayTimes(dTimes);
+
+      // Pre-fill teacher if assigned
+      if (primaryEntry.instructor && primaryEntry.instructor !== 'TBA') {
+        setSelectedTeacher({
+          uid: primaryEntry.instructorUid || null,
+          name: primaryEntry.instructor,
+          email: primaryEntry.instructorEmail || '',
+        });
+      } else {
+        setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+      }
+    } else {
+      // If no entries plotted for this type yet, start fresh
+      setEditingEntryId(null);
+      setSelectedBuilding(null);
+      setSelectedRoom(null);
+      setSelectedDays([]);
+      setCombinedStartTime('');
+      setCombinedEndTime('');
+      setDayTimes({});
+    }
+  };
+
+  // Initiates editing mode for a course and directly transitions into configuring schedule
+  const startEditingCourse = (course, targetEntry = null) => {
+    setError('');
+    setIsEditMode(true);
+    setSelectedCourse(course);
+    setRoomConflicts([]);
+
+    const cu = getCourseUnitBreakdown(course);
+    const status = getCourseScheduleStatus(course);
+
+    let initialTypeToUse = 'Lecture';
+    if (targetEntry) {
+      initialTypeToUse = targetEntry.type || (cu.isLabOnly ? 'Laboratory' : 'Lecture');
+    } else if (status.isPartiallyPlotted && status.remainingType) {
+      initialTypeToUse = status.remainingType;
+    } else if (cu.isLabOnly) {
+      initialTypeToUse = 'Laboratory';
+    } else {
+      initialTypeToUse = 'Lecture';
+    }
+
+    handleTypeSelect(initialTypeToUse, course, targetEntry);
+    setViewScheduleCourse(null);
+
+    // Direct jump: If combined course without specific entry, open Type step (3), otherwise Building & Room (4)
+    if (cu.isCombined && !targetEntry) {
+      setStep(3);
+    } else {
+      setStep(4);
+    }
+  };
+
   const handleNext = () => {
     setError('');
 
-    if (step === 1 && !selectedCourse) {
-      setError('Please select a course');
-      return;
+    if (step === 1) {
+      if (!selectedCourse) {
+        setError('Please select a course to continue.');
+        return;
+      }
+      // Auto-set type if course is lecture-only or lab-only
+      const cu = getCourseUnitBreakdown(selectedCourse);
+      if (cu.isLecOnly) {
+        setSelectedType('Lecture');
+      } else if (cu.isLabOnly) {
+        setSelectedType('Laboratory');
+      }
     }
-    if (step === 2 && !selectedTeacher) {
-      setError('Please select a teacher');
-      return;
-    }
+
     if (step === 3 && !selectedType) {
-      setError('Please select a type');
+      setError('Please select a course type.');
       return;
     }
-    if (step === 4 && !selectedBuilding) {
-      setError('Please select a building');
-      return;
+
+    if (step === 4) {
+      if (!selectedBuilding) {
+        setError('Please select a building.');
+        return;
+      }
+      if (!selectedRoom) {
+        setError('Please select a room from the left floor list.');
+        return;
+      }
+      if (!selectedDays || selectedDays.length === 0) {
+        setError('Please select at least one day (e.g., Monday, or Mon & Thu).');
+        return;
+      }
+      if (selectedDaySlots.length === 0) {
+        setError('Please select valid start and end times for all selected days.');
+        return;
+      }
+      // Check each day slot has valid time
+      for (const slot of selectedDaySlots) {
+        const timeCheck = validateScheduleHours(slot.startHour, slot.endHour);
+        if (!timeCheck.valid) {
+          setError(`${slot.dayName}: ${timeCheck.message}`);
+          return;
+        }
+      }
+      if (roomConflicts.length > 0) {
+        const firstConflict = roomConflicts[0];
+        const conflictTypeLabel = firstConflict.conflictType === 'section' ? 'Section Conflict' : 'Room Conflict';
+        setError(`⚠️ ${conflictTypeLabel}: ${firstConflict.message || 'Time conflict detected.'} Please choose a different time slot or room.`);
+        return;
+      }
     }
-    if (step === 4 && !selectedRoom) {
-      setError('Please select a room from the left floor panel');
-      return;
-    }
-    if (step === 4 && (!startTime || !endTime)) {
-      setError('Please click or drag on the room schedule grid to set your schedule time & day.');
-      return;
-    }
-    if (step === 4 && roomConflicts.length > 0) {
-      const conflictSummary = roomConflicts
-        .map((c) => `${c.course || c.title}${c.instructor ? ` (${c.instructor})` : ''} [${formatScheduleHour(c.start)} – ${formatScheduleHour(c.end)}]`)
-        .join(', ');
-      setError(`⚠️ Time Conflict: Room ${selectedRoom.roomCode || selectedRoom.name} is already occupied during this time (${conflictSummary}). Please choose an available time slot or another room.`);
-      return;
+
+    if (step === 2) {
+      // Step 2 is teacher selection (Optional): default to TBA if none selected
+      if (!selectedTeacher) {
+        setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+      }
     }
 
     const nextStepObj = stepConfig[currentStepIndex + 1];
@@ -542,7 +1087,7 @@ export default function AddPlotEntryModalEnhanced({
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (continueToOther = false) => {
     setError('');
 
     if (dayBlockReason) {
@@ -550,74 +1095,76 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
-    if (!selectedCourse || !selectedTeacher || !selectedType || !selectedBuilding || !selectedRoom) {
-      setError('Please complete all steps');
+    if (!selectedCourse || !selectedBuilding || !selectedRoom || selectedDaySlots.length === 0) {
+      setError('Please complete all schedule details.');
       return;
     }
 
     if (roomConflicts.length > 0) {
-      setError('Cannot save schedule: Room conflict detected. Please select an available time slot or room.');
+      setError('Cannot save schedule: Schedule conflict detected. Please select an available time slot or room.');
       return;
     }
 
-    const startHour = parseTimeToHour(startTime);
-    const endHour = parseTimeToHour(endTime);
-    const timeCheck = validateScheduleHours(startHour, endHour);
-    if (!timeCheck.valid) {
-      setError(timeCheck.message);
-      return;
-    }
-
-    // Convert selectedDayIndex to day name (scheduleMode = 'regular')
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const dayLabels = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-    const finalDate = scheduleMode === 'regular' ? dayNames[selectedDayIndex] : date;
-    const finalDayLabel = scheduleMode === 'regular' ? dayLabels[selectedDayIndex] : dayLabel;
 
     setSaving(true);
     try {
-      console.log(
-        'Modal: About to save with selectedDayIndex:',
-        selectedDayIndex,
-        'date:',
-        finalDate,
-        'dayLabel:',
-        finalDayLabel
-      );
-      await onSave({
-        date: finalDate,
-        day: selectedDayIndex,
-        dayLabel: finalDayLabel,
-        title: selectedCourse.title,
-        courseCode: selectedCourse.code,
-        instructor: selectedTeacher.name,
-        type: selectedType,
-        startHour: timeCheck.startHour,
-        endHour: timeCheck.endHour,
-        roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
-        buildingId: selectedBuilding?.id || selectedBuilding?.docId,
-        buildingName: selectedBuilding?.name,
-        section: selectedSection || 'Section 1',
-        yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
-        scheduleMode,
-        semester,
-      });
-      console.log('Modal: Save completed, closing modal');
-      onClose();
+      // Save schedule blocks for each plotted day
+      for (const slot of selectedDaySlots) {
+        const finalDate = scheduleMode === 'regular' ? dayNames[slot.day] : date;
+        const finalDayLabel = scheduleMode === 'regular' ? dayLabels[slot.day] : dayLabel;
+
+        await onSave({
+          date: finalDate,
+          day: slot.day,
+          dayLabel: finalDayLabel,
+          title: selectedCourse.title,
+          courseCode: selectedCourse.code,
+          instructor: selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? selectedTeacher.name : 'TBA',
+          instructorUid: selectedTeacher?.uid || null,
+          instructorEmail: selectedTeacher?.email || null,
+          type: selectedType,
+          startHour: slot.startHour,
+          endHour: slot.endHour,
+          roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
+          buildingId: selectedBuilding?.id || selectedBuilding?.docId,
+          buildingName: selectedBuilding?.name,
+          section: selectedSection || 'Section 1',
+          yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
+          scheduleMode,
+          semester,
+        });
+      }
+
+      if (continueToOther && otherType) {
+        const justSavedType = selectedType;
+        const nextTargetType = otherType;
+        setCompletedTypes((prev) => [...prev, justSavedType]);
+        setSelectedType(nextTargetType);
+        setSelectedBuilding(null);
+        setSelectedRoom(null);
+        setSelectedDays([]);
+        setCombinedStartTime('');
+        setCombinedEndTime('');
+        setDayTimes({});
+        setRoomConflicts([]);
+        setTransitionBanner({
+          prevType: justSavedType,
+          nextType: nextTargetType,
+          courseCode: selectedCourse.code,
+        });
+        setStep(4); // Move directly to Building & Room selection for next component
+        setSaving(false);
+      } else {
+        onClose();
+      }
     } catch (err) {
       console.error('Modal: Save error:', err);
-      setError(err.message || 'Failed to save schedule block.');
+      setError(err.message || 'Failed to save schedule block(s).');
       setSaving(false);
     }
   };
-
-  const stepTitles = [
-    'Select Course',
-    'Select Teacher',
-    'Select Type',
-    'Select Building & Room',
-    'Summary',
-  ];
 
   const semesterDisplay =
     semester === '1' || semester?.includes('1')
@@ -639,11 +1186,21 @@ export default function AddPlotEntryModalEnhanced({
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="font-black text-xl" style={{ color: '#7A0808' }}>
-                Add Schedule Block ({scheduleMode === 'exam' ? 'Exam Mode' : 'Regular Class'})
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-black text-xl" style={{ color: '#7A0808' }}>
+                  {isEditMode && selectedCourse
+                    ? `Edit Schedule: ${selectedCourse.code}`
+                    : `Add Schedule Block (${scheduleMode === 'exam' ? 'Exam Mode' : 'Regular Class'})`}
+                </h2>
+                {isEditMode && (
+                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wider">
+                    Edit Mode
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-500 mt-1">
                 Step {currentStepIndex + 1} of {totalSteps}: {currentStepTitle}
+                {isEditMode && ' • Click any step in the stepper to jump directly'}
               </p>
             </div>
             <button
@@ -655,42 +1212,53 @@ export default function AddPlotEntryModalEnhanced({
             </button>
           </div>
 
-          {/* Stepper Progress */}
-          <div className="flex items-center justify-between">
+          {/* Stepper Progress with Direct Step Navigation */}
+          <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1">
             {stepConfig.map((s, idx) => {
               const stepNumber = idx + 1;
               const isCurrent = step === s.id;
               const isDone = currentStepIndex > idx;
+              const isClickable = Boolean(selectedCourse || s.id === 1);
 
               return (
                 <React.Fragment key={s.id}>
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleStepClick(s.id)}
+                    disabled={!isClickable}
+                    className={`flex items-center gap-2 transition-all text-left p-1 rounded-xl group ${
+                      isClickable
+                        ? 'cursor-pointer hover:bg-gray-100/80 active:scale-95'
+                        : 'opacity-50 cursor-not-allowed'
+                    }`}
+                    title={isClickable ? `Jump to Step ${stepNumber}: ${s.title}` : 'Select a course first'}
+                  >
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
                         isDone
-                          ? 'bg-[#7A0808] text-white'
+                          ? 'bg-[#7A0808] text-white shadow-2xs group-hover:scale-105'
                           : isCurrent
-                          ? 'bg-red-100 text-[#7A0808] border-2 border-[#7A0808]'
-                          : 'bg-gray-100 text-gray-400'
+                          ? 'bg-red-100 text-[#7A0808] border-2 border-[#7A0808] shadow-xs group-hover:scale-105'
+                          : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
                       }`}
                     >
                       {stepNumber}
                     </div>
                     <span
-                      className={`text-xs font-bold hidden sm:inline ${
+                      className={`text-xs font-bold hidden sm:inline transition-colors ${
                         isCurrent
                           ? 'text-[#7A0808]'
                           : isDone
-                          ? 'text-gray-700'
+                          ? 'text-gray-800'
                           : 'text-gray-400'
                       }`}
                     >
                       {s.title}
                     </span>
-                  </div>
+                  </button>
                   {stepNumber < totalSteps && (
                     <div
-                      className={`flex-1 h-0.5 mx-2 ${
+                      className={`flex-1 h-0.5 mx-2 min-w-[12px] ${
                         currentStepIndex > idx ? 'bg-[#7A0808]' : 'bg-gray-200'
                       }`}
                     />
@@ -719,7 +1287,7 @@ export default function AddPlotEntryModalEnhanced({
           {/* Step 1: Select Course with Tile Subtitle & Search */}
           {step === 1 && (
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                 <div>
                   <div className="flex items-center gap-2">
                     <BookOpen size={20} className="text-[#7A0808]" />
@@ -727,9 +1295,9 @@ export default function AddPlotEntryModalEnhanced({
                       Select a Course
                     </h3>
                   </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <p className="text-xs font-semibold text-[#7A0808] bg-red-50/80 px-3 py-1.5 rounded-xl border border-red-200/80 inline-block shadow-2xs">
-                      Courses for {activeYearLevel === 'All' ? 'All Years' : activeYearLevel} ({semesterDisplay})
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <p className="text-xs font-bold text-[#7A0808] bg-red-50/80 px-3 py-1.5 rounded-xl border border-red-200/80 inline-flex items-center gap-1.5 shadow-2xs">
+                      <span>Courses for {activeYearLevel} ({semesterDisplay})</span>
                     </p>
                     {deanSections.length > 0 && (
                       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 min-w-[170px]">
@@ -739,8 +1307,6 @@ export default function AddPlotEntryModalEnhanced({
                           value={selectedSection}
                           onChange={(e) => {
                             setSelectedSection(e.target.value);
-                            const sec = deanSections.find(s => s.name === e.target.value);
-                            if (sec?.yearLevel) setActiveYearLevel(sec.yearLevel);
                           }}
                           options={deanSections.map((s) => ({
                             value: s.name,
@@ -762,27 +1328,11 @@ export default function AddPlotEntryModalEnhanced({
                   )}
                 </div>
 
-                <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-                  {displayedCourses.length} course(s) available
-                </span>
-              </div>
-
-              {/* Year Level Filter Tabs */}
-              <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                {['All', '1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'].map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => setActiveYearLevel(lvl)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-                      activeYearLevel === lvl
-                        ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    {lvl === 'All' ? 'All Year Levels' : lvl}
-                  </button>
-                ))}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-xl">
+                    {displayedCourses.length} course(s) available
+                  </span>
+                </div>
               </div>
 
               {/* Quick Search Bar */}
@@ -799,7 +1349,7 @@ export default function AddPlotEntryModalEnhanced({
                   <button
                     type="button"
                     onClick={() => setCourseSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
                   >
                     <X size={14} />
                   </button>
@@ -816,7 +1366,7 @@ export default function AddPlotEntryModalEnhanced({
                   <p className="text-sm font-semibold text-gray-400">
                     {courseSearch
                       ? `No courses matching "${courseSearch}"`
-                      : `No courses found for ${sectionYearLevel || '1st Year'} (${semesterDisplay})`}
+                      : `No courses found for ${activeYearLevel} (${semesterDisplay})`}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {courseSearch
@@ -826,39 +1376,203 @@ export default function AddPlotEntryModalEnhanced({
                 </div>
               ) : (
                 /* Compact Grid Layout for Courses */
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {displayedCourses.map((course) => {
                     const isSelected = selectedCourse?.id === course.id;
+                    const cu = getCourseUnitBreakdown(course);
+                    const status = getCourseScheduleStatus(course);
 
+                    // 1. FULLY PLOTTED / COMPLETED COURSE CARD
+                    if (status.isFullyPlotted) {
+                      return (
+                        <div
+                          key={course.id}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            isSelected
+                              ? 'border-[#7A0808] bg-red-50/90 shadow-xs'
+                              : 'border-gray-200 bg-gray-50/60 hover:bg-gray-100/70 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-black text-xs text-[#7A0808] truncate">{course.code}</span>
+                              <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-200/80 flex items-center gap-1 flex-shrink-0">
+                                <CheckCircle2 size={11} className="text-[#7A0808]" /> Fully Scheduled
+                              </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {/* Eye / View Details Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewScheduleCourse({ course, status, entries: status.matchingEntries });
+                                }}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-[#7A0808] hover:bg-red-50 transition-colors cursor-pointer"
+                                title="View scheduled time, room, and teacher"
+                              >
+                                <Eye size={14} />
+                              </button>
+
+                              {/* Edit Schedule Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEditingCourse(course);
+                                }}
+                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#7A0808] hover:bg-[#9B1B1B] text-white flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                                title="Edit and re-configure schedule for this course"
+                              >
+                                <Pencil size={11} /> Edit
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-xs font-semibold text-gray-800 truncate mb-1.5">{course.title}</p>
+
+                          {/* Plotted Hours Breakdown */}
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] pt-1.5 border-t border-gray-200/80">
+                            {cu.isCombined ? (
+                              <>
+                                <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-900 font-bold border border-blue-200">
+                                  ✓ Lec: {status.plottedLecHours}/{status.targetLec}h
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 font-bold border border-emerald-200">
+                                  ✓ Lab: {status.plottedLabHours}/{status.targetLab}h
+                                </span>
+                              </>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 font-bold border border-gray-200">
+                                ✓ {status.totalPlottedHours}/{status.targetTotal || status.totalPlottedHours}h Plotted
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold text-gray-500 ml-auto">
+                              {status.matchingEntries.length} block(s)
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 2. PARTIALLY PLOTTED COURSE CARD
+                    if (status.isPartiallyPlotted) {
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCourse(course);
+                            if (status.remainingType) {
+                              setSelectedType(status.remainingType);
+                            } else if (cu.isLecOnly) {
+                              setSelectedType('Lecture');
+                            } else if (cu.isLabOnly) {
+                              setSelectedType('Laboratory');
+                            } else {
+                              setSelectedType('Lecture');
+                            }
+                            setSelectedTeacher(null);
+                          }}
+                          className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-[#7A0808] bg-red-50/90 shadow-2xs'
+                              : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-black text-xs text-[#7A0808] truncate">{course.code}</span>
+                              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex-shrink-0">
+                                ⚠️ 1 of 2 Parts Plotted
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 flex-shrink-0">
+                              LEC + LAB
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-semibold text-gray-900 truncate mb-1.5">{course.title}</p>
+
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] pt-1 border-t border-amber-100">
+                            {status.lecDone ? (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold border border-emerald-200">
+                                ✓ Lec ({status.plottedLecHours}h) Done
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-200">
+                                ⏳ Lec: {status.plottedLecHours}/{status.targetLec}h Remaining
+                              </span>
+                            )}
+                            {status.labDone ? (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold border border-emerald-200">
+                                ✓ Lab ({status.plottedLabHours}h) Done
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-200">
+                                ⏳ Lab: {status.plottedLabHours}/{status.targetLab}h Remaining
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    }
+
+                    // 3. UNPLOTTED / AVAILABLE COURSE CARD
                     return (
                       <button
                         key={course.id}
                         type="button"
                         onClick={() => {
                           setSelectedCourse(course);
+                          if (cu.isLecOnly) {
+                            setSelectedType('Lecture');
+                          } else if (cu.isLabOnly) {
+                            setSelectedType('Laboratory');
+                          } else {
+                            setSelectedType('Lecture');
+                          }
                           setSelectedTeacher(null); // Reset teacher when course changes
                         }}
-                        className={`text-left px-3.5 py-2.5 rounded-xl border transition-all ${
+                        className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
                           isSelected
-                            ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                            ? 'border-[#7A0808] bg-red-50/90 shadow-2xs'
                             : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
                           <span className="font-black text-xs text-[#7A0808]">{course.code}</span>
                           <span
                             className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
-                              course.type === 'lecture'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                                : course.type === 'laboratory'
-                                ? 'bg-green-50 text-green-700 border border-green-100'
-                                : 'bg-purple-50 text-purple-700 border border-purple-100'
+                              cu.isLabOnly
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : cu.isCombined
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
                           >
-                            {course.type?.toUpperCase()}
+                            {cu.isLabOnly ? 'LAB ONLY' : cu.isCombined ? 'LEC + LAB' : 'LECTURE'}
                           </span>
                         </div>
-                        <p className="text-xs font-semibold text-gray-900 truncate">{course.title}</p>
+                        <p className="text-xs font-semibold text-gray-900 truncate mb-1.5">{course.title}</p>
+                        
+                        {/* Units & Contact Hours Breakdown */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          {cu.numLec > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold border border-blue-100">
+                              {cu.numLec} Lec Unit{cu.numLec > 1 ? 's' : ''} ({cu.targetLecHours}h/wk)
+                            </span>
+                          )}
+                          {cu.numLab > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold border border-emerald-100">
+                              {cu.numLab} Lab Unit{cu.numLab > 1 ? 's' : ''} ({cu.targetLabHours}h/wk)
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold ml-auto">
+                            {cu.totalUnits} Units Total
+                          </span>
+                        </div>
                       </button>
                     );
                   })}
@@ -867,21 +1581,42 @@ export default function AddPlotEntryModalEnhanced({
             </div>
           )}
 
-          {/* Step 2: Select Teacher with Compact List & Search */}
+          {/* Step 2: Select Teacher with Compact List & Search (Optional) */}
           {step === 2 && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <User size={20} className="text-[#7A0808]" />
-                  <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
-                    Select Teacher / Instructor
-                  </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <User size={20} className="text-[#7A0808]" />
+                    <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
+                      Select Teacher / Instructor
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                      Optional
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Assign a faculty member now or skip to leave as TBA (To Be Assigned).
+                  </p>
                 </div>
-                {selectedCourse && (
-                  <span className="text-xs font-bold text-blue-900 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
-                    Course: {selectedCourse.code}
-                  </span>
-                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+                      handleNext();
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-gray-300 hover:bg-gray-100 text-xs font-bold text-gray-700 transition-colors cursor-pointer"
+                  >
+                    Skip / Assign Later (TBA) →
+                  </button>
+                  {selectedCourse && (
+                    <span className="text-xs font-bold text-blue-900 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
+                      {selectedCourse.code}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Quick Teacher Search Bar */}
@@ -905,90 +1640,149 @@ export default function AddPlotEntryModalEnhanced({
                 )}
               </div>
 
-              {displayedTeachers.length === 0 ? (
-                <div className="text-center py-8">
-                  <User size={44} className="mx-auto mb-3 text-gray-300" />
-                  <p className="text-sm font-semibold text-gray-400">
-                    {teacherSearch ? `No teachers matching "${teacherSearch}"` : 'No teacher available for this course'}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {displayedTeachers.map((teacher) => {
-                    const isSelected = selectedTeacher?.uid === teacher.uid;
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {/* Default TBA Option Card */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' })}
+                  className={`text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                    selectedTeacher?.name === 'TBA (To Be Assigned)'
+                      ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                      : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-200 text-gray-700 font-black text-xs flex-shrink-0">
+                      ?
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs text-gray-900 truncate">TBA (To Be Assigned)</p>
+                      <p className="text-[10px] text-gray-500 truncate">No faculty member assigned yet</p>
+                    </div>
+                  </div>
+                </button>
 
-                    return (
-                      <button
-                        key={teacher.uid}
-                        type="button"
-                        onClick={() => setSelectedTeacher(teacher)}
-                        className={`text-left px-3.5 py-2.5 rounded-xl border transition-all ${
-                          isSelected
-                            ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
-                            : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-                            style={{ background: '#7A0808' }}
-                          >
-                            {teacher.name?.charAt(0)?.toUpperCase() || 'T'}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
-                            <p className="text-[10px] text-gray-500 truncate">{teacher.email}</p>
-                          </div>
+                {displayedTeachers.map((teacher) => {
+                  const isSelected = selectedTeacher?.uid === teacher.uid;
+                  const isPreAssigned = selectedCourse?.assignedTeacherUid === teacher.uid;
+
+                  return (
+                    <button
+                      key={teacher.uid}
+                      type="button"
+                      onClick={() => setSelectedTeacher(teacher)}
+                      className={`text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                          : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
+                          style={{ background: '#7A0808' }}
+                        >
+                          {teacher.name?.charAt(0)?.toUpperCase() || 'T'}
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
+                            {isPreAssigned && (
+                              <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                Assigned
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-500 truncate">{teacher.email}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* Step 3: Select Type */}
+          {/* Step 3: Select Type (Only displayed for combined courses) */}
           {step === 3 && (
             <div>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-2">
                 <Clock size={20} className="text-[#7A0808]" />
                 <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
-                  Select Course Type
+                  Select Course Type to Schedule
                 </h3>
               </div>
+              <p className="text-xs text-gray-500 mb-4">
+                This course contains both Lecture and Laboratory components. Select which session you are currently plotting.
+              </p>
 
-              <div className="grid grid-cols-2 gap-4">
-                {COURSE_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => {
-                      setSelectedType(type);
-                      setSelectedBuilding(null); // Reset building when class type changes
-                      setSelectedRoom(null); // Reset room when class type changes
-                    }}
-                    className={`p-6 rounded-xl border-2 transition-all text-center ${
-                      selectedType === type
-                        ? 'border-[#7A0808] bg-red-50'
-                        : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
-                    }`}
-                  >
-                    <p className="font-black text-lg text-[#7A0808] mb-1">{type}</p>
-                    <p className="text-xs text-gray-500">
-                      {type === 'Lecture'
-                        ? 'Regular classroom lecture session'
-                        : 'Laboratory / practical hands-on session'}
-                    </p>
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {availableTypes.map((type) => {
+                  const isLab = type === 'Laboratory';
+                  const reqUnits = isLab ? courseUnits.numLab : courseUnits.numLec;
+                  const reqHours = isLab ? courseUnits.targetLabHours : courseUnits.targetLecHours;
+                  const isSelected = selectedType === type;
+
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleTypeSelect(type)}
+                      className={`p-6 rounded-2xl border-2 transition-all text-left cursor-pointer ${
+                        isSelected
+                          ? 'border-[#7A0808] bg-red-50/80 shadow-md ring-2 ring-[#7A0808]/20'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-black text-lg text-[#7A0808]">{type}</span>
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-gray-700 shadow-2xs">
+                          {reqUnits} Unit{reqUnits > 1 ? 's' : ''} • {reqHours} hrs/week
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-3">
+                        {type === 'Lecture'
+                          ? 'Standard lecture room or theoretical session.'
+                          : 'Specialized lab or practical hands-on room.'}
+                      </p>
+                      <div className="text-[11px] font-semibold text-[#7A0808]">
+                        Required Weekly Duration: <span className="font-black">{reqHours} Hours / Week</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* Step 4: Select Building & Room with 30/70 Split View */}
+          {/* Step 4: Select Building & Room with 30/70 Split View & Multi-Day Controls */}
           {step === 4 && (
-            <div>
+            <div className="space-y-4">
+              {transitionBanner && (
+                <div className="p-3.5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center flex-shrink-0">
+                      ✓
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-emerald-950">
+                        {transitionBanner.prevType} Schedule Saved for {transitionBanner.courseCode}!
+                      </p>
+                      <p className="text-[11px] font-medium text-emerald-800">
+                        Now select the building, room, and time for the <span className="font-extrabold underline">{transitionBanner.nextType}</span> component ({targetHours} hrs/week required). The {transitionBanner.prevType} block you plotted is now marked on the schedule grid below.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTransitionBanner(null)}
+                    className="text-xs font-bold text-emerald-800 hover:text-emerald-950 px-2.5 py-1 rounded-lg bg-emerald-100/80 hover:bg-emerald-200 transition-colors flex-shrink-0 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
               {!selectedBuilding ? (
                 /* Initial Building Selection (Small Compact Cards + Search + Type Filter Info) */
                 <div>
@@ -1062,7 +1856,7 @@ export default function AddPlotEntryModalEnhanced({
                             setSelectedBuilding(building);
                             setSelectedRoom(null); // Reset room when building changes
                           }}
-                          className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#7A0808] hover:bg-red-50/50 transition-all shadow-2xs group"
+                          className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#7A0808] hover:bg-red-50/50 transition-all shadow-2xs group cursor-pointer"
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <span className="font-black text-sm text-[#7A0808] truncate group-hover:text-[#600000]">
@@ -1092,7 +1886,7 @@ export default function AddPlotEntryModalEnhanced({
                           setSelectedBuilding(null);
                           setSelectedRoom(null);
                         }}
-                        className="text-xs font-bold text-[#7A0808] hover:underline flex items-center gap-1 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200"
+                        className="text-xs font-bold text-[#7A0808] hover:underline flex items-center gap-1 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 cursor-pointer"
                       >
                         <ChevronLeft size={14} /> Change Building
                       </button>
@@ -1131,7 +1925,6 @@ export default function AddPlotEntryModalEnhanced({
                             const floorNum = floorData.floorNumber;
                             const isOpen = openFloors[floorNum] !== false; // Open by default
 
-                            // Format floor title cleanly (e.g. "1st Floor", "2nd Floor")
                             const getFloorTitle = () => {
                               const rawLabel = (floorData.label || '').trim();
                               const fNum = Number(floorNum) || 1;
@@ -1150,7 +1943,7 @@ export default function AddPlotEntryModalEnhanced({
                                 <button
                                   type="button"
                                   onClick={() => toggleFloor(floorNum)}
-                                  className="w-full px-3.5 py-2.5 bg-gray-50 hover:bg-gray-100/80 text-left flex items-center justify-between font-bold text-xs text-gray-800 transition-colors border-b border-gray-100"
+                                  className="w-full px-3.5 py-2.5 bg-gray-50 hover:bg-gray-100/80 text-left flex items-center justify-between font-bold text-xs text-gray-800 transition-colors border-b border-gray-100 cursor-pointer"
                                 >
                                   <span className="font-bold text-xs text-gray-900">{getFloorTitle()}</span>
                                   <div className="flex items-center gap-2">
@@ -1199,26 +1992,26 @@ export default function AddPlotEntryModalEnhanced({
                                               </p>
                                               <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
                                             </div>
-                                             <div className="flex items-center gap-1.5">
-                                               <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-                                                 Cap: {room.capacity}
-                                               </span>
-                                               <button
-                                                 type="button"
-                                                 title="View Room Details"
-                                                 onClick={(e) => {
-                                                   e.stopPropagation();
-                                                   setViewDetailsRoom({
-                                                     ...room,
-                                                     buildingName: selectedBuilding?.name || selectedBuilding?.code || 'Building',
-                                                     floorName: floorData.name,
-                                                   });
-                                                 }}
-                                                 className="p-1 rounded-md text-gray-400 hover:text-[#7A0808] hover:bg-red-100/60 transition-colors cursor-pointer"
-                                               >
-                                                 <Eye size={13} />
-                                               </button>
-                                             </div>
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
+                                                Cap: {room.capacity}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                title="View Room Details"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setViewDetailsRoom({
+                                                    ...room,
+                                                    buildingName: selectedBuilding?.name || selectedBuilding?.code || 'Building',
+                                                    floorName: floorData.name,
+                                                  });
+                                                }}
+                                                className="p-1 rounded-md text-gray-400 hover:text-[#7A0808] hover:bg-red-100/60 transition-colors cursor-pointer"
+                                              >
+                                                <Eye size={13} />
+                                              </button>
+                                            </div>
                                           </div>
                                         );
                                       })
@@ -1232,127 +2025,331 @@ export default function AddPlotEntryModalEnhanced({
                       )}
                     </div>
 
-                    {/* RIGHT PANEL (70% Width): Interactive Room Schedule Grid */}
-                    <div className="w-full lg:w-[70%] border-l border-gray-200 pl-0 lg:pl-6 flex flex-col">
-                      <div className="mb-3">
-                        <h4 className="font-bold text-sm text-gray-900 mb-0.5">
-                          Weekly Schedule Grid Overview
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          {selectedRoom
-                            ? `Showing current weekly schedule occupancy for Room ${selectedRoom.roomCode}`
-                            : 'Select a room from the left floor list to view its live schedule grid'}
-                        </p>
-                      </div>
-
+                    {/* RIGHT PANEL (70% Width): Multi-Day Controls & Interactive Room Grid */}
+                    <div className="w-full lg:w-[70%] border-l border-gray-200 pl-0 lg:pl-6 flex flex-col space-y-3">
                       {selectedRoom ? (
-                        <div className="flex-1 bg-white rounded-xl space-y-3">
-                          {/* Live Interactive Time & Day Control Bar */}
-                          <div className="p-3 bg-red-50/60 border border-red-200/80 rounded-xl space-y-2.5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-black text-[#7A0808] flex items-center gap-1.5">
-                                <Clock size={14} /> Selected Schedule Time & Day:
-                              </span>
-                              {startTime && endTime && selectedDayIndex !== undefined ? (
-                                <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#7A0808] text-white shadow-2xs">
-                                  {SCHEDULE_DAYS[selectedDayIndex]} {formatScheduleHour(parseTimeToHour(startTime))} – {formatScheduleHour(parseTimeToHour(endTime))} ({Math.round(Math.max(0, parseTimeToHour(endTime) - parseTimeToHour(startTime)) * 10) / 10} hrs)
+                        <>
+                          {/* Top Bar: Course Target Hours & Multi-Day Controls */}
+                          <div className="p-3.5 bg-gradient-to-r from-red-50/70 to-amber-50/40 border border-red-200/80 rounded-2xl space-y-3">
+                            {/* Course Target Info */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-200/60 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-xs text-[#7A0808]">
+                                  {selectedCourse?.code} • {selectedType}
                                 </span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-white border border-red-200 text-[#7A0808] shadow-2xs">
+                                  Required: {targetHours} hrs/week
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-gray-700">Plotted Total:</span>
+                                <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-[#7A0808] text-white shadow-2xs">
+                                  {totalPlottedHours} hrs
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Multi-Day Checkboxes & Quick Presets */}
+                            <div>
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                                <label className="text-[10px] font-black text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                                  <Calendar size={13} className="text-[#7A0808]" /> Select Schedule Day(s):
+                                </label>
+
+                                {/* Quick Pair Presets */}
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="text-[10px] text-gray-400 font-bold mr-1">Presets:</span>
+                                  {DAY_PAIR_PRESETS.map((preset) => (
+                                    <button
+                                      key={preset.label}
+                                      type="button"
+                                      onClick={() => setSelectedDays(preset.days)}
+                                      className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-white hover:bg-red-50 text-gray-700 hover:text-[#7A0808] border border-gray-200 hover:border-red-300 transition-all cursor-pointer"
+                                    >
+                                      {preset.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Day Selection Pills with Checkbox */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
+                                {SCHEDULE_DAYS.map((dayName, idx) => {
+                                  const isChecked = selectedDays.includes(idx);
+                                  return (
+                                    <button
+                                      key={dayName}
+                                      type="button"
+                                      onClick={() => {
+                                        if (isChecked) {
+                                          if (selectedDays.length > 1) {
+                                            setSelectedDays(selectedDays.filter((d) => d !== idx));
+                                          }
+                                        } else {
+                                          setSelectedDays([...selectedDays, idx].sort((a, b) => a - b));
+                                        }
+                                      }}
+                                      className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        isChecked
+                                          ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-xs'
+                                          : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] font-black ${
+                                          isChecked ? 'bg-white text-[#7A0808]' : 'border border-gray-300'
+                                        }`}
+                                      >
+                                        {isChecked ? '✓' : ''}
+                                      </span>
+                                      <span className="truncate">{dayName.slice(0, 3)}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Time Controls: Combined vs Individual */}
+                            <div className="pt-2 border-t border-red-200/60">
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-1.5">
+                                  <Clock size={13} className="text-[#7A0808]" />
+                                  <span className="text-[10px] font-black text-gray-700 uppercase tracking-wider">
+                                    Time Configuration
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-gray-200 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTimeMode('combined')}
+                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                      timeMode === 'combined'
+                                        ? 'bg-[#7A0808] text-white'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                  >
+                                    Combined Time
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTimeMode('individual')}
+                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                      timeMode === 'individual'
+                                        ? 'bg-[#7A0808] text-white'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                  >
+                                    Individual Times
+                                  </button>
+                                </div>
+                              </div>
+
+                              {timeMode === 'combined' ? (
+                                /* Combined Mode: Single Start & End Time */
+                                <div className="relative z-30 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-gray-200">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                      Start Time (All Selected Days)
+                                    </label>
+                                    <CustomSelect
+                                      size="sm"
+                                      value={combinedStartTime || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setCombinedStartTime(val);
+                                        const sHour = parseTimeToHour(val);
+                                        const eHour = parseTimeToHour(combinedEndTime);
+                                        if (!combinedEndTime || eHour <= sHour) {
+                                          setCombinedEndTime(hourToTimeInput(sHour + 1.5));
+                                        }
+                                      }}
+                                      options={Array.from(
+                                        { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
+                                        (_, i) => {
+                                          const h = SCHEDULE_START_HOUR + i * 0.5;
+                                          return {
+                                            value: hourToTimeInput(h),
+                                            label: formatScheduleHour(h),
+                                          };
+                                        }
+                                      )}
+                                      placeholder="Select start time..."
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                      End Time (All Selected Days)
+                                    </label>
+                                    <CustomSelect
+                                      size="sm"
+                                      value={combinedEndTime || ''}
+                                      onChange={(e) => setCombinedEndTime(e.target.value)}
+                                      options={Array.from(
+                                        { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
+                                        (_, i) => {
+                                          const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
+                                          return {
+                                            value: hourToTimeInput(h),
+                                            label: formatScheduleHour(h),
+                                          };
+                                        }
+                                      )}
+                                      placeholder="Select end time..."
+                                    />
+                                  </div>
+                                </div>
                               ) : (
-                                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
-                                  👇 Click or drag on the grid below to set time
-                                </span>
+                                /* Individual Mode: Start & End Time per Checked Day */
+                                <div className="space-y-1.5 overflow-visible">
+                                  {selectedDays.map((d, dIdx) => {
+                                    const dStart = dayTimes[d]?.startTime || combinedStartTime || '';
+                                    const dEnd = dayTimes[d]?.endTime || combinedEndTime || '';
+                                    const dDuration = dStart && dEnd ? Math.max(0, parseTimeToHour(dEnd) - parseTimeToHour(dStart)) : 0;
+
+                                    return (
+                                      <div
+                                        key={d}
+                                        style={{ zIndex: 40 - dIdx }}
+                                        className="relative flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-200 text-xs"
+                                      >
+                                        <span className="font-bold text-gray-900 w-24 truncate">
+                                          {SCHEDULE_DAYS[d]}:
+                                        </span>
+
+                                        <div className="flex-1 relative">
+                                          <CustomSelect
+                                            size="sm"
+                                            value={dStart}
+                                            onChange={(e) => {
+                                              const newStart = e.target.value;
+                                              const sH = parseTimeToHour(newStart);
+                                              const eH = parseTimeToHour(dEnd);
+                                              const newEnd = !dEnd || eH <= sH ? hourToTimeInput(sH + 1.5) : dEnd;
+                                              setDayTimes((prev) => ({
+                                                ...prev,
+                                                [d]: { startTime: newStart, endTime: newEnd },
+                                              }));
+                                            }}
+                                            options={Array.from(
+                                              { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
+                                              (_, i) => {
+                                                const h = SCHEDULE_START_HOUR + i * 0.5;
+                                                return {
+                                                  value: hourToTimeInput(h),
+                                                  label: formatScheduleHour(h),
+                                                };
+                                              }
+                                            )}
+                                            placeholder="Start time..."
+                                          />
+                                        </div>
+
+                                        <span className="text-gray-400 text-xs">–</span>
+
+                                        <div className="flex-1 relative">
+                                          <CustomSelect
+                                            size="sm"
+                                            value={dEnd}
+                                            onChange={(e) => {
+                                              const newEnd = e.target.value;
+                                              setDayTimes((prev) => ({
+                                                ...prev,
+                                                [d]: { startTime: dStart, endTime: newEnd },
+                                              }));
+                                            }}
+                                            options={Array.from(
+                                              { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
+                                              (_, i) => {
+                                                const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
+                                                return {
+                                                  value: hourToTimeInput(h),
+                                                  label: formatScheduleHour(h),
+                                                };
+                                              }
+                                            )}
+                                            placeholder="End time..."
+                                          />
+                                        </div>
+
+                                        <span className="text-[10px] font-bold text-gray-500 w-14 text-right">
+                                          ({Math.round(dDuration * 10) / 10}h)
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
-                              {/* Day Selector */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                  Day
-                                </label>
-                                <CustomSelect
-                                  size="sm"
-                                  value={selectedDayIndex !== undefined ? selectedDayIndex : 0}
-                                  onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
-                                  options={SCHEDULE_DAYS.map((d, idx) => ({ value: idx, label: d }))}
-                                  placeholder="Select day"
-                                />
-                              </div>
-
-                              {/* Start Time */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                  Start Time
-                                </label>
-                                <CustomSelect
-                                  size="sm"
-                                  value={startTime || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setStartTime(val);
-                                    if (!endTime && val) {
-                                      const startH = parseTimeToHour(val);
-                                      setEndTime(hourToTimeInput(startH + 1.5));
-                                    }
-                                  }}
-                                  options={Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
-                                    const h = SCHEDULE_START_HOUR + i * 0.5;
-                                    const timeStr = hourToTimeInput(h);
-                                    return {
-                                      value: timeStr,
-                                      label: formatScheduleHour(h),
-                                    };
-                                  })}
-                                  placeholder="Select start time..."
-                                />
-                              </div>
-
-                              {/* End Time */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                  End Time
-                                </label>
-                                <CustomSelect
-                                  size="sm"
-                                  value={endTime || ''}
-                                  onChange={(e) => setEndTime(e.target.value)}
-                                  options={Array.from({ length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 }, (_, i) => {
-                                    const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
-                                    const timeStr = hourToTimeInput(h);
-                                    return {
-                                      value: timeStr,
-                                      label: formatScheduleHour(h),
-                                    };
-                                  })}
-                                  placeholder="Select end time..."
-                                />
-                              </div>
+                            {/* Required Unit Hours Notification Banner */}
+                            <div
+                              className={`p-2.5 rounded-xl border flex items-start justify-between gap-2 transition-all ${
+                                hoursStatus.type === 'match'
+                                  ? 'bg-emerald-50/90 border-emerald-300 text-emerald-900'
+                                  : hoursStatus.type === 'exceed'
+                                  ? 'bg-amber-50/90 border-amber-300 text-amber-900'
+                                  : hoursStatus.type === 'empty'
+                                  ? 'bg-gray-50 border-gray-300 text-gray-700'
+                                  : 'bg-blue-50/90 border-blue-300 text-blue-900'
+                              }`}
+                            >
+                              <p className="text-xs font-semibold leading-relaxed">
+                                {hoursStatus.message}
+                              </p>
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-md flex-shrink-0 ${
+                                  hoursStatus.type === 'match'
+                                    ? 'bg-emerald-600 text-white'
+                                    : hoursStatus.type === 'exceed'
+                                    ? 'bg-amber-600 text-white'
+                                    : hoursStatus.type === 'empty'
+                                    ? 'bg-gray-500 text-white'
+                                    : 'bg-blue-600 text-white'
+                                }`}
+                              >
+                                {hoursStatus.badge}
+                              </span>
                             </div>
                           </div>
 
-                          <RoomScheduleViewer
-                            roomCode={selectedRoom.roomCode || selectedRoom.name || selectedRoom.id}
-                            roomType={selectedRoom.type || selectedRoom.roomType}
-                            scheduleMode={scheduleMode}
-                            semester={semester}
-                            deanUid={deanUid}
-                            currentTimeSlot={
-                              startTime && endTime && selectedDayIndex !== undefined
-                                ? {
-                                    day: selectedDayIndex,
-                                    startHour: parseTimeToHour(startTime),
-                                    endHour: parseTimeToHour(endTime),
-                                  }
-                                : null
-                            }
-                            onTimeSelect={(day, startHour, endHour) => {
-                              setSelectedDayIndex(day);
-                              setStartTime(hourToTimeInput(startHour));
-                              setEndTime(hourToTimeInput(endHour));
-                            }}
-                            onConflictsChange={setRoomConflicts}
-                          />
-                        </div>
+                          {/* Multi-Day Interactive Room Schedule Grid */}
+                          <div className="flex-1 bg-white rounded-xl">
+                            <RoomScheduleViewer
+                              roomCode={selectedRoom.roomCode || selectedRoom.name || selectedRoom.id}
+                              sectionName={selectedSection}
+                              roomType={selectedRoom.type || selectedRoom.roomType}
+                              scheduleMode={scheduleMode}
+                              semester={semester}
+                              deanUid={deanUid}
+                              currentTimeSlots={selectedDaySlots}
+                              isEditMode={isEditMode}
+                              ignoreCourseCode={selectedCourse?.code}
+                              ignoreSection={selectedSection}
+                              ignoreType={selectedType}
+                              ignoreEntryIds={editingEntryId ? [editingEntryId] : []}
+                              onTimeSelect={(clickedDay, startHour, endHour) => {
+                                if (!selectedDays.includes(clickedDay)) {
+                                  setSelectedDays([...selectedDays, clickedDay].sort((a, b) => a - b));
+                                }
+                                const sTime = hourToTimeInput(startHour);
+                                const eTime = hourToTimeInput(endHour);
+                                if (timeMode === 'combined') {
+                                  setCombinedStartTime(sTime);
+                                  setCombinedEndTime(eTime);
+                                } else {
+                                  setDayTimes((prev) => ({
+                                    ...prev,
+                                    [clickedDay]: { startTime: sTime, endTime: eTime },
+                                  }));
+                                }
+                              }}
+                              onConflictsChange={setRoomConflicts}
+                            />
+                          </div>
+                        </>
                       ) : (
                         <div className="flex items-center justify-center h-[380px] bg-gray-50/80 rounded-2xl border border-gray-200">
                           <div className="text-center p-6">
@@ -1371,9 +2368,9 @@ export default function AddPlotEntryModalEnhanced({
             </div>
           )}
 
-          {/* Step 5: Schedule Summary */}
+          {/* Step 5: Schedule Plot Summary */}
           {step === 5 && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={20} className="text-[#7A0808]" />
@@ -1382,9 +2379,31 @@ export default function AddPlotEntryModalEnhanced({
                   </h3>
                 </div>
                 <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
-                  Ready to Plot
+                  Ready to Save
                 </span>
               </div>
+
+              {/* Combined Course Part 1 Notice */}
+              {isOtherTypePending && (
+                <div className="p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-2xl flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-black text-xs flex items-center justify-center flex-shrink-0">
+                      Part 1
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-indigo-950">
+                        Part 1 of 2: {selectedType} Schedule Ready
+                      </p>
+                      <p className="text-[11px] font-medium text-indigo-800">
+                        {selectedCourse?.code} has both Lecture ({courseUnits?.targetLecHours} hrs) and Laboratory ({courseUnits?.targetLabHours} hrs). You can save and proceed directly to schedule the <span className="font-extrabold underline">{otherType}</span> component, or save now and plot {otherType} later.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200 uppercase flex-shrink-0">
+                    {otherType} Pending
+                  </span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Course Details Card */}
@@ -1399,11 +2418,15 @@ export default function AddPlotEntryModalEnhanced({
                   </div>
                   <p className="font-bold text-sm text-gray-900">{selectedCourse?.title}</p>
                   <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <span className="font-semibold">Type: {selectedType}</span>
+                    <span className="font-semibold text-[#7A0808]">Type: {selectedType}</span>
                     <span>•</span>
                     <span>{semesterDisplay}</span>
                     <span>•</span>
                     <span>{sectionYearLevel || '1st Year'}</span>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Required Hours:</span>
+                    <span className="font-bold text-gray-900">{targetHours} hrs/week</span>
                   </div>
                 </div>
 
@@ -1413,8 +2436,16 @@ export default function AddPlotEntryModalEnhanced({
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       INSTRUCTOR / TEACHER
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-                      Assigned
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)'
+                        ? 'Assigned'
+                        : 'TBA'}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -1425,8 +2456,10 @@ export default function AddPlotEntryModalEnhanced({
                       {selectedTeacher?.name?.charAt(0)?.toUpperCase() || 'T'}
                     </div>
                     <div>
-                      <p className="font-bold text-sm text-gray-900">{selectedTeacher?.name || 'Unassigned'}</p>
-                      <p className="text-xs text-gray-500">{selectedTeacher?.email || 'N/A'}</p>
+                      <p className="font-bold text-sm text-gray-900">
+                        {selectedTeacher?.name || 'TBA (To Be Assigned)'}
+                      </p>
+                      <p className="text-xs text-gray-500">{selectedTeacher?.email || 'Faculty will be assigned later'}</p>
                     </div>
                   </div>
                 </div>
@@ -1441,7 +2474,9 @@ export default function AddPlotEntryModalEnhanced({
                       Room {selectedRoom?.roomCode}
                     </span>
                   </div>
-                  <p className="font-bold text-sm text-gray-900">{selectedBuilding?.name} ({selectedBuilding?.code})</p>
+                  <p className="font-bold text-sm text-gray-900">
+                    {selectedBuilding?.name} ({selectedBuilding?.code})
+                  </p>
                   <div className="flex items-center gap-2 text-xs text-gray-600">
                     <span>Room Type: {selectedRoom?.type || selectedRoom?.roomType || 'Classroom'}</span>
                     <span>•</span>
@@ -1449,22 +2484,45 @@ export default function AddPlotEntryModalEnhanced({
                   </div>
                 </div>
 
-                {/* Schedule Day & Time Card */}
+                {/* Schedule Day & Time Card with Multi-Day List */}
                 <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-2xs space-y-2">
                   <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                      SCHEDULE TIME & DAY
+                      SCHEDULED DAYS & TIMES
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700">
-                      {scheduleMode === 'exam' ? 'Exam Mode' : 'Regular Class'}
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800">
+                      {selectedDaySlots.length} Block(s) • Total {totalPlottedHours} hrs
                     </span>
                   </div>
-                  <p className="font-bold text-sm text-gray-900">
-                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][selectedDayIndex] || date}
-                  </p>
-                  <p className="text-xs font-bold text-[#7A0808]">
-                    Time: {formatScheduleHour(parseTimeToHour(startTime) || 0)} – {formatScheduleHour(parseTimeToHour(endTime) || 0)}
-                  </p>
+
+                  <div className="space-y-1.5">
+                    {selectedDaySlots.map((slot) => (
+                      <div
+                        key={slot.day}
+                        className="flex items-center justify-between text-xs bg-gray-50 px-2.5 py-1 rounded-lg"
+                      >
+                        <span className="font-bold text-gray-900">{slot.dayName}</span>
+                        <span className="font-black text-[#7A0808]">
+                          {formatScheduleHour(slot.startHour)} – {formatScheduleHour(slot.endHour)} ({slot.duration} hrs)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Hours status pill */}
+                  <div className="pt-1">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md inline-block ${
+                        hoursStatus.type === 'match'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : hoursStatus.type === 'exceed'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-blue-50 text-blue-800 border border-blue-200'
+                      }`}
+                    >
+                      {hoursStatus.message}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1478,7 +2536,7 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={handleBack}
-                className="btn-outline flex items-center gap-2 text-xs"
+                className="btn-outline flex items-center gap-2 text-xs cursor-pointer"
               >
                 <ChevronLeft size={16} /> Back
               </button>
@@ -1489,7 +2547,7 @@ export default function AddPlotEntryModalEnhanced({
             <button
               type="button"
               onClick={onClose}
-              className="btn-outline text-xs"
+              className="btn-outline text-xs cursor-pointer"
               disabled={saving}
             >
               Cancel
@@ -1499,24 +2557,56 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={saving || (step === 4 && roomConflicts.length > 0)}
-                className={`btn-maroon flex items-center gap-2 text-xs transition-all ${
-                  step === 4 && roomConflicts.length > 0
+                disabled={saving || (step === 4 && (!selectedRoom || selectedDaySlots.length === 0 || roomConflicts.length > 0))}
+                className={`btn-maroon flex items-center gap-2 text-xs transition-all cursor-pointer ${
+                  step === 4 && (roomConflicts.length > 0 || selectedDaySlots.length === 0)
                     ? 'opacity-50 cursor-not-allowed bg-red-950/70 border border-red-800'
                     : ''
                 }`}
-                title={step === 4 && roomConflicts.length > 0 ? 'Cannot proceed: Room is already scheduled at this time' : undefined}
+                title={
+                  step === 4 && roomConflicts.length > 0
+                    ? `Cannot proceed: ${roomConflicts.length} schedule conflict(s) detected`
+                    : step === 4 && selectedDaySlots.length === 0
+                    ? 'Please select schedule day(s) and time to proceed'
+                    : undefined
+                }
               >
                 Next <ChevronRight size={16} />
               </button>
+            ) : isOtherTypePending ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(false)}
+                  disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                  className="btn-outline flex items-center gap-1.5 text-xs text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  title={`Save ${selectedType} schedule only and exit`}
+                >
+                  {saving ? 'Saving...' : `Save ${selectedType} Only`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(true)}
+                  disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                  className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md"
+                  title={`Save ${selectedType} and continue to configure ${otherType}`}
+                >
+                  {saving ? 'Saving...' : `Save & Schedule ${otherType}`} <ArrowRight size={15} />
+                </button>
+              </>
             ) : (
               <button
                 type="button"
-                onClick={handleSubmit}
-                disabled={saving || !selectedRoom}
-                className="btn-maroon flex items-center gap-2 text-xs"
+                onClick={() => handleSubmit(false)}
+                disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                className="btn-maroon flex items-center gap-2 text-xs cursor-pointer"
               >
-                {saving ? 'Saving...' : 'Add Schedule Block'}
+                {saving
+                  ? 'Saving...'
+                  : completedTypes.length > 0
+                  ? `Save & Complete ${selectedCourse?.code || 'Course'} Schedule`
+                  : `Add Schedule Block${selectedDaySlots.length > 1 ? 's' : ''}`}
               </button>
             )}
           </div>
@@ -1641,9 +2731,126 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={() => setViewDetailsRoom(null)}
-                className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule Details Preview Modal (Eye button on course card) */}
+      {viewScheduleCourse && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-red-50/50">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-xl text-white flex items-center justify-center flex-shrink-0 shadow-xs font-black"
+                  style={{ background: '#7A0808' }}
+                >
+                  <CheckCircle2 size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-lg text-gray-900 leading-tight">
+                      {viewScheduleCourse.course.code}
+                    </h3>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-50 text-[#7A0808] border border-red-200/80">
+                      Fully Scheduled
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 font-medium truncate max-w-[300px]">
+                    {viewScheduleCourse.course.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewScheduleCourse(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <div className="flex items-center justify-between text-xs font-bold text-gray-700 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <span>Section: <span className="font-black text-gray-900">{selectedSection}</span></span>
+                <span>Total Plotted: <span className="font-black text-[#7A0808]">{viewScheduleCourse.status.totalPlottedHours} hrs</span></span>
+              </div>
+
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-black text-gray-500 uppercase tracking-wider">
+                  Plotted Schedule Blocks ({viewScheduleCourse.entries.length})
+                </h4>
+                {viewScheduleCourse.entries.map((entry, idx) => (
+                  <div
+                    key={entry.id || idx}
+                    className="p-3.5 rounded-xl border border-gray-200 bg-white space-y-2 shadow-2xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                          String(entry.type || '').toLowerCase().includes('lab')
+                            ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                            : 'bg-blue-50 text-blue-900 border border-blue-200'
+                        }`}>
+                          {entry.type || 'Lecture'}
+                        </span>
+                        <span className="text-xs font-black text-[#7A0808]">
+                          {formatScheduleHour(entry.startHour)} – {formatScheduleHour(entry.endHour)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => startEditingCourse(viewScheduleCourse.course, entry)}
+                        className="px-2 py-1 text-[10px] font-bold rounded-lg bg-gray-100 hover:bg-[#7A0808] text-gray-700 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Edit this schedule block"
+                      >
+                        <Pencil size={11} /> Edit Block
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-gray-100">
+                      <div className="flex items-center gap-1.5 text-gray-700">
+                        <Calendar size={13} className="text-gray-400" />
+                        <span className="font-bold">{SCHEDULE_DAYS[entry.day] || entry.dayLabel || 'Day'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-gray-700">
+                        <DoorOpen size={13} className="text-gray-400" />
+                        <span className="font-bold">Room: {entry.roomCode || entry.room}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-gray-700 col-span-2">
+                        <User size={13} className="text-gray-400" />
+                        <span className="font-medium truncate">Instructor: <span className="font-bold">{entry.instructor || 'TBA'}</span></span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setViewScheduleCourse(null)}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={() => startEditingCourse(viewScheduleCourse.course)}
+                className="btn-maroon px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <Pencil size={13} /> Edit This Schedule
               </button>
             </div>
           </div>

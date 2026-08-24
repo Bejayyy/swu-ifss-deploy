@@ -77,6 +77,7 @@ export default function RoomWeeklyScheduleModal({
       roomCode,
       semesterTab,
       'regular',
+      activeSchoolYearId,
       (schedules) => {
         setCourseSchedules(schedules || []);
         setIsLoading(false);
@@ -87,7 +88,7 @@ export default function RoomWeeklyScheduleModal({
       }
     );
     return () => unsub();
-  }, [roomCode, semesterTab]);
+  }, [roomCode, semesterTab, activeSchoolYearId]);
 
   // 2. Subscribe to approved reservations
   useEffect(() => {

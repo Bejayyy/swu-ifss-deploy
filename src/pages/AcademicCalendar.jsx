@@ -65,6 +65,7 @@ export default function AcademicCalendar() {
           schoolYearId={activeSchoolYearId}
           schoolYearLabel={displaySchoolYear}
           isRegistrar={isRegistrar}
+          examPeriods={examPeriods}
         />
 
         {/* 2. School Year Configuration Overview Card */}

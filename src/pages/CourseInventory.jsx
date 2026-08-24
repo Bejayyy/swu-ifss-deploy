@@ -1,20 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { BookOpen, Plus, Pencil, Trash2, X, Users } from 'lucide-react';
+import { BookOpen, Plus, Pencil, Trash2, Clock, Users } from 'lucide-react';
 import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import ConfirmModal from '../components/modals/ConfirmModal';
-import CustomSelect from '../components/ui/CustomSelect';
+import AddCourseModal from '../components/modals/AddCourseModal';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
-import { subscribeCollegeCourses, subscribeAllCourses, addCourse, updateCourse, deleteCourse } from '../services/courseService';
+import { subscribeCollegeCourses, subscribeAllCourses, deleteCourse } from '../services/courseService';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
-const COURSE_TYPES = [
-  { value: 'lecture', label: 'Lecture Only' },
-  { value: 'laboratory', label: 'Laboratory Only' },
-  { value: 'both', label: 'Both (Lecture & Laboratory)' },
-];
 
 export default function CourseInventory() {
   const { profile } = useAuth();
@@ -32,15 +27,6 @@ export default function CourseInventory() {
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
-  const [form, setForm] = useState({
-    code: '',
-    title: '',
-    type: 'lecture',
-    yearLevel: '1st Year',
-    units: '',
-    description: '',
-  });
-  const [formError, setFormError] = useState('');
 
   // Subscribe to courses
   useEffect(() => {
@@ -83,99 +69,14 @@ export default function CourseInventory() {
     return groups;
   }, [courses]);
 
-  const resetForm = () => {
-    setForm({
-      code: '',
-      title: '',
-      type: 'lecture',
-      yearLevel: '1st Year',
-      units: '',
-      description: '',
-    });
-    setFormError('');
-    setEditingCourse(null);
-  };
-
   const handleAdd = () => {
-    resetForm();
+    setEditingCourse(null);
     setShowAddModal(true);
   };
 
   const handleEdit = (course) => {
-    setForm({
-      code: course.code,
-      title: course.title,
-      type: course.type,
-      yearLevel: course.yearLevel,
-      units: course.units || '',
-      description: course.description || '',
-    });
     setEditingCourse(course);
     setShowAddModal(true);
-  };
-
-  const handleSave = async () => {
-    setFormError('');
-
-    if (!form.code.trim() || !form.title.trim()) {
-      setFormError('Course code and title are required.');
-      return;
-    }
-
-    // Check for duplicate code (only when adding or changing code)
-    if (!editingCourse || editingCourse.code !== form.code) {
-      const duplicate = courses.find(c => 
-        c.code.toLowerCase() === form.code.trim().toLowerCase() &&
-        c.yearLevel === form.yearLevel
-      );
-      if (duplicate) {
-        setFormError('A course with this code already exists for this year level.');
-        return;
-      }
-    }
-
-    setIsLoading(true);
-    setLoadingMessage(editingCourse ? 'Updating course...' : 'Adding course...');
-    setShowAddModal(false);
-
-    try {
-      const courseData = {
-        code: form.code.trim().toUpperCase(),
-        title: form.title.trim(),
-        type: form.type,
-        yearLevel: form.yearLevel,
-        units: form.units ? Number(form.units) : null,
-        description: form.description.trim(),
-        collegeCode: myCollege,
-        collegeName: profile?.name || '',
-      };
-
-      if (editingCourse) {
-        await updateCourse(editingCourse.id, courseData);
-        setNotification({
-          type: 'success',
-          title: 'Course Updated!',
-          message: `${form.code} has been successfully updated.`,
-        });
-      } else {
-        await addCourse(courseData);
-        setNotification({
-          type: 'success',
-          title: 'Course Added!',
-          message: `${form.code} - ${form.title} has been successfully added.`,
-        });
-      }
-      resetForm();
-    } catch (err) {
-      console.error('Error saving course:', err);
-      setNotification({
-        type: 'error',
-        title: 'Failed to Save Course',
-        message: err.message || 'An error occurred while saving the course.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleDelete = (course) => {
@@ -362,17 +263,46 @@ export default function CourseInventory() {
                         </div>
                       </div>
 
-                      {course.description && (
-                        <p className="text-xs text-gray-600 mb-3 line-clamp-2">
-                          {course.description}
-                        </p>
-                      )}
+                      {/* Units Breakdown */}
+                      <div className="space-y-1 mb-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500 font-semibold">Credit Units:</span>
+                          <span className="font-black text-gray-800">
+                            {course.units || (Number(course.lecUnits || 0) + Number(course.labUnits || 0)) || 3} units
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">
+                            Lec: {course.lecUnits !== undefined ? course.lecUnits : (course.type === 'laboratory' ? 0 : (course.units || 3))} u
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-green-50 text-green-700 font-bold border border-green-100">
+                            Lab: {course.labUnits !== undefined ? course.labUnits : (course.type === 'laboratory' ? (course.units || 3) : 0)} u
+                          </span>
+                        </div>
+                      </div>
 
-                      {course.units && (
-                        <p className="text-[10px] font-bold text-gray-500 mb-3">
-                          {course.units} {course.units === 1 ? 'unit' : 'units'}
-                        </p>
-                      )}
+                      {/* Required Contact Hours */}
+                      <div className="space-y-1 mb-3 pt-2 border-t border-gray-100">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500 font-semibold flex items-center gap-1">
+                            <Clock size={11} className="text-amber-600" /> Required Time:
+                          </span>
+                          <span className="font-black text-amber-900">
+                            {course.totalHours || (
+                              (course.lecHours !== undefined ? Number(course.lecHours) : (Number(course.lecUnits || 3) * 1)) +
+                              (course.labHours !== undefined ? Number(course.labHours) : (Number(course.labUnits || 0) * 3))
+                            )} hrs/wk
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold border border-amber-200">
+                            Lec: {course.lecHours !== undefined ? course.lecHours : (Number(course.lecUnits !== undefined ? course.lecUnits : 3) * 1)}h
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold border border-amber-200">
+                            Lab: {course.labHours !== undefined ? course.labHours : (Number(course.labUnits !== undefined ? course.labUnits : 0) * 3)}h
+                          </span>
+                        </div>
+                      </div>
 
                       {/* Teacher Assignment */}
                       <div className="mt-3 pt-3 border-t border-gray-100">
@@ -401,143 +331,25 @@ export default function CourseInventory() {
         </div>
       )}
 
-      {/* Add/Edit Course Modal */}
+      {/* Add/Edit Course Modal using unified AddCourseModal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 animate-modal-pop max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-black text-lg" style={{ color: '#2B3235' }}>
-                  {editingCourse ? 'Edit Course' : 'Add New Course'}
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {editingCourse ? 'Update course information' : 'Add a new course to the catalog'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                }}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {formError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-xs font-semibold text-red-700">{formError}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    Course Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-                    placeholder="e.g., CS101, MATH201"
-                    className="form-input w-full"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    Year Level <span className="text-red-500">*</span>
-                  </label>
-                  <CustomSelect
-                    value={form.yearLevel}
-                    onChange={(e) => setForm({ ...form, yearLevel: e.target.value })}
-                    options={YEAR_LEVELS}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                  Course Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="e.g., Introduction to Computer Science"
-                  className="form-input w-full"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    Course Type <span className="text-red-500">*</span>
-                  </label>
-                  <CustomSelect
-                    value={form.type}
-                    onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    options={COURSE_TYPES}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                    Units (Optional)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    step="0.5"
-                    value={form.units}
-                    onChange={(e) => setForm({ ...form, units: e.target.value })}
-                    placeholder="e.g., 3"
-                    className="form-input w-full"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
-                  Description (Optional)
-                </label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Brief description of the course..."
-                  className="form-input w-full"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-6 mt-6 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                }}
-                className="btn-outline flex-1"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!form.code.trim() || !form.title.trim()}
-                className="btn-maroon flex-1 flex items-center justify-center gap-2"
-              >
-                <Plus size={16} /> {editingCourse ? 'Update Course' : 'Add Course'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddCourseModal
+          onClose={() => {
+            setShowAddModal(false);
+            setEditingCourse(null);
+          }}
+          collegeCode={myCollege}
+          collegeName={profile?.department || profile?.college || 'College'}
+          existingCourses={courses}
+          editingCourse={editingCourse}
+          onSaveSuccess={(msg) => {
+            setNotification({
+              type: 'success',
+              title: 'Success!',
+              message: msg,
+            });
+          }}
+        />
       )}
 
       {/* Loading Modal */}

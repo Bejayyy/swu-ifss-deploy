@@ -1,4 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+import { COLLECTIONS } from '../../firebase/constants';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,6 +15,7 @@ import {
   CheckCircle2,
   AlertCircle,
   BookOpen,
+  FileText,
 } from 'lucide-react';
 import {
   subscribeCalendarEvents,
@@ -19,6 +23,7 @@ import {
 } from '../../services/academicCalendarService';
 import CreateCalendarEventModal from '../modals/CreateCalendarEventModal';
 import AiCalendarScanModal from '../modals/AiCalendarScanModal';
+import { normalizeExamPeriods } from '../../utils/academicCalendarUtils';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -33,11 +38,20 @@ const FULL_MONTH_NAMES = [
 const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+// Helper to format date string YYYY-MM-DD
+function toDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export default function ModernCalendarView({
   schoolYearId,
   schoolYearLabel = '2026-2027',
   isRegistrar = false,
   onAiScanComplete,
+  examPeriods = null,
 }) {
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
@@ -48,6 +62,7 @@ export default function ModernCalendarView({
 
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [internalExamPeriods, setInternalExamPeriods] = useState(null);
 
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -55,6 +70,47 @@ export default function ModernCalendarView({
   const [editingEvent, setEditingEvent] = useState(null);
   const [successToast, setSuccessToast] = useState('');
   const [showMonthEventsView, setShowMonthEventsView] = useState(false);
+
+  // Auto-subscribe to school year document to always have real-time examPeriods and auto-focus date
+  useEffect(() => {
+    if (!schoolYearId) return;
+    if (examPeriods) {
+      setInternalExamPeriods(examPeriods);
+    }
+    const docRef = doc(db, COLLECTIONS.ACADEMIC_CALENDARS, schoolYearId);
+    const unsub = onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const raw = data?.examPeriods;
+          if (raw && !examPeriods) setInternalExamPeriods(normalizeExamPeriods(raw));
+
+          // Auto-adjust calendar view month/year to school year
+          const sem1Start = data?.semesters?.[0]?.start || data?.semester1Start;
+          if (sem1Start) {
+            const d = new Date(sem1Start);
+            if (!isNaN(d.getTime())) {
+              const now = new Date();
+              const nowKey = toDateKey(now);
+              const semEnd = data?.semesters?.[data.semesters.length - 1]?.end || data?.semester2End;
+              if (semEnd && nowKey >= sem1Start && nowKey <= semEnd) {
+                setSelectedYear(now.getFullYear());
+                setSelectedMonth(now.getMonth());
+                setSelectedDate(now);
+              } else {
+                setSelectedYear(d.getFullYear());
+                setSelectedMonth(d.getMonth());
+                setSelectedDate(d);
+              }
+            }
+          }
+        }
+      },
+      (err) => console.error('Error fetching calendar config in view:', err)
+    );
+    return () => unsub();
+  }, [schoolYearId, examPeriods]);
 
   // Subscribe to real-time events for this school year
   useEffect(() => {
@@ -82,29 +138,92 @@ export default function ModernCalendarView({
     }
   }, [successToast]);
 
+  const activeExamPeriods = examPeriods || internalExamPeriods;
+
+  // Merge Firestore events + dynamically generated exam period events (from examPeriods)
+  const combinedEvents = useMemo(() => {
+    const list = [...events];
+    const existingTitles = new Set(events.map((e) => (e.title || '').toLowerCase()));
+
+    if (activeExamPeriods) {
+      const semNames = { '1': '1st Semester', '2': '2nd Semester', '3': 'Summer' };
+      const periodLabels = {
+        p1: 'P1 Examination Period',
+        p2: 'P2 Examination Period',
+        p3: 'P3 Examination Period',
+        rbe: 'Finals / RBE Exam Period',
+        validation: 'Validation Days',
+      };
+
+      Object.entries(activeExamPeriods).forEach(([semKey, periods]) => {
+        if (!periods) return;
+        const semName = semNames[semKey] || `Semester ${semKey}`;
+
+        Object.entries(periodLabels).forEach(([pKey, label]) => {
+          const item = periods[pKey];
+          if (!item) return;
+
+          // Upperclassmen
+          if (item.up?.start && item.up.start !== 'NA' && item.up.start !== '') {
+            const title = `${label} (Upperclassmen) - ${semName}`;
+            if (!existingTitles.has(title.toLowerCase())) {
+              list.push({
+                id: `dynamic_exam_${semKey}_${pKey}_up`,
+                title,
+                startDate: item.up.start,
+                endDate: item.up.end || item.up.start,
+                category: 'exam',
+                isNoClass: false,
+                isDynamicExam: true,
+                description: `Major Examination Schedule for Upperclassmen (${semName})`,
+              });
+              existingTitles.add(title.toLowerCase());
+            }
+          }
+
+          // Freshmen
+          if (item.fr?.start && item.fr.start !== 'NA' && item.fr.start !== '') {
+            const title = `${label} (Freshmen) - ${semName}`;
+            if (!existingTitles.has(title.toLowerCase())) {
+              list.push({
+                id: `dynamic_exam_${semKey}_${pKey}_fr`,
+                title,
+                startDate: item.fr.start,
+                endDate: item.fr.end || item.fr.start,
+                category: 'exam',
+                isNoClass: false,
+                isDynamicExam: true,
+                description: `Major Examination Schedule for Freshmen (${semName})`,
+              });
+              existingTitles.add(title.toLowerCase());
+            }
+          }
+        });
+      });
+    }
+
+    return list;
+  }, [events, activeExamPeriods]);
+
   // Selected date ISO string formatted as YYYY-MM-DD
-  const selectedDateStr = useMemo(() => {
-    const y = selectedDate.getFullYear();
-    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const d = String(selectedDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }, [selectedDate]);
+  const selectedDateStr = useMemo(() => toDateKey(selectedDate), [selectedDate]);
 
   // Get all events mapped by YYYY-MM-DD date key
   const eventsByDate = useMemo(() => {
     const map = {};
-    events.forEach((ev) => {
-      if (!ev.startDate) return;
-      const start = new Date(ev.startDate + 'T00:00:00');
-      const end = ev.endDate ? new Date(ev.endDate + 'T00:00:00') : start;
+    combinedEvents.forEach((ev) => {
+      if (!ev.startDate || typeof ev.startDate !== 'string') return;
+      const sParts = ev.startDate.split('-').map(Number);
+      if (sParts.length < 3 || isNaN(sParts[0])) return;
 
-      // Span across all dates in range
+      const eParts = (ev.endDate && typeof ev.endDate === 'string' ? ev.endDate : ev.startDate).split('-').map(Number);
+      const start = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+      const end = new Date(eParts[0], eParts[1] - 1, eParts[2] || sParts[2]);
+
+      // Span across all dates in range safely
       const curr = new Date(start);
       while (curr <= end) {
-        const y = curr.getFullYear();
-        const m = String(curr.getMonth() + 1).padStart(2, '0');
-        const d = String(curr.getDate()).padStart(2, '0');
-        const dateKey = `${y}-${m}-${d}`;
+        const dateKey = toDateKey(curr);
 
         if (!map[dateKey]) map[dateKey] = [];
         map[dateKey].push(ev);
@@ -113,7 +232,7 @@ export default function ModernCalendarView({
       }
     });
     return map;
-  }, [events]);
+  }, [combinedEvents]);
 
   // Events on currently selected date
   const currentSelectedEvents = useMemo(() => {
@@ -122,12 +241,12 @@ export default function ModernCalendarView({
 
   // Events in currently displayed month
   const currentMonthEvents = useMemo(() => {
-    return events.filter((ev) => {
+    return combinedEvents.filter((ev) => {
       if (!ev.startDate) return false;
-      const start = new Date(ev.startDate + 'T00:00:00');
-      return start.getFullYear() === selectedYear && start.getMonth() === selectedMonth;
+      const sParts = ev.startDate.split('-').map(Number);
+      return sParts[0] === selectedYear && sParts[1] - 1 === selectedMonth;
     });
-  }, [events, selectedYear, selectedMonth]);
+  }, [combinedEvents, selectedYear, selectedMonth]);
 
   // Generate calendar grid matrix (6 rows x 7 days)
   const calendarMatrix = useMemo(() => {
@@ -223,7 +342,7 @@ export default function ModernCalendarView({
               Interactive School Calendar
             </h3>
             <p className="text-xs font-semibold text-[#7A0808] mt-0.5">
-              SY {schoolYearLabel} · {events.length} Scheduled Events
+              {schoolYearLabel.startsWith('SY ') ? schoolYearLabel : `SY ${schoolYearLabel}`} · {combinedEvents.length} Scheduled Events & Exam Periods
             </p>
           </div>
         </div>
@@ -263,7 +382,7 @@ export default function ModernCalendarView({
         </div>
       )}
 
-      {/* MAIN DUAL-PANE CALENDAR CARD (Matching User Design) */}
+      {/* MAIN DUAL-PANE CALENDAR CARD */}
       <div className="bg-white rounded-3xl shadow-xl border border-gray-200/80 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[520px]">
         
         {/* LEFT PANE (Maroon Brand #7A0808 Background) */}
@@ -295,17 +414,17 @@ export default function ModernCalendarView({
           <div className="flex-1 space-y-2.5 my-2">
             <div className="flex items-center justify-between border-b border-white/20 pb-2">
               <h4 className="text-xs font-black uppercase tracking-wider text-white">
-                Current Events
+                Current Events & Exam Periods
               </h4>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
                 {currentSelectedEvents.length}
               </span>
             </div>
 
-            <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
               {currentSelectedEvents.length === 0 ? (
                 <p className="text-xs text-white/70 italic pt-1">
-                  No scheduled events on this date.
+                  No scheduled events or exam periods on this date.
                 </p>
               ) : (
                 currentSelectedEvents.map((ev, idx) => {
@@ -318,15 +437,22 @@ export default function ModernCalendarView({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-1.5 flex-1 min-w-0">
-                          <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${
                             isHoliday ? 'bg-amber-300' : isExam ? 'bg-blue-300' : 'bg-pink-300'
                           }`} />
-                          <span className="font-bold text-white text-xs leading-snug">
-                            {ev.title}
-                          </span>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold text-white text-xs leading-snug block truncate">
+                              {ev.title}
+                            </span>
+                            {isExam && (
+                              <span className="inline-block mt-0.5 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-blue-500/40 text-blue-100 border border-blue-400/30">
+                                📝 Exam Period
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        {isRegistrar && (
+                        {isRegistrar && !ev.isDynamicExam && (
                           <button
                             type="button"
                             onClick={() => handleDeleteEvent(ev.id, ev.title)}
@@ -339,7 +465,7 @@ export default function ModernCalendarView({
                       </div>
 
                       {ev.description && (
-                        <p className="text-[10px] text-white/80 pl-3.5 leading-tight">
+                        <p className="text-[10px] text-white/80 pl-4 leading-tight">
                           {ev.description}
                         </p>
                       )}
@@ -355,7 +481,7 @@ export default function ModernCalendarView({
               onClick={() => setShowMonthEventsView(!showMonthEventsView)}
               className="text-[11px] font-semibold text-white/90 hover:text-white underline cursor-pointer pt-1 block"
             >
-              {showMonthEventsView ? 'Hide month events' : `See all events in ${MONTH_NAMES[selectedMonth]} (${currentMonthEvents.length})`}
+              {showMonthEventsView ? 'Hide month schedule' : `See all in ${MONTH_NAMES[selectedMonth]} (${currentMonthEvents.length})`}
             </button>
           </div>
 
@@ -465,11 +591,7 @@ export default function ModernCalendarView({
           <div className="grid grid-cols-7 gap-y-2.5 gap-x-1 flex-1 items-center my-1 select-none">
             {calendarMatrix.map((week, wIdx) =>
               week.map((cell, cIdx) => {
-                const y = cell.date.getFullYear();
-                const m = String(cell.date.getMonth() + 1).padStart(2, '0');
-                const d = String(cell.date.getDate()).padStart(2, '0');
-                const cellDateStr = `${y}-${m}-${d}`;
-
+                const cellDateStr = toDateKey(cell.date);
                 const isSelected = cellDateStr === selectedDateStr;
                 const cellEvents = eventsByDate[cellDateStr] || [];
                 const hasEvents = cellEvents.length > 0;
@@ -487,6 +609,8 @@ export default function ModernCalendarView({
                       className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-xs transition-all cursor-pointer relative ${
                         isSelected
                           ? 'bg-[#7A0808] text-white font-black shadow-md scale-105'
+                          : hasExam && cell.isCurrentMonth
+                          ? 'bg-blue-50/80 text-blue-900 font-bold border border-blue-200'
                           : cell.isCurrentMonth
                           ? 'text-gray-700 font-bold hover:bg-gray-100'
                           : 'text-gray-300 font-medium hover:text-gray-500'
@@ -501,7 +625,7 @@ export default function ModernCalendarView({
                             hasHoliday
                               ? 'bg-red-500'
                               : hasExam
-                              ? 'bg-blue-500'
+                              ? 'bg-blue-600'
                               : 'bg-purple-600'
                           }`}
                         />
@@ -521,7 +645,7 @@ export default function ModernCalendarView({
                 <span>Holiday (No Class)</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
                 <span>Exam Period</span>
               </span>
               <span className="flex items-center gap-1.5">
@@ -543,7 +667,7 @@ export default function ModernCalendarView({
           <div className="flex items-center justify-between border-b border-gray-100 pb-3">
             <h4 className="text-xs font-black text-gray-900 flex items-center gap-2">
               <BookOpen size={15} className="text-[#7A0808]" />
-              <span>All Events in {FULL_MONTH_NAMES[selectedMonth]} {selectedYear} ({currentMonthEvents.length})</span>
+              <span>All Schedule in {FULL_MONTH_NAMES[selectedMonth]} {selectedYear} ({currentMonthEvents.length})</span>
             </h4>
             <button
               type="button"
@@ -558,17 +682,38 @@ export default function ModernCalendarView({
             <p className="text-xs text-gray-400 italic py-2">No events recorded for this month.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {currentMonthEvents.map((ev, idx) => (
-                <div key={ev.id || idx} className="p-3 rounded-xl border border-gray-200 bg-gray-50/50 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-gray-900 truncate">{ev.title}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-[#7A0808]">
-                      {ev.startDate}
-                    </span>
+              {currentMonthEvents.map((ev, idx) => {
+                const isExam = ev.category === 'exam';
+                const isHoliday = ev.category === 'holiday' || ev.isNoClass;
+                return (
+                  <div
+                    key={ev.id || idx}
+                    className={`p-3 rounded-xl border space-y-1 ${
+                      isExam
+                        ? 'border-blue-200 bg-blue-50/40'
+                        : isHoliday
+                        ? 'border-red-200 bg-red-50/40'
+                        : 'border-gray-200 bg-gray-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-gray-900 truncate">{ev.title}</span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isExam
+                            ? 'bg-blue-100 text-blue-800'
+                            : isHoliday
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-purple-100 text-purple-800'
+                        }`}
+                      >
+                        {ev.startDate}
+                      </span>
+                    </div>
+                    {ev.description && <p className="text-[10px] text-gray-500">{ev.description}</p>}
                   </div>
-                  {ev.description && <p className="text-[10px] text-gray-500">{ev.description}</p>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -87,15 +87,31 @@ export async function addCourse(courseData) {
   const labUnits = courseData.labUnits !== undefined ? Number(courseData.labUnits) : (courseData.type === 'laboratory' ? Number(courseData.units) || 3 : 0);
   const totalUnits = courseData.units !== undefined ? Number(courseData.units) : (lecUnits + labUnits);
 
+  const numLecUnits = Number(lecUnits) || 0;
+  const numLabUnits = Number(labUnits) || 0;
+
+  const lecHours = courseData.lecHours !== undefined && courseData.lecHours !== null && courseData.lecHours !== ''
+    ? Number(courseData.lecHours)
+    : numLecUnits * 1.0;
+  const labHours = courseData.labHours !== undefined && courseData.labHours !== null && courseData.labHours !== ''
+    ? Number(courseData.labHours)
+    : numLabUnits * 3.0;
+  const totalHours = courseData.totalHours !== undefined && courseData.totalHours !== null && courseData.totalHours !== ''
+    ? Number(courseData.totalHours)
+    : (lecHours + labHours);
+
   const cleanData = {
     code: (courseData.code || '').trim().toUpperCase(),
     title: (courseData.title || '').trim(),
-    type: courseData.type || (labUnits > 0 && lecUnits > 0 ? 'both' : (labUnits > 0 ? 'laboratory' : 'lecture')),
+    type: courseData.type || (numLabUnits > 0 && numLecUnits > 0 ? 'both' : (numLabUnits > 0 ? 'laboratory' : 'lecture')),
     yearLevel: courseData.yearLevel || '1st Year',
     semester: courseData.semester || '1st Semester',
-    lecUnits: Number(lecUnits) || 0,
-    labUnits: Number(labUnits) || 0,
+    lecUnits: numLecUnits,
+    labUnits: numLabUnits,
     units: Number(totalUnits) || 0,
+    lecHours: Number(lecHours) || 0,
+    labHours: Number(labHours) || 0,
+    totalHours: Number(totalHours) || 0,
     collegeCode: (courseData.collegeCode || '').trim().toUpperCase(),
     programCode: (courseData.programCode || '').trim().toUpperCase(),
     assignedTeacherUid: courseData.assignedTeacherUid || null,
@@ -125,6 +141,9 @@ export async function updateCourse(courseId, updates) {
   if (updates.lecUnits !== undefined) cleanUpdates.lecUnits = Number(updates.lecUnits) || 0;
   if (updates.labUnits !== undefined) cleanUpdates.labUnits = Number(updates.labUnits) || 0;
   if (updates.units !== undefined) cleanUpdates.units = Number(updates.units) || 0;
+  if (updates.lecHours !== undefined) cleanUpdates.lecHours = Number(updates.lecHours) || 0;
+  if (updates.labHours !== undefined) cleanUpdates.labHours = Number(updates.labHours) || 0;
+  if (updates.totalHours !== undefined) cleanUpdates.totalHours = Number(updates.totalHours) || 0;
   if (updates.semester) cleanUpdates.semester = updates.semester;
   if (updates.yearLevel) cleanUpdates.yearLevel = updates.yearLevel;
   if (updates.collegeCode) cleanUpdates.collegeCode = updates.collegeCode.trim().toUpperCase();
