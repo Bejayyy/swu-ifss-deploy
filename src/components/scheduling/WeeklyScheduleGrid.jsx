@@ -378,8 +378,8 @@ export default function WeeklyScheduleGrid({
         </div>
       )}
 
-      <div className="overflow-x-auto select-none">
-        <div style={{ minWidth: 700 }}>
+      <div className={`w-full ${drag?.active ? 'select-none' : ''}`}>
+        <div className="w-full">
           {/* Header Row */}
           <div
             className="grid sticky top-0 bg-white z-10 print:bg-[#7A0808] print:text-white print:border print:border-black"
@@ -469,8 +469,8 @@ export default function WeeklyScheduleGrid({
                           cursor: canPlot && !disabled ? 'crosshair' : disabled ? 'not-allowed' : 'default',
                         }}
                         onMouseDown={(e) => {
-                          e.preventDefault();
-                          if (!disabled) {
+                          if (canPlot && !disabled) {
+                            e.preventDefault();
                             handleSlotMouseDown(dayIndex, slotIndex, disabled, dayStatuses[dayIndex]?.date);
                           }
                         }}

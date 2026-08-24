@@ -10,7 +10,6 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
     middleName: '',
     lastName: '',
     email: '',
-    password: '',
     phone: '',
     permissions: REGISTRAR_PERMISSION_CATALOG.map((p) => p.id),
   });
@@ -43,19 +42,17 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
       setError(validation.message);
       return;
     }
-    if (form.password.length < 6) {
-      setError('Temporary password must be at least 6 characters.');
-      return;
-    }
 
     const fn = toTitleCase(form.firstName);
     const mn = form.middleName?.trim() ? toTitleCase(form.middleName) : '';
     const ln = toTitleCase(form.lastName);
     const displayName = [fn, mn, ln].filter(Boolean).join(' ');
+    const autoTempPassword = Math.random().toString(36).slice(-8) + 'Aa1!' + Math.random().toString(36).slice(-4);
 
     try {
       await onSave({
         ...form,
+        password: autoTempPassword,
         firstName: fn,
         middleName: mn,
         lastName: ln,
@@ -77,7 +74,7 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
         <form onSubmit={submit} className="p-8 pt-10">
           <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Create Registrar account</h2>
           <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
-            Only @{INSTITUTIONAL_EMAIL_DOMAIN} emails. Account must be created here before login is allowed.
+            Only @{INSTITUTIONAL_EMAIL_DOMAIN} emails. An auto-generated temporary password will be emailed to the registrar.
           </p>
           {error && <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">{error}</p>}
           <div className="space-y-3">
@@ -130,26 +127,14 @@ export default function CreateRegistrarModal({ onClose, onSave, saving }) {
                 />
               </div>
               <div>
-                <label className="form-label">
-                  Temporary password <span className="text-red-500">*</span>
-                </label>
+                <label className="form-label">Phone</label>
                 <input
-                  type="password"
                   className="form-input"
-                  value={form.password}
-                  onChange={(e) => set('password', e.target.value)}
-                  required
-                  minLength={6}
+                  placeholder="Optional phone number"
+                  value={form.phone}
+                  onChange={(e) => set('phone', e.target.value)}
                 />
               </div>
-            </div>
-            <div>
-              <label className="form-label">Phone</label>
-              <input
-                className="form-input"
-                value={form.phone}
-                onChange={(e) => set('phone', e.target.value)}
-              />
             </div>
             <div>
               <label className="form-label">Registrar permissions</label>

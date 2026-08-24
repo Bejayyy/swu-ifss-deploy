@@ -2329,7 +2329,18 @@ export default function AddPlotEntryModalEnhanced({
                               ignoreCourseCode={selectedCourse?.code}
                               ignoreSection={selectedSection}
                               ignoreType={selectedType}
-                              ignoreEntryIds={editingEntryId ? [editingEntryId] : []}
+                              ignoreEntryIds={[
+                                ...(editingEntryId ? [editingEntryId] : []),
+                                ...((sectionPlotEntries || [])
+                                  .filter((e) => {
+                                    const codeMatches = String(e.courseCode || e.title || '').trim().toUpperCase() === String(selectedCourse?.code || '').trim().toUpperCase();
+                                    const isLabEntry = String(e.type || '').toLowerCase().includes('lab');
+                                    const isLabSelected = String(selectedType || '').toLowerCase().includes('lab');
+                                    return codeMatches && isLabEntry === isLabSelected;
+                                  })
+                                  .map((e) => e.id)
+                                  .filter(Boolean)),
+                              ]}
                               onTimeSelect={(clickedDay, startHour, endHour) => {
                                 if (!selectedDays.includes(clickedDay)) {
                                   setSelectedDays([...selectedDays, clickedDay].sort((a, b) => a - b));

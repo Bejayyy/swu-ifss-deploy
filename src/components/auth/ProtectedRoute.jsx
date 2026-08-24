@@ -20,12 +20,15 @@ function AuthLoading() {
 }
 
 export function DeveloperRoute({ children }) {
-  const { loading, profile, firebaseUser } = useAuth();
+  const { loading, profile, firebaseUser, requiresPasswordSetup } = useAuth();
   const location = useLocation();
 
   if (loading) return <AuthLoading />;
   if (!firebaseUser || !profile) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  if (requiresPasswordSetup || profile?.mustSetPassword) {
+    return <Navigate to="/set-password" replace />;
   }
   if (profile.role !== ROLES.DEVELOPER || profile.status !== 'active') {
     if (profile.role === ROLES.REGISTRAR) {
@@ -37,13 +40,16 @@ export function DeveloperRoute({ children }) {
 }
 
 export function RegistrarRoute({ children }) {
-  const { loading, profile, firebaseUser } = useAuth();
+  const { loading, profile, firebaseUser, requiresPasswordSetup } = useAuth();
   const { roleDefinitions, loading: rolesLoading } = useRoleConfig();
   const location = useLocation();
 
   if (loading || rolesLoading) return <AuthLoading />;
   if (!firebaseUser || !profile) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  if (requiresPasswordSetup || profile?.mustSetPassword) {
+    return <Navigate to="/set-password" replace />;
   }
   if (profile.role === ROLES.DEVELOPER) {
     return <Navigate to={DEVELOPER_ROUTE_PREFIX} replace />;
@@ -62,18 +68,21 @@ export function PasswordSetupRoute({ children }) {
   const { loading, profile, firebaseUser, requiresPasswordSetup } = useAuth();
   if (loading) return <AuthLoading />;
   if (!firebaseUser || !profile) return <Navigate to="/login" replace />;
-  if (!requiresPasswordSetup) return <Navigate to={REGISTRAR_HOME} replace />;
+  if (!requiresPasswordSetup && !profile?.mustSetPassword) return <Navigate to={REGISTRAR_HOME} replace />;
   return children;
 }
 
 export function PublicOnlyRoute({ children }) {
-  const { loading, profile, firebaseUser } = useAuth();
+  const { loading, profile, firebaseUser, requiresPasswordSetup } = useAuth();
 
   if (loading) return <AuthLoading />;
+  if (firebaseUser && (requiresPasswordSetup || profile?.mustSetPassword)) {
+    return <Navigate to="/set-password" replace />;
+  }
   if (firebaseUser && profile?.role === ROLES.DEVELOPER) {
     return <Navigate to={DEVELOPER_ROUTE_PREFIX} replace />;
   }
-  if (firebaseUser && MAIN_APP_ROLES.includes(profile?.role)) {
+  if (firebaseUser && (MAIN_APP_ROLES.includes(profile?.role) || profile?.role)) {
     return <Navigate to={REGISTRAR_HOME} replace />;
   }
   return children;

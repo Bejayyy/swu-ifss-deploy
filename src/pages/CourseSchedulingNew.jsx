@@ -115,8 +115,43 @@ export default function CourseSchedulingNew() {
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semester, setSemester] = useState('1');
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
-  const [selectedStudentCategory, setSelectedStudentCategory] = useState('freshmen'); // 'freshmen' or 'upperclassmen'
   const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
+
+  // Automatically determine student category (Freshmen for 1st Year, Upperclassmen for 2nd Year+)
+  const selectedStudentCategory = useMemo(() => {
+    if (!selectedSection && !currentSectionObj) return 'freshmen';
+    
+    // Check yearLevel from section object if available (e.g. "1st Year", "2nd Year", "3rd Year", "4th Year", "5th Year")
+    const yl = (currentSectionObj?.yearLevel || '').toLowerCase();
+    if (yl.includes('1st') || yl.includes('first') || yl === '1') return 'freshmen';
+    if (
+      yl.includes('2nd') ||
+      yl.includes('3rd') ||
+      yl.includes('4th') ||
+      yl.includes('5th') ||
+      yl.includes('upper') ||
+      yl === '2' ||
+      yl === '3' ||
+      yl === '4' ||
+      yl === '5'
+    ) {
+      return 'upperclassmen';
+    }
+
+    // Fallback based on section name pattern (e.g., BSMT1-A1 -> 1 = freshmen, BSMT2-B1 -> 2 = upperclassmen)
+    const secStr = String(selectedSection || '').toUpperCase();
+    const match = secStr.match(/[A-Z]+(\d)/);
+    if (match) {
+      return match[1] === '1' ? 'freshmen' : 'upperclassmen';
+    }
+
+    const anyDigitMatch = secStr.match(/\d+/);
+    if (anyDigitMatch) {
+      return anyDigitMatch[0].startsWith('1') ? 'freshmen' : 'upperclassmen';
+    }
+
+    return 'freshmen';
+  }, [currentSectionObj, selectedSection]);
 
   const semesterOptions = useMemo(() => {
     if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
@@ -1392,74 +1427,66 @@ export default function CourseSchedulingNew() {
 
               {/* Exam Schedule Controls - Only show for exam schedule */}
               {scheduleTab === 'exam' && (
-                <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                  <div className="mb-4">
-                    <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
-                      {selectedDean.department || selectedDean.college}
-                    </h3>
-                    <p className="text-xs font-medium mt-0.5" style={{ color: '#2B3235', opacity: 0.65 }}>
-                      {selectedDean.name} · {selectedDean.email}
-                    </p>
+                <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+                    <div>
+                      <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
+                        {selectedDean.department || selectedDean.college}
+                      </h3>
+                      <p className="text-xs font-medium mt-0.5" style={{ color: '#2B3235', opacity: 0.65 }}>
+                        {selectedDean.name} · {selectedDean.email}
+                      </p>
+                    </div>
+
+                    {/* Section & Auto Category Tag */}
+                    {selectedSection && (
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1.5 rounded-xl bg-gray-100 text-gray-800 text-xs font-bold">
+                          Section: <span className="text-[#7A0808] font-black">{selectedSection}</span>
+                        </span>
+                        <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${
+                          selectedStudentCategory === 'freshmen'
+                            ? 'bg-red-50 text-[#7A0808] border border-red-200'
+                            : 'bg-blue-50 text-blue-900 border border-blue-200'
+                        }`}>
+                          {selectedStudentCategory === 'freshmen' ? '🎓 Freshmen (1st Year)' : '🎓 Upperclassmen (2nd Year+)'}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">
-                    {/* Student Category */}
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#7A0808' }}>
-                        Student Category
-                      </p>
-                      <div className="flex gap-2">
-                        {STUDENT_CATEGORIES.map((category) => (
-                          <button
-                            key={category.key}
-                            type="button"
-                            onClick={() => setSelectedStudentCategory(category.key)}
-                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                              selectedStudentCategory === category.key
-                                ? 'bg-[#7A0808] text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
-                          >
-                            {category.label}
-                            <div className="text-[9px] font-normal mt-0.5 opacity-75">
-                              {category.years.join(', ')}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
                     {/* Exam Period */}
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#7A0808' }}>
-                        Exam Period
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#7A0808]">
+                          Select Exam Period
+                        </p>
+                        <span className="text-[10px] font-bold text-gray-500">
+                          Category: <strong className="text-gray-800">{selectedStudentCategory === 'freshmen' ? 'Freshmen (1st Yr)' : 'Upperclassmen (2nd Yr+)'}</strong>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {EXAM_PERIODS.map((period) => (
                           <button
                             key={period.key}
                             type="button"
                             onClick={() => setSelectedExamPeriod(period.key)}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                               selectedExamPeriod === period.key
-                                ? 'bg-[#7A0808] text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100 border-2 border-gray-200'
+                                ? 'bg-[#7A0808] text-white shadow-xs'
+                                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
                             }`}
                           >
                             {period.label}
                           </button>
                         ))}
                       </div>
-                      <p className="text-[10px] text-gray-500 mt-2">
-                        {selectedStudentCategory === 'freshmen' 
-                          ? '📚 Showing exam dates for Freshmen (1st Year)' 
-                          : '📚 Showing exam dates for Upperclassmen (2nd-5th Year)'}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 p-3 rounded-lg" style={{ background: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-                      <p className="text-xs font-bold" style={{ color: '#1E40AF' }}>
-                        ℹ️ Exam schedules are based on student category (Freshmen/Upperclassmen), not sections. All exams for this category will appear on the schedule below.
+                      <p className="text-[11px] text-gray-600 mt-2.5 flex items-center gap-1.5 font-medium">
+                        <span>📅</span>
+                        <span>
+                          Showing exam schedule for <strong className="text-[#7A0808]">{selectedSection || 'Section'}</strong> ({selectedStudentCategory === 'freshmen' ? 'Freshmen / 1st Year' : 'Upperclassmen / 2nd Year+'})
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -1467,24 +1494,24 @@ export default function CourseSchedulingNew() {
               )}
 
               {/* Weekly Schedule Grid or Empty Program Placeholder */}
-              {scheduleTab === 'regular' && !selectedSection ? (
+              {!selectedSection ? (
                 <div className="bg-white border border-gray-100 rounded-2xl p-12 text-center space-y-3 shadow-2xs">
                   <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-800 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
                     <GraduationCap size={32} />
                   </div>
                   <h3 className="font-bold text-base text-gray-800">
-                    No Sections Available for {selectedProgramObj ? `${selectedProgramObj.code} (${selectedProgramObj.name})` : (selectedProgram || 'this program')}
+                    No Section Selected
                   </h3>
                   <p className="text-xs text-gray-500 max-w-md mx-auto">
                     {displayedDeanSections.length === 0
                       ? 'There are currently no sections created for this academic program. Go to College Inventory to create and configure sections for this program.'
-                      : 'Please select a section from the left sidebar to view or plot its weekly schedule.'}
+                      : `Please select a section from the left sidebar to view or plot its ${scheduleTab === 'exam' ? 'exam' : 'weekly'} schedule.`}
                   </p>
                 </div>
               ) : (
                 <WeeklyScheduleGrid
                   title={scheduleTab === 'exam' 
-                    ? `${selectedDean.department || selectedDean.college} · ${selectedStudentCategory === 'freshmen' ? 'Freshmen' : 'Upperclassmen'} · ${selectedExamPeriod.toUpperCase()}`
+                    ? `${selectedDean.department || selectedDean.college} · Section ${selectedSection || ''} · ${selectedStudentCategory === 'freshmen' ? 'Freshmen' : 'Upperclassmen'} · ${selectedExamPeriod.toUpperCase()}`
                     : `${selectedDean.department || selectedDean.college} · ${selectedProgramObj?.code || ''} · Section ${selectedSection || ''}`
                   }
                   schoolYearLabel={schoolYearLabel}
@@ -1509,16 +1536,16 @@ export default function CourseSchedulingNew() {
                   canPlot={canPlot}
                   onAddBlock={() => {
                     const firstOpenIdx = dayStatuses.findIndex((d) => !d.disabled);
-                    if (firstOpenIdx >= 0) {
-                      const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[firstOpenIdx] : dayStatuses[firstOpenIdx].date;
-                      handleSlotSelect({
-                        dayIndex: firstOpenIdx,
-                        date: dayIdentifier,
-                        startTime: '08:00',
-                        endTime: '09:00',
-                        fromDrag: false,
-                      });
-                    }
+                    const defaultIdx = firstOpenIdx >= 0 ? firstOpenIdx : 0;
+                    const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[defaultIdx] : (dayStatuses[defaultIdx]?.date || weekDates[defaultIdx]);
+                    setEntryModal({
+                      mode: 'add',
+                      date: dayIdentifier,
+                      dayLabel: SCHEDULE_DAYS[defaultIdx],
+                      lockTimes: false,
+                      initial: null,
+                      fromDrag: false,
+                    });
                   }}
                   onSlotSelect={handleSlotSelect}
                   onEditBlock={openEditModal}
@@ -1684,16 +1711,16 @@ export default function CourseSchedulingNew() {
         <ResetDeanSchedulesModal
           isOpen={showResetSchedulesModal}
           onClose={() => setShowResetSchedulesModal(false)}
-          onConfirm={async (deanUids, semester, schoolYear) => {
+          onConfirm={async (deanUids, sem, sy) => {
             setIsLoading(true);
             setLoadingMessage(`Deleting schedules for ${deanUids.length} dean(s)...`);
             try {
-              const result = await resetMultipleDeansSchedules(deanUids, semester);
+              const result = await resetMultipleDeansSchedules(deanUids, sem, activeSchoolYearId);
               setIsLoading(false);
               showNotification({
                 type: 'success',
                 title: 'Schedules Deleted',
-                message: `Successfully deleted schedules for ${result.totalDeleted} entries across ${deanUids.length} dean(s).`,
+                message: `Successfully deleted ${result.totalDeleted} schedule entries across ${deanUids.length} dean(s).`,
               });
             } catch (err) {
               setIsLoading(false);
@@ -1705,7 +1732,7 @@ export default function CourseSchedulingNew() {
               throw err;
             }
           }}
-          deanUsers={staffUsers.filter(u => u.roleValue === 'dean')}
+          deanUsers={staffUsers.filter((u) => u.roleValue === 'dean' || u.role?.toLowerCase() === 'dean' || u.role?.toLowerCase().includes('dean'))}
           semester={semester}
           semesterLabel={selectedSemesterObj?.label}
           schoolYear={schoolYearLabel}

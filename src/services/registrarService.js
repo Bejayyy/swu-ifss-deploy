@@ -74,7 +74,8 @@ export async function createRegistrarAccount(
   }
 
   const normalized = normalizeEmail(email);
-  const authUser = await createAuthUserWithEmail(normalized, password);
+  const tempPassword = password || (Math.random().toString(36).slice(-8) + 'Aa1!' + Math.random().toString(36).slice(-4));
+  const authUser = await createAuthUserWithEmail(normalized, tempPassword);
   const uid = authUser.uid;
 
   const profile = buildUserProfilePayload({
@@ -113,7 +114,7 @@ export async function createRegistrarAccount(
     await sendWelcomeEmail({
       email: normalized,
       displayName: displayName.trim(),
-      password, // Include password in email
+      password: tempPassword, // Include temporary password in email
     });
     console.log('Welcome email sent to:', normalized);
   } catch (emailError) {

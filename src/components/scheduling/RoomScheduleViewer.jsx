@@ -236,7 +236,7 @@ export default function RoomScheduleViewer({
           return true;
         }
       }
-      if (isEditMode && ignoreCourseCode) {
+      if (ignoreCourseCode) {
         const codeMatches =
           String(block.course || '').trim().toUpperCase() === String(ignoreCourseCode).trim().toUpperCase() ||
           String(block.title || '').trim().toUpperCase().includes(String(ignoreCourseCode).trim().toUpperCase());

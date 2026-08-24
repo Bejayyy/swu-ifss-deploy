@@ -438,20 +438,20 @@ export default function RoomWeeklyScheduleModal({
 
   return (
     <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
+      className="modal-overlay !z-[10001] fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden"
       onClick={(e) => {
         e.stopPropagation();
         onClose?.();
       }}
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full p-4 sm:p-6 my-auto space-y-4 max-h-[95vh] flex flex-col border border-gray-100 animate-modal-pop"
+        className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full p-4 sm:p-6 h-[92vh] max-h-[92vh] flex flex-col border border-gray-100 animate-modal-pop overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100 flex-shrink-0 gap-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100 shrink-0 gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-red-50 text-[#7A0808]">
               <Building2 size={22} />
@@ -491,7 +491,7 @@ export default function RoomWeeklyScheduleModal({
         </div>
 
         {/* Modal Body: Weekly Schedule Grid */}
-        <div className="overflow-y-auto flex-1 pr-1">
+        <div className="overflow-y-auto flex-1 pr-1 overscroll-contain">
           {isLoading ? (
             <div className="py-24 text-center text-gray-400 space-y-3">
               <RefreshCw size={28} className="animate-spin mx-auto text-[#7A0808]" />
@@ -519,7 +519,7 @@ export default function RoomWeeklyScheduleModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="pt-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 gap-3">
+        <div className="pt-3 border-t border-gray-100 flex items-center justify-between shrink-0 gap-3">
           <p className="text-xs text-gray-400 font-medium">
             💡 Check available time slots before submitting your reservation.
           </p>

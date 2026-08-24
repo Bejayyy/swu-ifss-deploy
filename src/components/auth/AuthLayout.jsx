@@ -4,12 +4,12 @@ import loginBg from '../../assets/login-bg.jpg';
 
 export default function AuthLayout({ title, subtitle, children, footer }) {
   return (
-    <div className="min-h-screen flex w-full bg-white overflow-hidden font-sans">
+    <div className="h-screen w-full flex bg-white overflow-hidden font-sans">
       {/* Left Column: Hero Branding Banner with High-Clarity School Architecture & Color Grading */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-[#7A0808] overflow-hidden flex-col justify-between p-12 lg:p-16 select-none min-h-screen">
+      <div className="hidden lg:flex lg:w-1/2 h-full relative bg-[#7A0808] overflow-hidden flex-col justify-between p-12 lg:p-16 select-none shrink-0">
         {/* School Building Photo with Color Grading (Contrast, Saturation & Brightness Boost) */}
         <div
-          className="absolute inset-0 z-0 bg-cover bg-center transition-opacity scale-[1.02]"
+          className="absolute inset-0 z-0 bg-cover bg-center pointer-events-none"
           style={{
             backgroundImage: `url(${loginBg})`,
             filter: 'brightness(1.05) contrast(1.12) saturate(1.15)',
@@ -43,7 +43,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
       </div>
 
       {/* Right Column: Clean Auth Form Canvas */}
-      <div className="w-full lg:w-1/2 min-h-screen flex items-center justify-center p-6 sm:p-12 bg-white overflow-y-auto">
+      <div className="w-full lg:w-1/2 h-full flex items-center justify-center p-6 sm:p-12 bg-white overflow-y-auto">
         <div className="w-full max-w-[380px] py-6 sm:py-10">
           {/* Centered System Logo Above Page Title */}
           <div className="flex flex-col items-center justify-center mb-5">

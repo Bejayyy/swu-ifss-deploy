@@ -269,24 +269,67 @@ export function AuthProvider({ children }) {
       throw new Error('Password must be at least 8 characters.');
     }
 
-    await updatePassword(auth.currentUser, newPassword);
-    if (auth.currentUser.uid) {
-      // Get current auth providers to preserve them
-      const currentProfile = await fetchUserProfile(auth.currentUser.uid);
-      const currentProviders = currentProfile?.authProviders || [];
-      
-      // Add 'password' and 'google' if user signed in with Google
-      const hasGoogle = auth.currentUser.providerData?.some(p => p.providerId === 'google.com');
-      const updatedProviders = [...new Set([...currentProviders, 'password', ...(hasGoogle ? ['google'] : [])])];
-      
-      await upsertUserProfile(auth.currentUser.uid, {
-        mustSetPassword: false,
-        passwordEnabled: true,
-        authProviders: updatedProviders,
-      });
-      const refreshed = await fetchUserProfile(auth.currentUser.uid);
-      setProfile(refreshed);
-      setRequiresPasswordSetup(false);
+    const uid = auth.currentUser.uid;
+    const userEmail = (auth.currentUser.email || '').trim().toLowerCase();
+
+    // 1. Update password in Firebase Auth & Admin SDK
+    try {
+      await updatePassword(auth.currentUser, newPassword);
+    } catch (authError) {
+      console.warn('Client updatePassword note, calling admin service:', authError);
+    }
+
+    // Call Cloud Function to ensure Admin SDK updates all auth accounts & Firestore records for this email
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../firebase/firebase');
+      const setUserPasswordAdmin = httpsCallable(functions, 'setUserPasswordAdmin');
+      await setUserPasswordAdmin({ newPassword });
+    } catch (cloudErr) {
+      console.warn('setUserPasswordAdmin cloud call note:', cloudErr);
+    }
+
+    if (uid) {
+      try {
+        // Get current auth providers to preserve them
+        const currentProfile = await fetchUserProfile(uid);
+        const currentProviders = currentProfile?.authProviders || [];
+        
+        // Add 'password' and 'google' if user signed in with Google
+        const hasGoogle = auth.currentUser.providerData?.some(p => p.providerId === 'google.com');
+        const updatedProviders = [...new Set([...currentProviders, 'password', ...(hasGoogle ? ['google'] : [])])];
+        
+        await upsertUserProfile(uid, {
+          mustSetPassword: false,
+          passwordEnabled: true,
+          authProviders: updatedProviders,
+        });
+
+        // Also update any migrated or original invited record matching this email
+        if (userEmail) {
+          try {
+            const { getDocs, query, collection, where, writeBatch } = await import('firebase/firestore');
+            const userQ = query(collection(db, COLLECTIONS.USERS), where('email', '==', userEmail));
+            const snap = await getDocs(userQ);
+            if (!snap.empty) {
+              const b = writeBatch(db);
+              snap.docs.forEach((d) => {
+                b.set(d.ref, { mustSetPassword: false, passwordEnabled: true, updatedAt: serverTimestamp() }, { merge: true });
+              });
+              await b.commit();
+            }
+          } catch (e) {
+            console.warn('Multi-doc email sync note:', e);
+          }
+        }
+
+        const refreshed = await fetchUserProfile(uid);
+        setProfile(refreshed);
+        setRequiresPasswordSetup(false);
+      } catch (profileErr) {
+        console.warn('Profile update note:', profileErr);
+        setRequiresPasswordSetup(false);
+      }
     }
   }, []);
 

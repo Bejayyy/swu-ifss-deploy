@@ -1,296 +1,452 @@
 /**
  * RAG (Retrieval-Augmented Generation) Chatbot Service
- * Integrates Gemini AI with Firestore data to answer queries about:
- * - Rooms (availability, capacity, equipment, performance)
- * - Buildings and floors
- * - Room schedules and reservations
- * - Requirements and filtering
+ * SWU-IFSS Intelligent Facility & Scheduling Assistant (COBRA)
+ * 
+ * Features:
+ * - Anti-hallucination system boundary constraints
+ * - Real-time Firestore room & reservation data ingestion
+ * - Intelligent room recommendation with actionable room metadata tags
+ * - Multi-model Gemini fallback (gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash)
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
+import { COLLEGE_ACRONYM_MAP } from '../constants/colleges';
 
-// Initialize Gemini AI with new API format (keys starting with AQ)
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+// Primary & Fallback Gemini Model Endpoints (using gemini-3.6-flash matching calendarAiService)
+const GEMINI_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+];
+
+// In-memory cache for ultra-fast queries
+let cachedRooms = null;
+let cachedReservations = null;
+let cachedBuildings = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
 /**
- * Fetch all buildings with their floors and rooms
+ * System Knowledge Base: Permanent Facts about SWU-IFSS
  */
-async function fetchBuildingsData() {
+const SYSTEM_KNOWLEDGE_BASE = `
+SYSTEM OVERVIEW:
+Southwestern University PHINMA - Integrated Facility Scheduling System (SWU-IFSS).
+SWU-IFSS is the centralized platform for managing campus room reservations, weekly course schedules, building/room inventory, academic calendars, and facility maintenance.
+
+USER ROLES & PERMISSIONS:
+- Registrar: University super-administrator. Final approval for room reservations, course schedules, academic calendar setup, and user account creation.
+- Dean: Academic leader for a specific college. Plots regular and exam course schedules for college sections, assigns rooms and faculty, and approves academic activity permits.
+- Teacher / Faculty: Views class schedules, assigned teaching rooms, and academic calendar dates.
+- Organization Head: Submits room reservation requests and on-campus activity permits for student organizations.
+- General Services Department (GSD): Manages campus maintenance, equipment logistics, facility inspections, and endorses venue usage.
+- Student Life Office (SLO): Reviews student organization activity permits and non-academic room reservations before Dean/Registrar routing.
+- Property & Facilities Office: Tracks building and room assets, equipment inventory, and physical spaces.
+- VP Academics & Chancellor: Executive oversight of university academic operations.
+
+ROOM RESERVATION & ACTIVITY PERMIT POLICIES:
+- Minimum Advance Notice: Room reservations and On-Campus Activity Permits must be submitted at least 7 DAYS in advance.
+- Approval Workflow Routing:
+  1. Academic Activity: Requestor -> College Dean -> GSD (if facilities/equipment needed) -> Registrar (Final Approval).
+  2. Non-Academic Activity: Requestor -> Student Life Office -> College Head / Org Adviser -> GSD -> Registrar.
+- Priority: Academic classes and scheduled university exams take precedence over non-academic room bookings.
+
+COURSE SCHEDULING WORKFLOW:
+- Regular weekly scheduling: Deans plot course lecture and laboratory blocks across Monday to Saturday into vacant rooms without double-booking.
+- Exam periods (P1, P2, P3): Exam schedules follow academic calendar bounds for Freshmen and Upperclassmen.
+- Self-conflict prevention: The system automatically blocks room and section time overlaps.
+
+COLLEGES & ACADEMIC PROGRAMS AT SWU PHINMA:
+- College of Medical Technology (BSMT / MLS)
+- College of Nursing (BSN)
+- College of Medicine (MED)
+- College of Dentistry (DMD)
+- College of Pharmacy (PHARMA)
+- College of Optometry (OPTOM)
+- College of Physical Therapy (PT / BSPT)
+- College of Radiologic Technology (RADTECH / BSRT)
+- College of Arts and Sciences (CAS)
+- College of Information Technology & Computer Studies (BSIT / CS)
+- College of Business Administration (CBA / BSBA)
+- School of Engineering and Architecture (SEA)
+- College of Education (EDUC)
+- College of Criminology (CRIM)
+- College of Law (LAW)
+- School of Health and Allied Health Sciences (SHAHS / Senior High)
+`;
+
+/**
+ * Fetch all buildings, floors, and rooms from Firestore
+ */
+export async function fetchAllRoomsFlat(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedRooms && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedRooms;
+  }
+
   try {
     const buildingsSnapshot = await getDocs(collection(db, COLLECTIONS.BUILDINGS));
-    const buildings = [];
+    const buildingsList = [];
 
-    for (const buildingDoc of buildingsSnapshot.docs) {
+    const buildingPromises = buildingsSnapshot.docs.map(async (buildingDoc) => {
       const buildingData = buildingDoc.data();
-      const building = {
+      const bObj = {
         id: buildingDoc.id,
-        name: buildingData.name,
-        code: buildingData.code,
-        floors: []
+        name: buildingData.name || 'Building',
+        code: buildingData.code || buildingData.prefix || '',
       };
+      buildingsList.push(bObj);
 
-      // Fetch floors for this building
       const floorsSnapshot = await getDocs(
         collection(db, COLLECTIONS.BUILDINGS, buildingDoc.id, COLLECTIONS.FLOORS)
       );
 
-      for (const floorDoc of floorsSnapshot.docs) {
+      const floorPromises = floorsSnapshot.docs.map(async (floorDoc) => {
         const floorData = floorDoc.data();
-        const floor = {
-          id: floorDoc.id,
-          number: floorData.floorNumber,
-          label: floorData.label,
-          rooms: []
-        };
+        const floorNumber = floorData.floorNumber || floorData.floor || 1;
+        const floorLabel = floorData.label || `Floor ${floorNumber}`;
 
-        // Fetch rooms for this floor
         const roomsSnapshot = await getDocs(
           collection(db, COLLECTIONS.BUILDINGS, buildingDoc.id, COLLECTIONS.FLOORS, floorDoc.id, COLLECTIONS.ROOMS)
         );
 
-        floor.rooms = roomsSnapshot.docs.map(roomDoc => {
+        return roomsSnapshot.docs.map((roomDoc) => {
           const roomData = roomDoc.data();
+          const roomCode = roomData.roomCode || roomData.name || roomDoc.id;
+          const capacity = Number(roomData.capacity) || 40;
+          const type = roomData.type || 'Classroom';
+          const equipment = Array.isArray(roomData.equipment) ? roomData.equipment : [];
+          const status = roomData.status || roomData.maintenanceStatus || 'Available';
+
           return {
             id: roomDoc.id,
-            name: roomData.name,
-            roomCode: roomData.roomCode,
-            type: roomData.type || 'Classroom',
-            status: roomData.status || 'Available',
-            capacity: roomData.capacity || 0,
-            equipment: roomData.equipment || [],
+            roomCode,
+            name: roomCode,
+            buildingId: buildingDoc.id,
+            buildingName: buildingData.name || 'Main Building',
+            buildingCode: buildingData.code || '',
+            floor: floorNumber,
+            floorLabel,
+            floorId: floorDoc.id,
+            type,
+            capacity,
+            equipment,
+            status,
             maintenanceStatus: roomData.maintenanceStatus || 'operational',
-            maintenanceStartDate: roomData.maintenanceStartDate,
-            maintenanceEndDate: roomData.maintenanceEndDate,
-            maintenanceReason: roomData.maintenanceReason,
-            managedBy: roomData.managedByName || roomData.managedBy
           };
         });
+      });
 
-        building.floors.push(floor);
-      }
+      const floorRooms = await Promise.all(floorPromises);
+      return floorRooms.flat();
+    });
 
-      buildings.push(building);
-    }
+    const allRoomsNested = await Promise.all(buildingPromises);
+    const flattened = allRoomsNested.flat();
 
-    return buildings;
-  } catch (error) {
-    console.error('Error fetching buildings data:', error);
-    return [];
+    cachedRooms = flattened;
+    cachedBuildings = buildingsList;
+    cacheTimestamp = Date.now();
+    return flattened;
+  } catch (err) {
+    console.error('Error loading rooms for RAG chatbot:', err);
+    return cachedRooms || [];
   }
 }
 
 /**
- * Fetch room reservations/schedules
+ * Fetch recent reservations from Firestore
  */
-async function fetchRoomReservations() {
+export async function fetchRecentReservations(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedReservations && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedReservations;
+  }
+
   try {
     const reservationsSnapshot = await getDocs(
       query(
         collection(db, COLLECTIONS.ROOM_RESERVATIONS),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(25)
       )
     );
 
-    return reservationsSnapshot.docs.map(doc => {
-      const data = doc.data();
+    const list = reservationsSnapshot.docs.map((doc) => {
+      const d = doc.data();
       return {
         id: doc.id,
-        title: data.title,
-        room: data.roomName || data.venue,
-        status: data.status,
-        requestType: data.requestType,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        timeRange: data.timeRange,
-        requestorName: data.requestorName
+        room: d.roomName || d.venue || d.room || '',
+        activity: d.activity || d.title || 'Event',
+        date: d.dateOfActivity || d.dateStart || d.startDate || '',
+        time: `${d.timeStart || ''} - ${d.timeEnd || ''}`,
+        status: d.status || 'Pending',
+        organization: d.college || d.nameOfOrg || d.department || '',
       };
     });
-  } catch (error) {
-    console.error('Error fetching reservations:', error);
-    return [];
+
+    cachedReservations = list;
+    return list;
+  } catch (err) {
+    console.warn('Reservations fetch note for RAG:', err.message);
+    return cachedReservations || [];
   }
 }
 
 /**
- * Fetch schedule entries (academic scheduling)
+ * Filter relevant rooms based on user query
  */
-async function fetchScheduleEntries() {
-  try {
-    const scheduleSnapshot = await getDocs(collection(db, COLLECTIONS.SCHEDULE_ENTRIES));
-    
-    return scheduleSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        courseCode: data.courseCode,
-        courseName: data.courseName,
-        room: data.room,
-        dayOfWeek: data.dayOfWeek,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        instructor: data.instructor,
-        section: data.section
-      };
-    });
-  } catch (error) {
-    console.error('Error fetching schedule entries:', error);
-    return [];
-  }
-}
+export function filterRelevantRooms(rooms, queryStr) {
+  const q = (queryStr || '').toLowerCase();
+  const numbers = q.match(/\d+/g) || [];
+  const reqCap = numbers.length > 0 ? parseInt(numbers[0], 10) : null;
 
-/**
- * Build context string from system data for RAG
- */
-async function buildSystemContext() {
-  const buildings = await fetchBuildingsData();
-  const reservations = await fetchRoomReservations();
-  const schedules = await fetchScheduleEntries();
+  const matchesEquipment = (room, term) => {
+    const eqStr = (room.equipment || []).join(' ').toLowerCase();
+    const typeStr = (room.type || '').toLowerCase();
+    if (term === 'ac' || term === 'aircon' || term === 'air conditioning') {
+      return eqStr.includes('air') || eqStr.includes('ac');
+    }
+    if (term === 'projector') return eqStr.includes('projector');
+    if (term === 'computer' || term === 'computers' || term === 'pc' || term === 'lab') {
+      return eqStr.includes('computer') || typeStr.includes('lab');
+    }
+    if (term === 'whiteboard' || term === 'board') return eqStr.includes('whiteboard') || eqStr.includes('board');
+    if (term === 'tv' || term === 'smart board') return eqStr.includes('tv') || eqStr.includes('smart');
+    if (term === 'sound' || term === 'audio' || term === 'mic') return eqStr.includes('audio') || eqStr.includes('sound');
+    return eqStr.includes(term);
+  };
 
-  let context = '=== SYSTEM DATA CONTEXT ===\n\n';
+  // Check building name mentions
+  const buildingMentions = ['merlo', 'phinma', 'ramon', 'science', 'shahs', 'techhub', 'westcampus', 'westech'];
+  const matchedBuildingTerm = buildingMentions.find((b) => q.includes(b));
 
-  // Buildings and Rooms
-  context += '## BUILDINGS AND ROOMS:\n\n';
-  buildings.forEach(building => {
-    context += `Building: ${building.name} (${building.code})\n`;
-    building.floors.forEach(floor => {
-      context += `  Floor ${floor.number} (${floor.label}):\n`;
-      floor.rooms.forEach(room => {
-        context += `    - ${room.roomCode || room.name}: ${room.type}, Capacity: ${room.capacity} people\n`;
-        context += `      Status: ${room.status}, Maintenance: ${room.maintenanceStatus}\n`;
-        if (room.equipment && room.equipment.length > 0) {
-          context += `      Equipment: ${room.equipment.join(', ')}\n`;
-        }
-        if (room.maintenanceStatus !== 'operational') {
-          context += `      Maintenance Period: ${room.maintenanceStartDate} to ${room.maintenanceEndDate}\n`;
-          context += `      Reason: ${room.maintenanceReason}\n`;
-        }
-      });
-    });
-    context += '\n';
+  let filtered = (rooms || []).filter((r) => {
+    // If specific building requested
+    if (matchedBuildingTerm) {
+      const bName = (r.buildingName || '').toLowerCase();
+      if (!bName.includes(matchedBuildingTerm)) return false;
+    }
+
+    // If capacity specified (e.g. "40 students")
+    if (reqCap && reqCap > 10 && reqCap < 500) {
+      if (r.capacity < reqCap * 0.7 || r.capacity > reqCap * 2.2) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
-  // Current Reservations
-  if (reservations.length > 0) {
-    context += '\n## RECENT ROOM RESERVATIONS:\n\n';
-    reservations.slice(0, 20).forEach(res => {
-      context += `- ${res.title} (${res.room})\n`;
-      context += `  Status: ${res.status}, Type: ${res.requestType}\n`;
-      context += `  Date: ${res.startDate} to ${res.endDate}\n`;
-      context += `  Time: ${res.timeRange}\n\n`;
-    });
+  // If filtered is too small, fallback to broader list
+  if (filtered.length === 0) {
+    filtered = rooms || [];
   }
 
-  // Academic Schedules
-  if (schedules.length > 0) {
-    context += '\n## ACADEMIC CLASS SCHEDULES:\n\n';
-    schedules.slice(0, 30).forEach(sched => {
-      context += `- ${sched.courseCode} ${sched.courseName} (Section ${sched.section})\n`;
-      context += `  Room: ${sched.room}, Instructor: ${sched.instructor}\n`;
-      context += `  Schedule: ${sched.dayOfWeek} ${sched.startTime}-${sched.endTime}\n\n`;
-    });
-  }
+  // Score relevance
+  filtered.sort((a, b) => {
+    let scoreA = 0;
+    let scoreB = 0;
 
-  return context;
+    if (reqCap) {
+      scoreA -= Math.abs(a.capacity - reqCap);
+      scoreB -= Math.abs(b.capacity - reqCap);
+    }
+    if (q.includes('ac') || q.includes('aircon')) {
+      if (matchesEquipment(a, 'ac')) scoreA += 20;
+      if (matchesEquipment(b, 'ac')) scoreB += 20;
+    }
+    if (q.includes('projector')) {
+      if (matchesEquipment(a, 'projector')) scoreA += 20;
+      if (matchesEquipment(b, 'projector')) scoreB += 20;
+    }
+    if (q.includes('computer') || q.includes('lab')) {
+      if (matchesEquipment(a, 'computer')) scoreA += 25;
+      if (matchesEquipment(b, 'computer')) scoreB += 25;
+    }
+
+    return scoreB - scoreA;
+  });
+
+  return filtered.slice(0, 12);
 }
 
 /**
- * Query Gemini AI with RAG context
+ * Builds compact, highly relevant RAG context for Gemini
  */
-export async function queryGeminiWithRAG(userMessage, conversationHistory = []) {
-  try {
-    // Build system context from Firestore data
-    const systemContext = await buildSystemContext();
+export async function buildRAGContext(userQuery) {
+  const [rooms, reservations] = await Promise.all([
+    fetchAllRoomsFlat(),
+    fetchRecentReservations(),
+  ]);
 
-    // Initialize Gemini model (using gemini-1.5-flash for new API format with AQ keys)
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash'
+  const relevantRooms = filterRelevantRooms(rooms, userQuery);
+
+  let context = `--- SYSTEM GROUNDING KNOWLEDGE ---\n${SYSTEM_KNOWLEDGE_BASE}\n\n`;
+
+  context += `--- LIVE CAMPUS ROOM INVENTORY (${relevantRooms.length} Relevant Rooms) ---\n`;
+  if (relevantRooms.length === 0) {
+    context += 'No rooms currently listed in the database.\n';
+  } else {
+    relevantRooms.forEach((r) => {
+      context += `• Room: ${r.roomCode} | Building: ${r.buildingName} (Floor ${r.floor}) | Type: ${r.type} | Capacity: ${r.capacity} seats | Equipment: ${r.equipment.length ? r.equipment.join(', ') : 'Standard'} | Status: ${r.status || 'Available'}\n`;
     });
+  }
 
-    // Build the full prompt with system context and conversation history
-    let fullPrompt = `You are COBRA Assistant, a helpful AI chatbot for the SWU Integrated Facility Scheduling System (IFSS).
+  if (reservations.length > 0) {
+    context += `\n--- RECENT ACTIVE RESERVATIONS & BOOKINGS ---\n`;
+    reservations.slice(0, 10).forEach((res) => {
+      context += `• Room ${res.room}: ${res.activity} (${res.organization}) on ${res.date} [${res.time}] - Status: ${res.status}\n`;
+    });
+  }
 
-Your role is to help users:
-- Find available rooms based on requirements (capacity, equipment, location)
-- Check room schedules and availability
-- Provide information about room performance and utilization
-- Answer questions about buildings, floors, and facilities
-- Assist with room reservation inquiries
+  return { context, relevantRooms };
+}
 
-IMPORTANT INSTRUCTIONS:
-- Always answer based on the SYSTEM DATA provided below
-- Be specific and cite room codes, building names, and capacities when answering
-- If asked about availability, check the reservations and schedules data
-- If a room doesn't meet requirements, suggest alternatives
-- Be concise but informative
-- If you don't have the data to answer, say so clearly
+/**
+ * Calls Gemini REST API with fallback models
+ */
+async function callGeminiAPI(fullPrompt, systemInstruction = '') {
+  if (!GEMINI_API_KEY) {
+    throw new Error('MISSING_API_KEY');
+  }
 
-${systemContext}
+  let lastError = null;
 
-=== CONVERSATION HISTORY ===
-`;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      
+      const payload = {
+        contents: [
+          {
+            parts: [{ text: fullPrompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.3, // Low temperature for high precision and zero hallucination
+          topK: 30,
+          topP: 0.9,
+          maxOutputTokens: 1200,
+        },
+      };
 
-    // Add conversation history
-    if (conversationHistory.length > 0) {
-      conversationHistory.forEach(msg => {
-        fullPrompt += `${msg.role === 'user' ? 'USER' : 'ASSISTANT'}: ${msg.text}\n`;
+      if (systemInstruction) {
+        payload.systemInstruction = {
+          parts: [{ text: systemInstruction }],
+        };
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        return text;
+      }
+    } catch (err) {
+      console.warn(`Gemini model ${model} failed, trying fallback:`, err.message);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Failed to generate response from Gemini API.');
+}
+
+/**
+ * Main RAG Query function
+ * Streams or yields chunks to the chat UI
+ */
+export async function* queryGeminiWithRAG(userMessage, conversationHistory = []) {
+  try {
+    const trimmedMsg = (userMessage || '').trim();
+    if (!trimmedMsg) return;
+
+    // Check simple greetings / thank yous to respond instantly
+    const lower = trimmedMsg.toLowerCase();
+    if (/^(hi|hello|hey|good day|greetings)[!.]*$/i.test(lower)) {
+      yield `Hello! I am **COBRA Assistant**, your official SWU-IFSS facility and scheduling assistant. 🐍\n\nHow can I help you today? You can ask me to **find a room**, **check room schedules**, **view equipment**, or learn about **reservation procedures**.`;
+      return;
+    }
+    if (/^(thanks|thank you|salamat|thx)[!.]*$/i.test(lower)) {
+      yield `You're very welcome! If you need anything else regarding SWU-IFSS rooms, schedules, or facility reservations, just let me know. 😊`;
+      return;
     }
 
-    // Add current user message
-    fullPrompt += `\nUSER: ${userMessage}\n\nASSISTANT:`;
+    // Build real-time RAG context
+    const { context } = await buildRAGContext(trimmedMsg);
 
-    // Generate response
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const text = response.text();
+    const systemInstruction = `You are COBRA Assistant, the official AI Assistant for Southwestern University PHINMA's Integrated Facility Scheduling System (SWU-IFSS).
 
-    return {
-      success: true,
-      message: text
-    };
-  } catch (error) {
-    console.error('Error querying Gemini AI:', error);
-    
-    if (error.message?.includes('API_KEY') || error.message?.includes('API key')) {
-      return {
-        success: false,
-        message: 'Gemini API key is not configured or invalid. Please add a valid VITE_GEMINI_API_KEY (starting with AQ) to your .env file.'
-      };
+CRITICAL DIRECTIVES:
+1. STRICT ANTI-HALLUCINATION: Base your answers ONLY on the provided system grounding knowledge and live campus room inventory. Never invent buildings, rooms, schedules, or policies that do not exist.
+2. SCOPE ENFORCEMENT: Only answer questions about SWU-IFSS, campus rooms, building facilities, equipment, course scheduling, reservations, activity permits, academic calendars, and university policies. If the user asks about unrelated topics, politely decline and state that you are exclusively trained for SWU-IFSS campus operations.
+3. ROOM RECOMMENDATIONS & DIRECTORY ACTIONS:
+   - Whenever you suggest, recommend, list, or reference ANY room from the inventory (e.g. PH 101, MB 101, TH 309), you MUST ALWAYS append a room action tag on a new line at the end for each room:
+     [ROOM_ACTION:{"roomCode":"EXACT_ROOM_CODE","buildingName":"BUILDING_NAME","floor":FLOOR_NUMBER,"capacity":CAPACITY_NUMBER,"type":"ROOM_TYPE"}]
+   - This tag automatically creates interactive "View Room Details (Directory)", "View Schedule", and "Reserve Room" buttons for the user.
+4. TONE & FORMAT:
+   - Professional, clear, and helpful.
+   - Use clean Markdown with bold room codes (e.g. **PH 101**) and bullet points (•) for specifications.`;
+
+    let promptWithHistory = `${context}\n\nCONVERSATION HISTORY:\n`;
+    (conversationHistory || []).slice(-6).forEach((m) => {
+      promptWithHistory += `${m.role === 'user' ? 'USER' : 'COBRA'}: ${m.text}\n`;
+    });
+    promptWithHistory += `\nUSER: ${trimmedMsg}\n\nCOBRA:`;
+
+    const fullResponse = await callGeminiAPI(promptWithHistory, systemInstruction);
+
+    yield fullResponse;
+
+  } catch (err) {
+    console.error('RAG Chatbot error:', err);
+    if (err.message === 'MISSING_API_KEY') {
+      yield '⚠️ **Gemini API Key Missing**: Please make sure `VITE_GEMINI_API_KEY` is configured in your environment to enable AI responses.';
+      return;
     }
-
-    if (error.message?.includes('404') || error.message?.includes('not found')) {
-      return {
-        success: false,
-        message: 'Model not available. The new Gemini API format may require different configuration. Please ensure you\'re using the latest API key format (starting with AQ).'
-      };
-    }
-
-    return {
-      success: false,
-      message: 'Sorry, I encountered an error processing your request. Please try again or check your API key format.'
-    };
+    yield `⚠️ I encountered an issue processing your request (${err.message || 'Connection error'}). Please try again or ask for specific room details.`;
   }
 }
 
 /**
- * Generate quick prompt suggestions based on current system state
+ * Dynamic quick prompts tailored to SWU-IFSS
  */
 export async function generateQuickPrompts() {
-  const buildings = await fetchBuildingsData();
-  const totalRooms = buildings.reduce((sum, b) => 
-    sum + b.floors.reduce((fsum, f) => fsum + f.rooms.length, 0), 0
-  );
-
-  const prompts = [
-    `Show me available rooms for ${Math.floor(Math.random() * 50 + 20)} students`,
-    'Which rooms have projectors and air conditioning?',
-    'What is the largest classroom available?',
-    'Show me all rooms in the main building',
-    'Which rooms are currently under maintenance?'
+  return [
+    'Find an available room for 40 students with AC',
+    'Which rooms have projectors and computers?',
+    'How do I file a room reservation permit?',
+    'Show me rooms in Merlo Building',
+    'What is the 7-day advance reservation rule?',
   ];
+}
 
-  return prompts;
+/**
+ * Preload system data into in-memory cache
+ */
+export async function preloadSystemData() {
+  try {
+    await Promise.all([
+      fetchAllRoomsFlat(true),
+      fetchRecentReservations(true),
+    ]);
+    return true;
+  } catch (err) {
+    console.warn('Preload note:', err);
+    return false;
+  }
 }

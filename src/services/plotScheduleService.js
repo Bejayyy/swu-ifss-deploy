@@ -818,69 +818,118 @@ export async function deleteDeanSection(deanUid, sectionName) {
  * Reset all schedules for a dean in a specific semester
  * Deletes all schedule entries that match the semester (for both regular and exam schedules)
  */
-export async function resetDeanSchedulesForSemester(deanUid, semester) {
+export async function resetDeanSchedulesForSemester(deanUid, semester, schoolYearId = null) {
   if (!deanUid) {
     throw new Error('Dean UID is required.');
   }
 
-  console.log(`[resetDeanSchedulesForSemester] Resetting schedules for dean ${deanUid}, semester ${semester}`);
+  console.log(`[resetDeanSchedulesForSemester] Resetting schedules for dean ${deanUid}, semester ${semester}, schoolYear ${schoolYearId}`);
 
-  const userRef = doc(db, COLLECTIONS.USERS, deanUid);
-  const schedulesColl = collection(userRef, 'course_schedules');
-  
-  // Get all sections for this dean
-  const sectionsSnapshot = await getDocs(schedulesColl);
-  
   let totalDeleted = 0;
-  
-  for (const sectionDoc of sectionsSnapshot.docs) {
-    const sectionName = sectionDoc.id;
-    const entriesRef = deanSectionEntriesRef(deanUid, sectionName);
+  const deletedDocIds = new Set();
+  const deletePromises = [];
+
+  // Approach 1: Primary - Search all entries using collectionGroup('entries')
+  try {
+    const entriesSnapshot = await getDocs(collectionGroup(db, 'entries'));
+    for (const entryDoc of entriesSnapshot.docs) {
+      const path = entryDoc.ref.path;
+      // Path format: users/{deanUid}/course_schedules/{section}/entries/{entryId}
+      const pathParts = path.split('/');
+      const isDeanEntry = pathParts[0] === COLLECTIONS.USERS && pathParts[1] === deanUid;
+
+      if (isDeanEntry && !deletedDocIds.has(entryDoc.ref.path)) {
+        const entry = entryDoc.data();
+        
+        // Filter by semester if semester is specified
+        const matchSemester = 
+          !semester || 
+          entry.semester === undefined || 
+          entry.semester === null || 
+          String(entry.semester) === String(semester);
+
+        // Filter by school year if school year is specified
+        const matchSy = matchSchoolYear(entry, schoolYearId);
+
+        if (matchSemester && matchSy) {
+          deletedDocIds.add(entryDoc.ref.path);
+          deletePromises.push(deleteDoc(entryDoc.ref));
+          totalDeleted++;
+        }
+      }
+    }
+  } catch (groupError) {
+    console.warn('[resetDeanSchedulesForSemester] collectionGroup query error, falling back to section iteration:', groupError);
+  }
+
+  // Approach 2: Secondary - Direct section iteration across course_schedules & program_sections
+  try {
+    const userRef = doc(db, COLLECTIONS.USERS, deanUid);
+    const schedulesColl = collection(userRef, 'course_schedules');
+    const sectionsSnapshot = await getDocs(schedulesColl);
     
-    // Get all entries in this section
-    const entriesSnapshot = await getDocs(entriesRef);
+    // Also fetch all program_sections from root collection
+    const progSectionsSnapshot = await getDocs(collection(db, 'program_sections'));
+    const allKnownSections = new Set(sectionsSnapshot.docs.map((d) => d.id));
     
-    // Filter entries by semester and delete them
-    const deletePromises = [];
-    entriesSnapshot.docs.forEach(entryDoc => {
-      const entry = entryDoc.data();
-      // Delete if:
-      // 1. Entry has semester field and matches the selected semester
-      // 2. Entry has no semester field (old entries - we'll delete them too for cleanup)
-      const shouldDelete = 
-        (entry.semester !== undefined && entry.semester !== null && Number(entry.semester) === Number(semester)) ||
-        (entry.semester === undefined || entry.semester === null);
-      
-      if (shouldDelete) {
-        console.log(`[resetDeanSchedulesForSemester] Deleting entry ${entryDoc.id} from ${sectionName}`);
-        deletePromises.push(deleteDoc(entryDoc.ref));
-        totalDeleted++;
+    progSectionsSnapshot.docs.forEach((pDoc) => {
+      const pData = pDoc.data();
+      if (Array.isArray(pData.sections)) {
+        pData.sections.forEach((s) => allKnownSections.add(s));
       }
     });
-    
-    await Promise.all(deletePromises);
+
+    for (const sectionName of allKnownSections) {
+      if (!sectionName) continue;
+      const entriesRef = deanSectionEntriesRef(deanUid, sectionName);
+      try {
+        const entriesSnap = await getDocs(entriesRef);
+        for (const entryDoc of entriesSnap.docs) {
+          if (!deletedDocIds.has(entryDoc.ref.path)) {
+            const entry = entryDoc.data();
+            const matchSemester = 
+              !semester || 
+              entry.semester === undefined || 
+              entry.semester === null || 
+              String(entry.semester) === String(semester);
+            const matchSy = matchSchoolYear(entry, schoolYearId);
+
+            if (matchSemester && matchSy) {
+              deletedDocIds.add(entryDoc.ref.path);
+              deletePromises.push(deleteDoc(entryDoc.ref));
+              totalDeleted++;
+            }
+          }
+        }
+      } catch (secErr) {
+        // Section subcollection might not exist, ignore
+      }
+    }
+  } catch (iterErr) {
+    console.warn('[resetDeanSchedulesForSemester] section iteration note:', iterErr);
   }
-  
-  console.log(`[resetDeanSchedulesForSemester] Deleted ${totalDeleted} schedule entries`);
+
+  await Promise.all(deletePromises);
+  console.log(`[resetDeanSchedulesForSemester] Deleted ${totalDeleted} schedule entries for dean ${deanUid}`);
   return totalDeleted;
 }
 
 /**
  * Reset schedules for multiple deans in a specific semester
  */
-export async function resetMultipleDeansSchedules(deanUids, semester) {
+export async function resetMultipleDeansSchedules(deanUids, semester, schoolYearId = null) {
   if (!deanUids || deanUids.length === 0) {
     throw new Error('At least one dean must be selected.');
   }
 
-  console.log(`[resetMultipleDeansSchedules] Resetting schedules for ${deanUids.length} deans, semester ${semester}`);
+  console.log(`[resetMultipleDeansSchedules] Resetting schedules for ${deanUids.length} deans, semester ${semester}, schoolYear ${schoolYearId}`);
 
   let totalDeleted = 0;
   const results = [];
 
   for (const deanUid of deanUids) {
     try {
-      const deleted = await resetDeanSchedulesForSemester(deanUid, semester);
+      const deleted = await resetDeanSchedulesForSemester(deanUid, semester, schoolYearId);
       results.push({ deanUid, success: true, deleted });
       totalDeleted += deleted;
     } catch (error) {

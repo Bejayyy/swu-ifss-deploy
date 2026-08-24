@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { USER_STATUS, INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { requiresCollege, requiresDepartment } from '../../constants/colleges';
+import { requiresCollege, requiresDepartment, formatCollegeName } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
@@ -128,8 +128,8 @@ export default function EditUserModal({
         middleName: mn,
         lastName: ln,
         email: form.email.trim(),
-        department: showCollegeField ? form.college : '',
-        college: showCollegeField ? form.college : '',
+        department: showCollegeField ? formatCollegeName(form.college) : '',
+        college: showCollegeField ? formatCollegeName(form.college) : '',
         roleValue: form.roleValue,
         status: form.status,
         permissions: form.useCustomAccess ? form.permissions : [],

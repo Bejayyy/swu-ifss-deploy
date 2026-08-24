@@ -26,6 +26,7 @@ import {
   getRoleOptionsFromDefinitions,
   saveRoleDefinition,
 } from '../services/roleDefinitionService';
+import { formatCollegeName } from '../constants/colleges';
 
 const roleStyle = (role) => {
   const r = (role || '').toLowerCase();
@@ -593,7 +594,9 @@ export default function SystemAdministration() {
                               {u.useCustomAccess ? 'Custom' : 'Role default'}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>{u.department}</td>
+                          <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>
+                            {formatCollegeName(u.department || u.college) || '—'}
+                          </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center justify-center gap-1.5">
                               <button

@@ -948,3 +948,86 @@ export function deleteReminder(reminderId) {
     console.warn('Error deleting reminder:', e);
   }
 }
+
+export async function purgeUserChatData(uid, userEmail) {
+  if (!uid && !userEmail) return;
+
+  const targetKeys = [
+    uid,
+    userEmail,
+    userEmail ? userEmail.split('@')[0] : '',
+  ].filter(Boolean).map((k) => String(k).trim().toLowerCase());
+
+  // 1. Purge LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (raw) {
+        const msgs = JSON.parse(raw);
+        if (Array.isArray(msgs)) {
+          const remaining = msgs.filter((m) => {
+            const sKey = String(m.senderEmail || m.senderUid || m.senderKey || '').toLowerCase();
+            const rKey = String(m.receiverEmail || m.receiverUid || m.receiverKey || '').toLowerCase();
+            const parts = Array.isArray(m.participants) ? m.participants.map((p) => String(p).toLowerCase()) : [];
+            return !targetKeys.some((k) => sKey === k || rKey === k || parts.includes(k));
+          });
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(remaining));
+          window.dispatchEvent(new CustomEvent('swu_chat_updated'));
+        }
+      }
+    } catch (e) {
+      console.warn('LocalStorage chat purge note:', e);
+    }
+  }
+
+  // 2. Purge Firestore chat_rooms documents
+  try {
+    const roomsSnap = await getDocs(collection(db, CHAT_ROOMS_COLLECTION));
+    for (const rDoc of roomsSnap.docs) {
+      const rId = rDoc.id.toLowerCase();
+      const data = rDoc.data() || {};
+      const idMatch = targetKeys.some((k) => rId.includes(k));
+      const partsMatch = Array.isArray(data.participants) && data.participants.some((p) => targetKeys.includes(String(p).toLowerCase()));
+
+      if (idMatch || partsMatch) {
+        await deleteDoc(rDoc.ref);
+      } else if (Array.isArray(data.messages)) {
+        const filtered = data.messages.filter((m) => {
+          const sKey = String(m.senderEmail || m.senderUid || m.senderKey || '').toLowerCase();
+          const rKey = String(m.receiverEmail || m.receiverUid || m.receiverKey || '').toLowerCase();
+          return !targetKeys.includes(sKey) && !targetKeys.includes(rKey);
+        });
+        if (filtered.length !== data.messages.length) {
+          if (filtered.length === 0) {
+            await deleteDoc(rDoc.ref);
+          } else {
+            const lastMsg = filtered[filtered.length - 1] || null;
+            await setDoc(rDoc.ref, { messages: filtered, lastMessage: lastMsg }, { merge: true });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('chat_rooms purge note:', e);
+  }
+
+  // 3. Purge Firestore chat_messages collection
+  try {
+    const msgSnap = await getDocs(collection(db, CHAT_COLLECTION));
+    for (const d of msgSnap.docs) {
+      const m = d.data() || {};
+      const sKey = String(m.senderEmail || m.senderUid || m.senderKey || '').toLowerCase();
+      const rKey = String(m.receiverEmail || m.receiverUid || m.receiverKey || '').toLowerCase();
+      const parts = Array.isArray(m.participants) ? m.participants.map((p) => String(p).toLowerCase()) : [];
+      if (targetKeys.some((k) => sKey === k || rKey === k || parts.includes(k))) {
+        await deleteDoc(d.ref);
+      }
+    }
+  } catch (e) {
+    console.warn('chat_messages purge note:', e);
+  }
+
+  if (chatChannel) {
+    chatChannel.postMessage({ type: 'CHAT_CLEARED' });
+  }
+}

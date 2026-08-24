@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Check, X, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Check, X, ShieldCheck, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthLayout from '../components/auth/AuthLayout';
 
 export default function PasswordSetup() {
   const navigate = useNavigate();
-  const { completePasswordSetup, profile } = useAuth();
+  const { completePasswordSetup, profile, logout } = useAuth();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -42,9 +42,23 @@ export default function PasswordSetup() {
       await completePasswordSetup(password);
       navigate(profile?.role === 'developer' ? '/developer' : '/dashboard', { replace: true });
     } catch (err) {
-      setError(err.message || 'Unable to set password.');
+      const msg = err.message || '';
+      if (msg.includes('requires-recent-login') || msg.includes('re-authentication')) {
+        setError('Your sign-in session requires verification. Please click "Sign out and return to login" below, then log in once with your temporary password.');
+      } else {
+        setError(msg || 'Unable to set password.');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (e) {
+      navigate('/login');
     }
   };
 
@@ -52,6 +66,16 @@ export default function PasswordSetup() {
     <AuthLayout
       title="Set Your Password"
       subtitle={`Welcome ${profile?.displayName || ''}! Please create a permanent password for your portal account.`}
+      footer={(
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#7A0808] transition-colors cursor-pointer"
+        >
+          <LogOut size={13} />
+          Sign out and return to login
+        </button>
+      )}
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
@@ -120,16 +144,18 @@ export default function PasswordSetup() {
             autoComplete="new-password"
             required
           />
-          {confirmPassword && !passwordsMatch && (
-            <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-semibold">
-              <X size={13} /> Passwords do not match
-            </p>
-          )}
-          {passwordsMatch && (
-            <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-semibold">
-              <Check size={13} /> Passwords match
-            </p>
-          )}
+          <div className="min-h-[22px] mt-1.5 flex items-center">
+            {confirmPassword && !passwordsMatch && (
+              <p className="text-xs text-red-500 flex items-center gap-1 font-semibold">
+                <X size={13} /> Passwords do not match
+              </p>
+            )}
+            {confirmPassword && passwordsMatch && (
+              <p className="text-xs text-emerald-600 flex items-center gap-1 font-semibold">
+                <Check size={13} /> Passwords match
+              </p>
+            )}
+          </div>
         </div>
 
         <button

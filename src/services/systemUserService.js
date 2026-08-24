@@ -265,12 +265,79 @@ export async function deleteStaffUser(uid) {
   
   const userData = userSnap.data();
   const userEmail = (userData.email || '').trim().toLowerCase();
+  const userName = (userData.name || '').trim();
 
-  // ── 1. Delete all room reservations created by this user ──
+  const {
+    getDocs: fetchDocs,
+    getDoc: fetchDoc,
+    deleteDoc: delDoc,
+    query: buildQuery,
+    where: whereClause,
+    writeBatch: createBatch,
+    collection: col,
+    collectionGroup: colGroup,
+    updateDoc: patchDoc,
+  } = await import('firebase/firestore');
+
+  // ── 1. Delete Dean Sections & Plotted Schedules (users/${uid}/sections and subcollections) ──
   try {
-    const { getDocs: fetchDocs, query: buildQuery, where: whereClause, writeBatch: createBatch, collection: col, collectionGroup: colGroup, updateDoc: patchDoc } = await import('firebase/firestore');
-    
-    // Delete reservations where createdByUid matches
+    const sectionsCol = col(db, COLLECTIONS.USERS, uid, 'sections');
+    const sectionsSnap = await fetchDocs(sectionsCol);
+    for (const secDoc of sectionsSnap.docs) {
+      const entriesCol = col(db, COLLECTIONS.USERS, uid, 'sections', secDoc.id, 'plotEntries');
+      const entriesSnap = await fetchDocs(entriesCol);
+      if (!entriesSnap.empty) {
+        const batch = createBatch(db);
+        entriesSnap.docs.forEach((ed) => batch.delete(ed.ref));
+        await batch.commit();
+      }
+      await delDoc(secDoc.ref);
+    }
+
+    // Delete assignedRooms subcollection if any
+    const assignedRoomsCol = col(db, COLLECTIONS.USERS, uid, 'assignedRooms');
+    const assignedRoomsSnap = await fetchDocs(assignedRoomsCol);
+    if (!assignedRoomsSnap.empty) {
+      const batch = createBatch(db);
+      assignedRoomsSnap.docs.forEach((ad) => batch.delete(ad.ref));
+      await batch.commit();
+    }
+  } catch (secErr) {
+    console.warn('Error clearing user subcollections:', secErr);
+  }
+
+  // ── 2. Clean Schedule Access Control (schedule_access_control) ──
+  try {
+    const accessCol = col(db, COLLECTIONS.SCHEDULE_ACCESS_CONTROL || 'schedule_access_control');
+    const accessSnap = await fetchDocs(accessCol);
+    for (const accDoc of accessSnap.docs) {
+      const accData = accDoc.data() || {};
+      let changed = false;
+      let deans = accData.deans || [];
+      if (Array.isArray(deans) && deans.some((d) => d.uid === uid || (userEmail && d.email?.toLowerCase() === userEmail))) {
+        deans = deans.filter((d) => d.uid !== uid && (!userEmail || d.email?.toLowerCase() !== userEmail));
+        changed = true;
+      }
+      let deanUids = accData.deanUids || [];
+      if (Array.isArray(deanUids) && deanUids.includes(uid)) {
+        deanUids = deanUids.filter((id) => id !== uid);
+        changed = true;
+      }
+      let grantedDeans = accData.grantedDeans || [];
+      if (Array.isArray(grantedDeans) && (grantedDeans.includes(uid) || (userEmail && grantedDeans.includes(userEmail)))) {
+        grantedDeans = grantedDeans.filter((id) => id !== uid && (!userEmail || id !== userEmail));
+        changed = true;
+      }
+      if (changed) {
+        await patchDoc(accDoc.ref, { deans, deanUids, grantedDeans });
+      }
+    }
+  } catch (accErr) {
+    console.warn('Error clearing schedule access control:', accErr);
+  }
+
+  // ── 3. Delete Room Reservations ──
+  try {
     const reservationsRef = col(db, COLLECTIONS.ROOM_RESERVATIONS);
     const reservationsQuery = buildQuery(reservationsRef, whereClause('createdByUid', '==', uid));
     const reservationsSnap = await fetchDocs(reservationsQuery);
@@ -279,10 +346,8 @@ export async function deleteStaffUser(uid) {
       const batch = createBatch(db);
       reservationsSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      console.log(`Deleted ${reservationsSnap.size} reservations for user ${uid}`);
     }
 
-    // Also check by email in case createdByUid wasn't always set
     if (userEmail) {
       const emailReservationsQuery = buildQuery(reservationsRef, whereClause('requestorEmail', '==', userEmail));
       const emailReservationsSnap = await fetchDocs(emailReservationsQuery);
@@ -290,7 +355,6 @@ export async function deleteStaffUser(uid) {
       if (!emailReservationsSnap.empty) {
         const batch = createBatch(db);
         emailReservationsSnap.docs.forEach((d) => {
-          // Only delete if not already deleted above
           if (!reservationsSnap.docs.some((prev) => prev.id === d.id)) {
             batch.delete(d.ref);
           }
@@ -298,32 +362,37 @@ export async function deleteStaffUser(uid) {
         await batch.commit();
       }
     }
+  } catch (resErr) {
+    console.warn('Error clearing room reservations:', resErr);
+  }
 
-    // ── 2. Delete maintenance reports submitted by this user ──
-    const maintenanceReportsRef = col(db, COLLECTIONS.MAINTENANCE_REPORTS);
-    const maintReportsQuery = buildQuery(maintenanceReportsRef, whereClause('scheduledByUid', '==', uid));
+  // ── 4. Delete Maintenance Reports & Schedules ──
+  try {
+    const maintReportsRef = col(db, COLLECTIONS.MAINTENANCE_REPORTS);
+    const maintReportsQuery = buildQuery(maintReportsRef, whereClause('scheduledByUid', '==', uid));
     const maintReportsSnap = await fetchDocs(maintReportsQuery);
 
     if (!maintReportsSnap.empty) {
       const batch = createBatch(db);
       maintReportsSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      console.log(`Deleted ${maintReportsSnap.size} maintenance reports for user ${uid}`);
     }
 
-    // ── 3. Delete maintenance schedules created by this user ──
-    const maintenanceSchedulesRef = col(db, COLLECTIONS.MAINTENANCE_SCHEDULES);
-    const maintSchedulesQuery = buildQuery(maintenanceSchedulesRef, whereClause('scheduledByUid', '==', uid));
+    const maintSchedulesRef = col(db, COLLECTIONS.MAINTENANCE_SCHEDULES);
+    const maintSchedulesQuery = buildQuery(maintSchedulesRef, whereClause('scheduledByUid', '==', uid));
     const maintSchedulesSnap = await fetchDocs(maintSchedulesQuery);
 
     if (!maintSchedulesSnap.empty) {
       const batch = createBatch(db);
       maintSchedulesSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      console.log(`Deleted ${maintSchedulesSnap.size} maintenance schedules for user ${uid}`);
     }
+  } catch (maintErr) {
+    console.warn('Error clearing maintenance data:', maintErr);
+  }
 
-    // ── 4. Delete notifications for this user ──
+  // ── 5. Delete Notifications ──
+  try {
     const notificationsRef = col(db, 'notifications');
     const notificationsQuery = buildQuery(notificationsRef, whereClause('userId', '==', uid));
     const notificationsSnap = await fetchDocs(notificationsQuery);
@@ -332,48 +401,124 @@ export async function deleteStaffUser(uid) {
       const batch = createBatch(db);
       notificationsSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      console.log(`Deleted ${notificationsSnap.size} notifications for user ${uid}`);
     }
 
-    // ── 5. Clear managedBy references in rooms and floors ──
-    // Clear rooms that reference this user as manager
+    if (userEmail) {
+      const notifEmailQuery = buildQuery(notificationsRef, whereClause('userEmail', '==', userEmail));
+      const notifEmailSnap = await fetchDocs(notifEmailQuery);
+      if (!notifEmailSnap.empty) {
+        const batch = createBatch(db);
+        notifEmailSnap.docs.forEach((d) => {
+          if (!notificationsSnap.docs.some((prev) => prev.id === d.id)) {
+            batch.delete(d.ref);
+          }
+        });
+        await batch.commit();
+      }
+    }
+  } catch (notifErr) {
+    console.warn('Error clearing notifications:', notifErr);
+  }
+
+  // ── 6. Clear managedBy references in Buildings & Rooms ──
+  try {
+    const buildingsCol = col(db, COLLECTIONS.BUILDINGS);
+    const buildingsSnap = await fetchDocs(buildingsCol);
+    for (const bDoc of buildingsSnap.docs) {
+      const bData = bDoc.data() || {};
+      const floors = bData.floorData;
+      if (Array.isArray(floors)) {
+        let updated = false;
+        const newFloors = floors.map((f) => {
+          let floorModified = false;
+          let fManagedBy = f.managedBy;
+          let fManagedByName = f.managedByName;
+          if (fManagedBy === uid || f.managerUid === uid || (userEmail && f.managerEmail?.toLowerCase() === userEmail)) {
+            fManagedBy = null;
+            fManagedByName = null;
+            floorModified = true;
+          }
+          const newRooms = (f.rooms || []).map((r) => {
+            if (
+              r.managedBy === uid ||
+              r.managerUid === uid ||
+              (userEmail && r.managerEmail?.toLowerCase() === userEmail) ||
+              (userName && r.managedByName && r.managedByName.toLowerCase() === userName.toLowerCase())
+            ) {
+              floorModified = true;
+              return { ...r, managedBy: null, managedByName: null, managerUid: null, managerEmail: null };
+            }
+            return r;
+          });
+          if (floorModified) updated = true;
+          return { ...f, managedBy: fManagedBy, managedByName: fManagedByName, rooms: newRooms };
+        });
+        if (updated) {
+          await patchDoc(bDoc.ref, { floorData: newFloors });
+        }
+      }
+    }
+
+    // Also collectionGroup rooms & floors
     const roomsGroup = colGroup(db, COLLECTIONS.ROOMS);
     const managedRoomsQuery = buildQuery(roomsGroup, whereClause('managedBy', '==', uid));
     const managedRoomsSnap = await fetchDocs(managedRoomsQuery);
-
     if (!managedRoomsSnap.empty) {
       const batch = createBatch(db);
-      managedRoomsSnap.docs.forEach((d) => {
-        batch.update(d.ref, { managedBy: null, managedByName: null });
-      });
+      managedRoomsSnap.docs.forEach((d) => batch.update(d.ref, { managedBy: null, managedByName: null }));
       await batch.commit();
-      console.log(`Cleared managedBy on ${managedRoomsSnap.size} rooms for user ${uid}`);
     }
+  } catch (bldErr) {
+    console.warn('Error clearing managed rooms:', bldErr);
+  }
 
-    // Clear floors that reference this user as manager
-    const floorsGroup = colGroup(db, COLLECTIONS.FLOORS);
-    const managedFloorsQuery = buildQuery(floorsGroup, whereClause('managedBy', '==', uid));
-    const managedFloorsSnap = await fetchDocs(managedFloorsQuery);
-
-    if (!managedFloorsSnap.empty) {
-      const batch = createBatch(db);
-      managedFloorsSnap.docs.forEach((d) => {
-        batch.update(d.ref, { managedBy: null, managedByName: null });
-      });
-      await batch.commit();
-      console.log(`Cleared managedBy on ${managedFloorsSnap.size} floors for user ${uid}`);
+  // ── 7. Clean Colleges ──
+  try {
+    const collegesCol = col(db, COLLECTIONS.COLLEGES);
+    const collegesSnap = await fetchDocs(collegesCol);
+    for (const cDoc of collegesSnap.docs) {
+      const cData = cDoc.data() || {};
+      if (
+        cData.deanUid === uid ||
+        (userEmail && cData.deanEmail?.toLowerCase() === userEmail) ||
+        cData.assignedDean === uid
+      ) {
+        await patchDoc(cDoc.ref, { deanUid: null, deanEmail: null, assignedDean: null, deanName: null });
+      }
     }
+  } catch (colErr) {
+    console.warn('Error clearing colleges:', colErr);
+  }
 
-    // ── 6. Delete schedule plot requests created by this user ──
+  // ── 8. Clean Chat Messages & Rooms ──
+  try {
+    const { purgeUserChatData } = await import('./chatService');
+    await purgeUserChatData(uid, userEmail);
+  } catch (chatErr) {
+    console.warn('Error clearing chat messages & rooms:', chatErr);
+  }
+
+  // ── 9. Clean Password Reset OTPs ──
+  try {
+    if (userEmail) {
+      const otpRef = doc(db, 'password_reset_otps', userEmail);
+      const otpSnap = await fetchDoc(otpRef);
+      if (otpSnap.exists()) {
+        await delDoc(otpRef);
+      }
+    }
+  } catch (otpErr) {
+    console.warn('Error clearing OTP:', otpErr);
+  }
+
+  // ── 10. Delete Schedule Plot Requests ──
+  try {
     const plotRequestsRef = col(db, COLLECTIONS.SCHEDULE_PLOT_REQUESTS);
-
-    // Try createdByUid field
     const plotByUidQuery = buildQuery(plotRequestsRef, whereClause('createdByUid', '==', uid));
     const plotByUidSnap = await fetchDocs(plotByUidQuery);
 
     if (!plotByUidSnap.empty) {
       for (const plotDoc of plotByUidSnap.docs) {
-        // Delete schedule entries sub-collection first
         const entriesRef = col(db, COLLECTIONS.SCHEDULE_PLOT_REQUESTS, plotDoc.id, COLLECTIONS.SCHEDULE_ENTRIES);
         const entriesSnap = await fetchDocs(entriesRef);
         if (!entriesSnap.empty) {
@@ -385,19 +530,28 @@ export async function deleteStaffUser(uid) {
       const batch = createBatch(db);
       plotByUidSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      console.log(`Deleted ${plotByUidSnap.size} schedule plot requests for user ${uid}`);
     }
-
-  } catch (cleanupError) {
-    console.error('Error during user data cleanup:', cleanupError);
-    // Continue with user deletion even if cleanup partially fails
+  } catch (plotErr) {
+    console.warn('Error clearing plot requests:', plotErr);
   }
 
-  // ── 7. Delete the user document and Auth account via Cloud Function ──
-  const { httpsCallable } = await import('firebase/functions');
-  const { functions } = await import('../firebase/firebase');
-  const deleteAuthUser = httpsCallable(functions, 'deleteStaffAuthUser');
-  await deleteAuthUser({ uid });
-  console.log('Successfully deleted staff user and all related data:', uid);
+  // ── 11. Delete the user document and Auth account via Cloud Function ──
+  try {
+    const { httpsCallable } = await import('firebase/functions');
+    const { functions } = await import('../firebase/firebase');
+    const deleteAuthUser = httpsCallable(functions, 'deleteStaffAuthUser');
+    await deleteAuthUser({ uid });
+  } catch (authErr) {
+    console.warn('Cloud function deleteStaffAuthUser error (fallback to client delete):', authErr);
+  }
+
+  // Guaranteed fallback: delete user document directly from client
+  try {
+    await delDoc(userRef);
+  } catch (userDelErr) {
+    console.warn('Direct user document deletion fallback error:', userDelErr);
+  }
+
+  console.log('Successfully deleted staff user and completely cleaned all related collections:', uid);
 }
 

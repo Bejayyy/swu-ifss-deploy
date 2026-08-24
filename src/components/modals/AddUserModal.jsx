@@ -15,7 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { requiresCollege } from '../../constants/colleges';
+import { requiresCollege, formatCollegeName } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
@@ -313,8 +313,8 @@ export default function AddUserModal({
           email: normEmail,
           name: fullName,
           status: 'Active',
-          college: showCollege ? u.college : '',
-          department: showCollege ? u.college : '',
+          college: showCollege ? formatCollegeName(u.college) : '',
+          department: showCollege ? formatCollegeName(u.college) : '',
           permissions: u.useCustomAccess ? u.permissions : [],
           navKeys: u.useCustomAccess ? u.navKeys : [],
         });
@@ -355,8 +355,8 @@ export default function AddUserModal({
           email: u.email.trim().toLowerCase(),
           role: u.role,
           status: 'Active',
-          college: showCollege ? u.college : '',
-          department: showCollege ? u.college : '',
+          college: showCollege ? formatCollegeName(u.college) : '',
+          department: showCollege ? formatCollegeName(u.college) : '',
           useCustomAccess: false,
           permissions: def.permissions || [],
           navKeys: def.navKeys || [],
@@ -400,80 +400,85 @@ export default function AddUserModal({
         <div
           className={`bg-white rounded-2xl w-full ${
             activeTab === 'bulk' && bulkRows.length > 0 ? 'max-w-5xl' : 'max-w-3xl'
-          } max-h-[92vh] overflow-y-auto shadow-2xl relative transition-all duration-300`}
+          } max-h-[92vh] flex flex-col shadow-2xl relative transition-all duration-300 overflow-hidden`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Close button */}
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 z-10 p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 z-10 p-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
 
-          <form onSubmit={submit} className="p-7 pt-8">
-            {/* Header Title */}
-            <div className="mb-4">
-              <h2 className="font-black text-xl text-dark mb-1">Add User Accounts</h2>
-              <p className="text-xs font-medium text-gray-500">
-                Create user accounts individually or import in bulk using an Excel/CSV spreadsheet.
-              </p>
-            </div>
-
-            {/* Navigation Tabs (Individual / Bulk) */}
-            <div className="flex border-b border-gray-200 mb-6 bg-gray-50/70 p-1.5 rounded-xl gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('individual');
-                  setError('');
-                }}
-                className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                  activeTab === 'individual'
-                    ? 'bg-white text-[#7A0808] shadow-sm border border-gray-200/80'
-                    : 'text-gray-500 hover:text-gray-800 hover:bg-white/50'
-                }`}
-              >
-                <User size={16} />
-                Individual User
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('bulk');
-                  setError('');
-                }}
-                className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                  activeTab === 'bulk'
-                    ? 'bg-white text-[#7A0808] shadow-sm border border-gray-200/80'
-                    : 'text-gray-500 hover:text-gray-800 hover:bg-white/50'
-                }`}
-              >
-                <FileSpreadsheet size={16} />
-                Bulk Add (Sheet Upload)
-              </button>
-            </div>
-
-            {/* Global Password Info Banner */}
-            <div className="bg-amber-50/80 border border-amber-200 text-amber-900 rounded-xl px-4 py-3 text-xs mb-5 flex items-start gap-2.5 shadow-sm">
-              <span className="font-bold flex-shrink-0 text-sm">🔑</span>
-              <span>
-                <strong>Temporary Password & Welcome Email:</strong> Automatically generated temporary passwords will be sent to each user’s institutional email address upon account creation.
-              </span>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-5 flex items-center gap-2 shadow-sm">
-                <AlertCircle size={16} className="flex-shrink-0 text-red-600" />
-                <span>{error}</span>
+          <form onSubmit={submit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Fixed Modal Header */}
+            <div className="p-7 pb-4 shrink-0 border-b border-gray-100 pr-12">
+              {/* Header Title */}
+              <div className="mb-4">
+                <h2 className="font-black text-xl text-dark mb-1">Add User Accounts</h2>
+                <p className="text-xs font-medium text-gray-500">
+                  Create user accounts individually or import in bulk using an Excel/CSV spreadsheet.
+                </p>
               </div>
-            )}
 
-            {/* INDIVIDUAL VIEW */}
-            {activeTab === 'individual' && (
-              <div className="space-y-6">
+              {/* Navigation Tabs (Individual / Bulk) */}
+              <div className="flex bg-gray-50/70 p-1.5 rounded-xl gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('individual');
+                    setError('');
+                  }}
+                  className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeTab === 'individual'
+                      ? 'bg-white text-[#7A0808] shadow-sm border border-gray-200/80'
+                      : 'text-gray-500 hover:text-gray-800 hover:bg-white/50'
+                  }`}
+                >
+                  <User size={16} />
+                  Individual User
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('bulk');
+                    setError('');
+                  }}
+                  className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeTab === 'bulk'
+                      ? 'bg-white text-[#7A0808] shadow-sm border border-gray-200/80'
+                      : 'text-gray-500 hover:text-gray-800 hover:bg-white/50'
+                  }`}
+                >
+                  <FileSpreadsheet size={16} />
+                  Bulk Add (Sheet Upload)
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Modal Body */}
+            <div className="flex-1 overflow-y-auto p-7 py-5 space-y-5">
+              {/* Global Password Info Banner */}
+              <div className="bg-amber-50/80 border border-amber-200 text-amber-900 rounded-xl px-4 py-3 text-xs flex items-start gap-2.5 shadow-sm">
+                <span className="font-bold flex-shrink-0 text-sm">🔑</span>
+                <span>
+                  <strong>Temporary Password & Welcome Email:</strong> Automatically generated temporary passwords will be sent to each user’s institutional email address upon account creation.
+                </span>
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2 shadow-sm">
+                  <AlertCircle size={16} className="flex-shrink-0 text-red-600" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* INDIVIDUAL VIEW */}
+              {activeTab === 'individual' && (
+                <div className="space-y-6">
                 {usersList.map((form, index) => {
                   const showCollegeField = requiresCollege(form.role, roleDefinitions);
 
@@ -920,31 +925,32 @@ export default function AddUserModal({
                 )}
               </div>
             )}
+          </div>
 
-            {/* Modal Bottom Action Footer */}
-            <div className="flex gap-3 mt-8 pt-4 border-t border-gray-200">
-              <button
-                type="button"
-                className="btn-outline-maroon flex-1 justify-center py-2.5 font-bold"
-                onClick={onClose}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-maroon flex-1 justify-center py-2.5 font-bold shadow-md"
-                disabled={activeTab === 'bulk' && (bulkRows.length === 0 || isProcessing)}
-              >
-                {activeTab === 'individual'
-                  ? usersList.length > 1
-                    ? `Save ${usersList.length} Users`
-                    : 'Save User'
-                  : `Save ${bulkRows.length} Bulk Users`}
-              </button>
-            </div>
-          </form>
-        </div>
+          {/* Modal Bottom Action Footer (Fixed & Non-scrollable) */}
+          <div className="p-4 px-7 bg-white border-t border-gray-200 flex gap-3 shrink-0 rounded-b-2xl shadow-xs">
+            <button
+              type="button"
+              className="btn-outline-maroon flex-1 justify-center py-2.5 font-bold cursor-pointer"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-maroon flex-1 justify-center py-2.5 font-bold shadow-md cursor-pointer disabled:opacity-50"
+              disabled={activeTab === 'bulk' && (bulkRows.length === 0 || isProcessing)}
+            >
+              {activeTab === 'individual'
+                ? usersList.length > 1
+                  ? `Save ${usersList.length} Users`
+                  : 'Save User'
+                : `Save ${bulkRows.length} Bulk Users`}
+            </button>
+          </div>
+        </form>
       </div>
+    </div>
 
       {/* Nested Add Role Modal */}
       {showAddRoleModal && (

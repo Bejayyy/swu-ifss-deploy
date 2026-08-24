@@ -119,6 +119,68 @@ exports.deleteStaffAuthUser = functions.https.onCall(async (data, context) => {
   return { success: true };
 });
 
+// Set / Update user password via Admin SDK (bypasses client-side auth/requires-recent-login)
+exports.setUserPasswordAdmin = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const { newPassword } = data;
+  if (!newPassword || newPassword.length < 8) {
+    throw new functions.https.HttpsError('invalid-argument', 'Password must be at least 8 characters.');
+  }
+
+  const uid = context.auth.uid;
+  const email = (context.auth.token?.email || '').trim().toLowerCase();
+
+  // 1. Update password on current UID in Firebase Auth
+  try {
+    await admin.auth().updateUser(uid, { password: newPassword });
+  } catch (err) {
+    console.warn('Admin updateUser for UID failed:', err);
+  }
+
+  // 2. Also check if there was another Auth account by email (e.g. if Google created a separate UID from the email/pass user)
+  if (email) {
+    try {
+      const authUserByEmail = await admin.auth().getUserByEmail(email);
+      if (authUserByEmail && authUserByEmail.uid !== uid) {
+        await admin.auth().updateUser(authUserByEmail.uid, { password: newPassword });
+      }
+    } catch (e) {
+      // Ignore if no other auth user
+    }
+  }
+
+  // 3. Update Firestore user documents matching this UID
+  await admin.firestore().doc(`users/${uid}`).set(
+    {
+      mustSetPassword: false,
+      passwordEnabled: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  // 4. Update any other user document in Firestore matching this email
+  if (email) {
+    try {
+      const userQuery = await admin.firestore().collection('users').where('email', '==', email).get();
+      if (!userQuery.empty) {
+        const batch = admin.firestore().batch();
+        userQuery.docs.forEach((d) => {
+          batch.set(d.ref, { mustSetPassword: false, passwordEnabled: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Firestore multi-doc update error:', e);
+    }
+  }
+
+  return { success: true };
+});
+
 // Send welcome email when a new registrar is created
 exports.sendRegistrarWelcomeEmail = functions.https.onCall(async (data, context) => {
   if (!context.auth) {

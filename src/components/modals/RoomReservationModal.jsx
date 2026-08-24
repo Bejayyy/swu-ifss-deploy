@@ -775,13 +775,6 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="col-span-2">
               <label className="form-label">
-                Name of Organization / Department <span className="text-red-600">*</span>
-              </label>
-              <input className="form-input" value={form.nameOfOrg} onChange={(e) => set('nameOfOrg', e.target.value)} required />
-            </div>
-
-            <div className="col-span-2">
-              <label className="form-label">
                 Name of Activity <span className="text-red-600">*</span>
               </label>
               <input className="form-input" value={form.activity} onChange={(e) => set('activity', e.target.value)} required />
