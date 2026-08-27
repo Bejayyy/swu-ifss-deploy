@@ -101,10 +101,7 @@ export default function ViewUserModal({
       setError('First Name is required.');
       return;
     }
-    if (!form.middleName.trim()) {
-      setError('Middle Name is required.');
-      return;
-    }
+    // Middle name is optional
     if (!form.lastName.trim()) {
       setError('Last Name is required.');
       return;
@@ -127,7 +124,7 @@ export default function ViewUserModal({
         uid: user.uid,
         name: computedFullName,
         firstName: form.firstName.trim(),
-        middleName: form.middleName.trim(),
+        middleName: form.middleName ? form.middleName.trim() : '',
         lastName: form.lastName.trim(),
         email: form.email.trim(),
         department: showCollegeField ? formatCollegeName(form.college) : '',
@@ -295,14 +292,13 @@ export default function ViewUserModal({
                 </div>
                 <div>
                   <label className="form-label">
-                    Middle Name <span className="text-red-500">*</span>
+                    Middle Name <span className="text-gray-400 font-normal text-xs">(Optional)</span>
                   </label>
                   <input
                     className="form-input"
                     value={form.middleName}
                     onChange={(e) => set('middleName', e.target.value)}
-                    placeholder="e.g. Santos"
-                    required
+                    placeholder="e.g. Santos (Optional)"
                   />
                 </div>
                 <div>

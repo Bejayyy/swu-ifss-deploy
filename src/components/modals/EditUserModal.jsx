@@ -146,20 +146,32 @@ export default function EditUserModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl relative"
+        className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] shadow-xl relative flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <button type="button" onClick={onClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 z-10">
-          <X size={20} />
-        </button>
-        <form onSubmit={submit} className="p-8 pt-10">
-          <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Edit user access</h2>
-          <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
-            Update user information and access permissions
-          </p>
+        {/* Fixed Non-Scrollable Header */}
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white flex-shrink-0">
+          <div>
+            <h2 className="font-black text-lg text-dark leading-tight" style={{ color: '#7A0808' }}>
+              Edit user access
+            </h2>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">
+              Update user information, assigned college, and access permissions
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
+        {/* Scrollable Form Body */}
+        <form id="editUserForm" onSubmit={submit} className="p-6 overflow-y-auto flex-1 space-y-4">
           {error && (
-            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3.5 py-2.5">
               {error}
             </p>
           )}
@@ -168,14 +180,12 @@ export default function EditUserModal({
             {/* First Name, Middle Name, Last Name */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="form-label">
-                  First Name <span className="text-red-500">*</span>
-                </label>
+                <label className="form-label">First Name *</label>
                 <input
                   className="form-input"
                   value={form.firstName}
                   onChange={(e) => set('firstName', e.target.value)}
-                  placeholder="e.g. John"
+                  placeholder="e.g. Maria"
                   required
                 />
               </div>
@@ -187,37 +197,50 @@ export default function EditUserModal({
                   className="form-input"
                   value={form.middleName}
                   onChange={(e) => set('middleName', e.target.value)}
-                  placeholder="e.g. Santos"
+                  placeholder="e.g. Santos (Optional)"
                 />
               </div>
               <div>
-                <label className="form-label">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
+                <label className="form-label">Last Name *</label>
                 <input
                   className="form-input"
                   value={form.lastName}
                   onChange={(e) => set('lastName', e.target.value)}
-                  placeholder="e.g. Doe"
+                  placeholder="e.g. Santos"
                   required
                 />
               </div>
             </div>
 
-            {/* Email */}
-            <div>
-              <label className="form-label">Email</label>
-              <input 
-                type="email" 
-                className="form-input" 
-                placeholder={`name@${INSTITUTIONAL_EMAIL_DOMAIN}`}
-                value={form.email} 
-                onChange={(e) => set('email', e.target.value)} 
-                required 
-              />
+            {/* Email & Status */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  placeholder={`name@${INSTITUTIONAL_EMAIL_DOMAIN}`}
+                  value={form.email}
+                  onChange={(e) => set('email', e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">Status</label>
+                <CustomSelect
+                  value={form.status}
+                  onChange={(e) => set('status', e.target.value)}
+                  options={[
+                    { value: USER_STATUS.ACTIVE, label: 'Active' },
+                    { value: USER_STATUS.INACTIVE, label: 'Inactive' },
+                  ]}
+                  placeholder="Select Status"
+                />
+              </div>
             </div>
 
-            <div className={`grid grid-cols-1 ${showCollegeField ? 'sm:grid-cols-2' : ''} gap-4`}>
+            {/* Role & College */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="form-label">User role</label>
                 <CustomSelect
@@ -235,49 +258,35 @@ export default function EditUserModal({
                 />
               </div>
 
-            {showCollegeField && (
-              <div>
-                <label className="form-label">College <span className="text-red-600">*</span></label>
-                <CustomSelect
-                  value={form.college}
-                  onChange={(e) => set('college', e.target.value)}
-                  options={colleges.map((college) => ({
-                    value: college.code,
-                    label: `${college.name} (${college.code})`,
-                  }))}
-                  placeholder="Select College"
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {colleges.length === 0 ? (
-                    <span className="text-orange-600">⚠️ No colleges available. Add colleges in College Inventory first.</span>
-                  ) : (
-                    'This determines which college this user belongs to for scheduling and approvals'
-                  )}
-                </p>
-              </div>
-            )}
+              {showCollegeField && (
+                <div>
+                  <label className="form-label">College <span className="text-red-600">*</span></label>
+                  <CustomSelect
+                    value={form.college}
+                    onChange={(e) => set('college', e.target.value)}
+                    options={colleges.map((college) => ({
+                      value: college.name || college.code,
+                      label: `${college.name} (${college.code || college.name})`,
+                    }))}
+                    placeholder="Select College"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {colleges.length === 0 ? (
+                      <span className="text-orange-600">⚠️ No colleges available. Add colleges in College Inventory first.</span>
+                    ) : (
+                      'This determines which college this user belongs to for scheduling and approvals'
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="form-label">Status</label>
-                <CustomSelect
-                  value={form.status}
-                  onChange={(e) => set('status', e.target.value)}
-                  options={[
-                    { value: USER_STATUS.ACTIVE, label: 'Active' },
-                    { value: USER_STATUS.INACTIVE, label: 'Inactive' },
-                  ]}
-                  placeholder="Select Status"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2 pt-2 border-t border-gray-100">
               <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer" style={{ color: '#2B3235' }}>
                 <input
                   type="checkbox"
+                  className="accent-[#7A0808] w-4 h-4 rounded cursor-pointer"
                   checked={form.useCustomAccess}
                   onChange={(e) => set('useCustomAccess', e.target.checked)}
                 />
@@ -295,16 +304,27 @@ export default function EditUserModal({
               </div>
             </div>
           </div>
-
-          <div className="flex gap-2 mt-8">
-            <button type="button" className="btn-outline-maroon flex-1 justify-center py-2.5" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-maroon flex-1 justify-center py-2.5" disabled={saving}>
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
-          </div>
         </form>
+
+        {/* Fixed Non-Scrollable Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center gap-3 flex-shrink-0">
+          <button
+            type="button"
+            className="btn-outline-maroon flex-1 justify-center py-2.5"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="editUserForm"
+            className="btn-maroon flex-1 justify-center py-2.5"
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
       </div>
     </div>
   );

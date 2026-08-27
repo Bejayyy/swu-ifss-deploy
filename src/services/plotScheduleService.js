@@ -1047,9 +1047,9 @@ export function subscribePlotEntriesForRoom(
 }
 
 /**
- * Subscribe to all plot entries for BOTH a specific room AND a specific section
- * Returns { roomEntries: [...], sectionEntries: [...] }
- * Used by RoomScheduleViewer to prevent room occupancy conflicts AND section double-booking
+ * Subscribe to all plot entries for BOTH a specific room, section, and teacher
+ * Returns { roomEntries: [...], sectionEntries: [...], teacherEntries: [...] }
+ * Used by RoomScheduleViewer to prevent room occupancy conflicts, section double-booking, and teacher schedule conflicts
  */
 export function subscribePlotEntriesForRoomAndSection(
   roomCode,
@@ -1059,18 +1059,26 @@ export function subscribePlotEntriesForRoomAndSection(
   deanUid,
   schoolYearIdOrOnData,
   onDataOrOnError,
-  possibleOnError
+  possibleOnError,
+  teacherInput = null
 ) {
   let schoolYearId = null;
-  let onData = schoolYearIdOrOnData;
-  let onError = onDataOrOnError;
+  let onData = null;
+  let onError = null;
+  let teacher = teacherInput;
 
-  if (typeof schoolYearIdOrOnData === 'string' || schoolYearIdOrOnData === null || schoolYearIdOrOnData === undefined) {
-    if (typeof onDataOrOnError === 'function') {
-      schoolYearId = schoolYearIdOrOnData;
-      onData = onDataOrOnError;
-      onError = possibleOnError;
+  if (typeof schoolYearIdOrOnData === 'function') {
+    onData = schoolYearIdOrOnData;
+    onError = onDataOrOnError;
+    if (typeof onDataOrOnError === 'object' && typeof onDataOrOnError !== 'function') {
+      teacher = onDataOrOnError;
+    } else if (typeof possibleOnError === 'object') {
+      teacher = possibleOnError;
     }
+  } else {
+    schoolYearId = schoolYearIdOrOnData;
+    onData = onDataOrOnError;
+    onError = possibleOnError;
   }
 
   const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
@@ -1122,6 +1130,30 @@ export function subscribePlotEntriesForRoomAndSection(
           })
         : [];
 
+      // 3. Teacher matching entries (only if specific teacher is provided and not TBA)
+      const cleanTeacherName = typeof teacher === 'object' ? (teacher?.name || teacher?.displayName || '') : String(teacher || '');
+      const cleanTeacherEmail = typeof teacher === 'object' ? (teacher?.email || '') : '';
+      const isTba = !cleanTeacherName || cleanTeacherName.toLowerCase().includes('tba') || cleanTeacherName.toLowerCase().includes('to be assigned');
+
+      const teacherEntries = (!isTba && (cleanTeacherName || cleanTeacherEmail))
+        ? relevantDocs.filter((e) => {
+            const inst = (e.instructor || '').trim().toLowerCase();
+            const instEmail = (e.instructorEmail || '').trim().toLowerCase();
+            if (!inst || inst.includes('tba') || inst.includes('to be assigned')) return false;
+
+            const matchesName = cleanTeacherName && (
+              inst === cleanTeacherName.toLowerCase() ||
+              inst.includes(cleanTeacherName.toLowerCase()) ||
+              cleanTeacherName.toLowerCase().includes(inst)
+            );
+            const matchesEmail = cleanTeacherEmail && (
+              instEmail === cleanTeacherEmail.toLowerCase() ||
+              inst.includes(cleanTeacherEmail.toLowerCase())
+            );
+            return matchesName || matchesEmail;
+          })
+        : [];
+
       // Sort by day and startHour
       const sortFn = (a, b) => {
         const dayA = a.day ?? 0;
@@ -1132,8 +1164,9 @@ export function subscribePlotEntriesForRoomAndSection(
 
       roomEntries.sort(sortFn);
       sectionEntries.sort(sortFn);
+      teacherEntries.sort(sortFn);
 
-      if (onData) onData({ roomEntries, sectionEntries });
+      if (onData) onData({ roomEntries, sectionEntries, teacherEntries });
     },
     (err) => {
       console.error(`subscribePlotEntriesForRoomAndSection error:`, err);
@@ -1220,6 +1253,48 @@ export function subscribePlotEntriesForTeacher(
     },
     (err) => {
       console.error('subscribePlotEntriesForTeacher error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Subscribe to ALL plot entries across all sections and deans in the current semester
+ * Used by AddPlotEntryModalEnhanced to evaluate teacher availability and conflicts
+ */
+export function subscribeAllSemesterPlotEntries(
+  semester,
+  scheduleMode = 'regular',
+  schoolYearId = null,
+  onData,
+  onError
+) {
+  const entriesRef = collectionGroup(db, 'entries');
+
+  return onSnapshot(
+    entriesRef,
+    (snapshot) => {
+      const allDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const relevantDocs = allDocs.filter((e) => {
+        if (!matchSchoolYear(e, schoolYearId)) return false;
+        if (semester && e.semester !== undefined && e.semester !== null) {
+          if (String(e.semester) !== String(semester)) return false;
+        }
+        if (scheduleMode) {
+          const entryMode = e.scheduleMode || 'regular';
+          if (entryMode !== scheduleMode) return false;
+        }
+        return true;
+      });
+
+      if (onData) onData(relevantDocs);
+    },
+    (err) => {
+      console.error('subscribeAllSemesterPlotEntries error:', err);
       if (onError) onError(err);
     }
   );

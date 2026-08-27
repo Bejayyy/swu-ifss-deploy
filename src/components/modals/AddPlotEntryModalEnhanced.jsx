@@ -25,6 +25,7 @@ import {
   hourToTimeInput,
   subscribeDeanSections,
   subscribePlotEntriesForDeanSection,
+  subscribeAllSemesterPlotEntries,
 } from '../../services/plotScheduleService';
 import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
@@ -33,6 +34,7 @@ import { subscribeToBuildings } from '../../services/buildingService';
 import { subscribeStaffUsers } from '../../services/systemUserService';
 import RoomScheduleViewer from '../scheduling/RoomScheduleViewer';
 import CustomSelect from '../ui/CustomSelect';
+import TeacherScheduleModal from './TeacherScheduleModal';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
 
@@ -170,7 +172,8 @@ export default function AddPlotEntryModalEnhanced({
   schoolYearId = null,
 }) {
   // Multi-step form state
-  const [step, setStep] = useState(1); // 1: Course, 3: Type, 4: Building & Room, 2: Teacher (optional), 5: Summary
+  const isEditingExisting = Boolean(initial?.id || initial?.entryId || initial?.courseCode);
+  const [step, setStep] = useState(() => (isEditingExisting ? 4 : 1)); // 1: Course, 3: Type, 4: Building & Room, 2: Teacher (optional), 5: Summary
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -202,31 +205,58 @@ export default function AddPlotEntryModalEnhanced({
   const [buildingSearch, setBuildingSearch] = useState('');
 
   // Form data
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(Boolean(initial?.id || initial?.entryId));
+  const [editingEntryId, setEditingEntryId] = useState(initial?.id || initial?.entryId || null);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [selectedTeacher, setSelectedTeacher] = useState(null);
+  const [selectedTeacher, setSelectedTeacher] = useState(() => {
+    if (initial?.instructor) return { name: initial.instructor };
+    return null;
+  });
   const [selectedType, setSelectedType] = useState(() => {
+    if (initial?.type) return initial.type;
     if (initialType) return initialType;
     if (initialRoom?.type && String(initialRoom.type).toLowerCase().includes('lab')) return 'Laboratory';
     return 'Lecture';
   });
   const [selectedBuilding, setSelectedBuilding] = useState(initialBuilding || null);
-  const [selectedRoom, setSelectedRoom] = useState(initialRoom || null);
+  const [selectedRoom, setSelectedRoom] = useState(
+    initialRoom || (initial?.roomCode ? { roomCode: initial.roomCode, name: initial.roomCode, id: initial.roomCode } : null)
+  );
   const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
   
   // Multi-day and time state
   const [selectedDays, setSelectedDays] = useState(() => {
-    if (fromDrag && dayIndex !== undefined && dayIndex >= 0 && dayIndex <= 6) return [dayIndex];
-    return []; // Start clean - no pre-selected day
+    if (initial?.days && Array.isArray(initial.days) && initial.days.length > 0) return initial.days;
+    if (initial?.day !== undefined && initial.day !== null && Number(initial.day) >= 0 && Number(initial.day) <= 6) return [Number(initial.day)];
+    if (dayIndex !== undefined && dayIndex !== null && Number(dayIndex) >= 0 && Number(dayIndex) <= 6) return [Number(dayIndex)];
+    return [];
   });
   const [timeMode, setTimeMode] = useState('combined'); // 'combined' | 'individual'
-  const [combinedStartTime, setCombinedStartTime] = useState(fromDrag && initial?.startTime ? initial.startTime : '');
-  const [combinedEndTime, setCombinedEndTime] = useState(fromDrag && initial?.endTime ? initial.endTime : '');
-  const [dayTimes, setDayTimes] = useState({}); // { [dayIndex]: { startTime, endTime } }
+  const [combinedStartTime, setCombinedStartTime] = useState(initial?.startTime || '');
+  const [combinedEndTime, setCombinedEndTime] = useState(initial?.endTime || '');
+  const [dayTimes, setDayTimes] = useState(() => {
+    if (initial?.dayTimes && typeof initial.dayTimes === 'object') return initial.dayTimes;
+    if (initial?.day !== undefined && initial?.startTime && initial?.endTime) {
+      return { [initial.day]: { startTime: initial.startTime, endTime: initial.endTime } };
+    }
+    return {};
+  });
   const [roomConflicts, setRoomConflicts] = useState([]); // Track conflicting schedules for selected room/day/time
   const [completedTypes, setCompletedTypes] = useState([]); // Tracks saved components (e.g. ['Laboratory']) for combined courses
   const [transitionBanner, setTransitionBanner] = useState(null); // Notice after saving first part of combined course
+  const [allSemesterEntries, setAllSemesterEntries] = useState([]); // All plot entries for evaluating teacher availability
+  const [viewTeacherSchedule, setViewTeacherSchedule] = useState(null); // Teacher schedule preview modal: { teacher, entries }
+
+  // Subscribe to all semester entries across the college for teacher availability checking
+  useEffect(() => {
+    return subscribeAllSemesterPlotEntries(
+      semester,
+      scheduleMode,
+      schoolYearId,
+      (entries) => setAllSemesterEntries(entries || []),
+      (err) => console.warn('Error loading all semester entries for teachers:', err)
+    );
+  }, [semester, scheduleMode, schoolYearId]);
 
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
@@ -242,10 +272,26 @@ export default function AddPlotEntryModalEnhanced({
       (users) => {
         const teachersOnly = users.filter((u) => u.roleValue === 'teacher');
         setTeachersList(teachersOnly);
+        if (selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' && !selectedTeacher.uid) {
+          const match = teachersOnly.find(
+            (t) =>
+              t.name?.toLowerCase().trim() === selectedTeacher.name?.toLowerCase().trim() ||
+              t.displayName?.toLowerCase().trim() === selectedTeacher.name?.toLowerCase().trim() ||
+              t.name?.toLowerCase().includes(selectedTeacher.name?.toLowerCase().trim()) ||
+              selectedTeacher.name?.toLowerCase().includes(t.name?.toLowerCase().trim())
+          );
+          if (match) {
+            setSelectedTeacher({
+              uid: match.uid,
+              name: match.name || match.displayName,
+              email: match.email || '',
+            });
+          }
+        }
       },
       (err) => console.error('Error loading teachers in modal:', err)
     );
-  }, []);
+  }, [selectedTeacher]);
 
   // Subscribe to Dean's sections if deanUid is provided and sections not passed
   useEffect(() => {
@@ -359,10 +405,31 @@ export default function AddPlotEntryModalEnhanced({
       );
       if (match) {
         initializedCourseRef.current = true;
-        startEditingCourse(match, initial);
+        setSelectedCourse(match);
+        if (initial?.id) {
+          setIsEditMode(true);
+          setEditingEntryId(initial.id);
+        }
+        if (initial?.type) {
+          setSelectedType(initial.type);
+        }
+        const initDays = (initial?.days && initial.days.length > 0)
+          ? initial.days
+          : (initial?.day !== undefined ? [Number(initial.day)] : (dayIndex !== undefined && dayIndex >= 0 ? [Number(dayIndex)] : []));
+        if (initDays.length > 0) {
+          setSelectedDays(initDays);
+        }
+        if (initial?.startTime) setCombinedStartTime(initial.startTime);
+        if (initial?.endTime) setCombinedEndTime(initial.endTime);
+        if (initial?.instructor) setSelectedTeacher({ name: initial.instructor });
+        
+        // In edit mode, jump directly to Building & Room / Time
+        if (initial?.id || initial?.courseCode) {
+          setStep(4);
+        }
       }
     }
-  }, [courses, initial]);
+  }, [courses, initial, dayIndex]);
 
   // Subscribe to buildings
   useEffect(() => {
@@ -660,7 +727,7 @@ export default function AddPlotEntryModalEnhanced({
       .filter((f) => f.rooms.length > 0 || rawFloors.length === 1);
   }, [selectedBuilding, selectedType, assignedRooms]);
 
-  // Pre-select building ONCE if initialBuilding or initialBuildingId is passed
+  // Pre-select building ONCE if initialBuilding, initialBuildingId, or initial?.buildingName is passed
   useEffect(() => {
     if (initializedBuildingRef.current) return;
     if (buildings.length > 0) {
@@ -668,16 +735,32 @@ export default function AddPlotEntryModalEnhanced({
         const found = buildings.find(b => b.id === initialBuilding.id || b.docId === initialBuilding.docId || b.name === initialBuilding.name) || initialBuilding;
         setSelectedBuilding(found);
         initializedBuildingRef.current = true;
-      } else if (initialBuildingId || initial?.buildingId) {
+      } else if (initialBuildingId || initial?.buildingId || initial?.buildingName) {
         const bId = initialBuildingId || initial?.buildingId;
-        const found = buildings.find(b => b.id === bId || b.docId === bId || b.name === bId);
+        const bName = initial?.buildingName;
+        const found = buildings.find(b => 
+          (bId && (b.id === bId || b.docId === bId || b.name === bId)) ||
+          (bName && (b.name === bName || b.code === bName || (b.name && b.name.toLowerCase().includes(bName.toLowerCase()))))
+        );
+        if (found) {
+          setSelectedBuilding(found);
+          initializedBuildingRef.current = true;
+        }
+      } else if (initial?.roomCode || initialRoomCode || initialRoom?.roomCode) {
+        const targetR = initial?.roomCode || initialRoomCode || initialRoom?.roomCode;
+        const found = buildings.find(bld => {
+          const floors = Array.isArray(bld.floorData) ? bld.floorData : [];
+          const directRooms = Array.isArray(bld.rooms) ? bld.rooms : [];
+          return floors.some(f => (f.rooms || []).some(r => r.roomCode === targetR || r.name === targetR || r.id === targetR)) ||
+                 directRooms.some(r => r.roomCode === targetR || r.name === targetR || r.id === targetR);
+        });
         if (found) {
           setSelectedBuilding(found);
           initializedBuildingRef.current = true;
         }
       }
     }
-  }, [buildings, initialBuilding, initialBuildingId, initial?.buildingId]);
+  }, [buildings, initialBuilding, initialBuildingId, initial?.buildingId, initial?.buildingName, initial?.roomCode, initialRoomCode, initialRoom]);
 
   // Pre-select room ONCE if initialRoom or initialRoomCode is passed
   useEffect(() => {
@@ -845,26 +928,85 @@ export default function AddPlotEntryModalEnhanced({
     if (roundedPlotted === roundedTarget) {
       return {
         type: 'match',
-        message: `✓ Perfect: Exactly ${roundedPlotted} hrs plotted matches the required ${roundedTarget} hrs for ${selectedCourse?.code || 'this course'} (${selectedType}).`,
-        badge: 'Exact Match',
+        message: `✓ Exact Match: Exactly ${roundedPlotted} hrs plotted matches the required ${roundedTarget} hrs/week for ${selectedCourse?.code || 'this course'} (${selectedType}).`,
+        badge: '✓ Exact Match',
         color: 'emerald',
       };
     } else if (roundedPlotted > roundedTarget) {
       return {
         type: 'exceed',
-        message: `⚠️ Notice: Plotted time (${roundedPlotted} hrs) exceeds the required ${roundedTarget} hrs for this course by ${diff} hr(s). You can still proceed if intended.`,
-        badge: `+${diff} hrs over`,
+        message: `⚠️ Overlapping / Exceeding Time: Plotted time (${roundedPlotted} hrs) exceeds the required ${roundedTarget} hrs/week for this course by ${diff} hr(s). Please adjust the duration or verify intentional overlap.`,
+        badge: `⚠️ +${diff} hrs Over`,
         color: 'amber',
       };
     } else {
       return {
         type: 'lack',
-        message: `ℹ️ Notice: Plotted time (${roundedPlotted} hrs) is less than the required ${roundedTarget} hrs (${diff} hr(s) remaining). You can still proceed or plot another day block later.`,
-        badge: `-${diff} hrs remaining`,
-        color: 'blue',
+        message: `⚠️ Lacking Time: Plotted time (${roundedPlotted} hrs) is lacking/less than the required ${roundedTarget} hrs/week (${diff} hr(s) remaining needed).`,
+        badge: `⚠️ -${diff} hrs Lacking`,
+        color: 'rose',
       };
     }
   }, [selectedDaySlots, totalPlottedHours, targetHours, selectedCourse, selectedType]);
+
+  // Evaluates a teacher's schedule across all sections in the semester for conflicts
+  const getTeacherConflictStatus = (t) => {
+    if (!t || !t.name || t.name === 'TBA (To Be Assigned)') {
+      return { hasConflict: false, conflicts: [], allTeacherClasses: [] };
+    }
+    const tName = String(t.name || '').trim().toLowerCase();
+    const tEmail = String(t.email || '').trim().toLowerCase();
+
+    const teacherDocs = (allSemesterEntries || []).filter((e) => {
+      if (editingEntryId && (e.id === editingEntryId || e.originalId === editingEntryId)) return false;
+      const inst = String(e.instructor || '').trim().toLowerCase();
+      const instEmail = String(e.instructorEmail || '').trim().toLowerCase();
+      if (!inst || inst.includes('tba') || inst.includes('to be assigned')) return false;
+
+      const matchesName = tName && (inst === tName || inst.includes(tName) || tName.includes(inst));
+      const matchesEmail = tEmail && (instEmail === tEmail || inst.includes(tEmail));
+      return matchesName || matchesEmail;
+    });
+
+    if (!selectedDaySlots || selectedDaySlots.length === 0) {
+      return { hasConflict: false, conflicts: [], allTeacherClasses: teacherDocs };
+    }
+
+    const tConflicts = [];
+    selectedDaySlots.forEach((slot) => {
+      teacherDocs.forEach((doc) => {
+        const docDay = typeof doc.day === 'number' ? doc.day : 0;
+        if (docDay === slot.day) {
+          const dStart = Number(doc.startHour) || 0;
+          const dEnd = Number(doc.endHour) || 0;
+          if (dStart < slot.endHour && dEnd > slot.startHour) {
+            tConflicts.push({
+              ...doc,
+              conflictDay: slot.day,
+              conflictDayName: SCHEDULE_DAYS[slot.day],
+              overlapStart: Math.max(dStart, slot.startHour),
+              overlapEnd: Math.min(dEnd, slot.endHour),
+              courseCode: doc.courseCode || doc.title,
+              roomCode: doc.roomCode || 'Other Room',
+              section: doc.section || 'Other Section',
+              start: dStart,
+              end: dEnd,
+            });
+          }
+        }
+      });
+    });
+
+    return {
+      hasConflict: tConflicts.length > 0,
+      conflicts: tConflicts,
+      allTeacherClasses: teacherDocs,
+    };
+  };
+
+  const selectedTeacherConflict = useMemo(() => {
+    return getTeacherConflictStatus(selectedTeacher);
+  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId]);
 
   // Allows freely clicking between any steps in the stepper header
   const handleStepClick = (targetStepId) => {
@@ -1058,8 +1200,10 @@ export default function AddPlotEntryModalEnhanced({
           return;
         }
       }
-      if (roomConflicts.length > 0) {
-        const firstConflict = roomConflicts[0];
+      // Only room occupancy and section double-booking block proceeding from Step 3 (Building & Room)
+      const hardConflicts = roomConflicts.filter((c) => c.conflictType !== 'teacher');
+      if (hardConflicts.length > 0) {
+        const firstConflict = hardConflicts[0];
         const conflictTypeLabel = firstConflict.conflictType === 'section' ? 'Section Conflict' : 'Room Conflict';
         setError(`⚠️ ${conflictTypeLabel}: ${firstConflict.message || 'Time conflict detected.'} Please choose a different time slot or room.`);
         return;
@@ -1070,6 +1214,9 @@ export default function AddPlotEntryModalEnhanced({
       // Step 2 is teacher selection (Optional): default to TBA if none selected
       if (!selectedTeacher) {
         setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+      } else if (selectedTeacherConflict.hasConflict) {
+        setError(`Cannot proceed: ${selectedTeacher.name} has a schedule conflict during the selected class time. Please choose another faculty member or select TBA.`);
+        return;
       }
     }
 
@@ -1100,8 +1247,14 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
-    if (roomConflicts.length > 0) {
-      setError('Cannot save schedule: Schedule conflict detected. Please select an available time slot or room.');
+    const hardConflicts = roomConflicts.filter((c) => c.conflictType !== 'teacher');
+    if (hardConflicts.length > 0) {
+      setError('Cannot save schedule: Room or section schedule conflict detected. Please select an available time slot or room.');
+      return;
+    }
+
+    if (selectedTeacherConflict.hasConflict) {
+      setError(`Cannot save schedule: ${selectedTeacher.name} has a schedule conflict. Please choose another faculty member or select TBA in Step 4.`);
       return;
     }
 
@@ -1137,7 +1290,7 @@ export default function AddPlotEntryModalEnhanced({
         });
       }
 
-      if (continueToOther && otherType) {
+      if (!isEditMode && continueToOther && otherType) {
         const justSavedType = selectedType;
         const nextTargetType = otherType;
         setCompletedTypes((prev) => [...prev, justSavedType]);
@@ -1619,6 +1772,69 @@ export default function AddPlotEntryModalEnhanced({
                 </div>
               </div>
 
+              {/* Teacher Schedule Conflict Warning Banner */}
+              {selectedTeacherConflict.hasConflict && (
+                <div className="p-4 bg-red-50/95 border-2 border-red-500 rounded-2xl space-y-2.5 mb-4 shadow-md animate-in fade-in">
+                  <div className="flex items-center justify-between gap-2 border-b border-red-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-red-600 text-white font-black text-xs flex items-center justify-center shadow-xs flex-shrink-0">
+                        ⚠️
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-red-950 uppercase tracking-wide">
+                          Teacher Schedule Conflict: {selectedTeacher.name}
+                        </h4>
+                        <p className="text-[11px] font-semibold text-red-800">
+                          {selectedTeacher.name} is already teaching another class during your selected time slot.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' })}
+                      className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-white text-red-800 border border-red-300 hover:bg-red-100 cursor-pointer shadow-2xs"
+                    >
+                      Set to TBA instead
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {selectedTeacherConflict.conflicts.map((tc, idx) => (
+                      <div key={idx} className="p-2.5 rounded-xl bg-white border border-red-200 text-xs flex items-center justify-between gap-2">
+                        <div>
+                          <span className="font-black text-gray-900">{tc.conflictDayName}: </span>
+                          <span className="font-bold text-[#7A0808]">{tc.courseCode}</span>
+                          <span className="text-gray-600"> (Sec: {tc.section} in Room {tc.roomCode})</span>
+                        </div>
+                        <span className="font-black text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200 text-[10px]">
+                          {formatScheduleHour(tc.start)} – {formatScheduleHour(tc.end)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[11px] font-medium text-red-800">
+                    💡 <b>How to resolve:</b> Select a different faculty member below with the <span className="text-emerald-700 font-bold">✓ Available</span> badge, or select <b>"TBA (To Be Assigned)"</b>.
+                  </p>
+                </div>
+              )}
+
+              {/* Currently Assigned Faculty Notice */}
+              {selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' && !selectedTeacherConflict.hasConflict && (
+                <div className="p-3 bg-red-50/90 border border-red-200 rounded-xl flex items-center justify-between gap-2 mb-3 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <User size={16} className="text-[#7A0808]" />
+                    <p className="text-xs text-red-950 font-bold">
+                      Currently Assigned: <span className="font-extrabold underline">{selectedTeacher.name}</span>
+                      {selectedTeacher.email ? ` (${selectedTeacher.email})` : ''}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#7A0808] text-white">
+                    Assigned to this Course
+                  </span>
+                </div>
+              )}
+
               {/* Quick Teacher Search Bar */}
               <div className="mb-4 relative">
                 <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -1646,8 +1862,8 @@ export default function AddPlotEntryModalEnhanced({
                   type="button"
                   onClick={() => setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' })}
                   className={`text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
-                    selectedTeacher?.name === 'TBA (To Be Assigned)'
-                      ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                    !selectedTeacher || selectedTeacher?.name === 'TBA (To Be Assigned)'
+                      ? 'border-2 border-gray-400 bg-gray-100 shadow-2xs'
                       : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50'
                   }`}
                 >
@@ -1663,40 +1879,89 @@ export default function AddPlotEntryModalEnhanced({
                 </button>
 
                 {displayedTeachers.map((teacher) => {
-                  const isSelected = selectedTeacher?.uid === teacher.uid;
+                  const isSelected = Boolean(
+                    selectedTeacher &&
+                      selectedTeacher.name !== 'TBA (To Be Assigned)' &&
+                      (
+                        (teacher.uid && selectedTeacher.uid === teacher.uid) ||
+                        (teacher.email && selectedTeacher.email && teacher.email.toLowerCase() === selectedTeacher.email.toLowerCase()) ||
+                        (teacher.name && selectedTeacher.name && (
+                          teacher.name.toLowerCase().trim() === selectedTeacher.name.toLowerCase().trim() ||
+                          teacher.name.toLowerCase().includes(selectedTeacher.name.toLowerCase().trim()) ||
+                          selectedTeacher.name.toLowerCase().includes(teacher.name.toLowerCase().trim())
+                        ))
+                      )
+                  );
                   const isPreAssigned = selectedCourse?.assignedTeacherUid === teacher.uid;
+                  const teacherStatus = getTeacherConflictStatus(teacher);
 
                   return (
-                    <button
+                    <div
                       key={teacher.uid}
-                      type="button"
                       onClick={() => setSelectedTeacher(teacher)}
-                      className={`text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                      className={`text-left px-3.5 py-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                         isSelected
-                          ? 'border-[#7A0808] bg-red-50/80 shadow-2xs'
+                          ? teacherStatus.hasConflict
+                            ? 'border-2 border-red-500 bg-red-50/90 shadow-md ring-2 ring-red-100'
+                            : 'border-2 border-[#7A0808] bg-red-50/90 shadow-md ring-2 ring-red-100'
+                          : teacherStatus.hasConflict
+                          ? 'border-red-200/80 bg-red-50/40 hover:border-red-400'
                           : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-                          style={{ background: '#7A0808' }}
+                          style={{ background: teacherStatus.hasConflict ? '#DC2626' : '#7A0808' }}
                         >
                           {teacher.name?.charAt(0)?.toUpperCase() || 'T'}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center justify-between gap-1 flex-wrap">
                             <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
-                            {isPreAssigned && (
-                              <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                                Assigned
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {isSelected && (
+                                <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-[#7A0808] text-white flex items-center gap-0.5 shadow-2xs">
+                                  <Check size={10} /> Selected
+                                </span>
+                              )}
+                              {teacherStatus.hasConflict ? (
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300">
+                                  ⚠️ Has Conflict
+                                </span>
+                              ) : selectedDaySlots.length > 0 ? (
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  ✓ Available
+                                </span>
+                              ) : isPreAssigned ? (
+                                <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                  Assigned
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                           <p className="text-[10px] text-gray-500 truncate">{teacher.email}</p>
                         </div>
                       </div>
-                    </button>
+
+                      {/* View Schedule Button */}
+                      <div className="flex items-center justify-between gap-1 pt-2 mt-2 border-t border-gray-100/90">
+                        <span className="text-[9.5px] text-gray-500 font-medium truncate">
+                          {teacherStatus.allTeacherClasses.length} class{teacherStatus.allTeacherClasses.length === 1 ? '' : 'es'} this semester
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewTeacherSchedule({ teacher, entries: teacherStatus.allTeacherClasses });
+                          }}
+                          className="px-2 py-0.5 text-[9.5px] font-bold rounded-md border border-gray-200 bg-white hover:bg-[#7A0808] text-gray-700 hover:text-white flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                          title={`View ${teacher.name}'s schedule`}
+                        >
+                          <Calendar size={10} /> View Schedule
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -2293,7 +2558,7 @@ export default function AddPlotEntryModalEnhanced({
                                   ? 'bg-amber-50/90 border-amber-300 text-amber-900'
                                   : hoursStatus.type === 'empty'
                                   ? 'bg-gray-50 border-gray-300 text-gray-700'
-                                  : 'bg-blue-50/90 border-blue-300 text-blue-900'
+                                  : 'bg-rose-50/90 border-rose-300 text-rose-900'
                               }`}
                             >
                               <p className="text-xs font-semibold leading-relaxed">
@@ -2307,7 +2572,7 @@ export default function AddPlotEntryModalEnhanced({
                                     ? 'bg-amber-600 text-white'
                                     : hoursStatus.type === 'empty'
                                     ? 'bg-gray-500 text-white'
-                                    : 'bg-blue-600 text-white'
+                                    : 'bg-rose-600 text-white'
                                 }`}
                               >
                                 {hoursStatus.badge}
@@ -2320,27 +2585,14 @@ export default function AddPlotEntryModalEnhanced({
                             <RoomScheduleViewer
                               roomCode={selectedRoom.roomCode || selectedRoom.name || selectedRoom.id}
                               sectionName={selectedSection}
+                              teacher={selectedTeacher}
                               roomType={selectedRoom.type || selectedRoom.roomType}
                               scheduleMode={scheduleMode}
                               semester={semester}
                               deanUid={deanUid}
                               currentTimeSlots={selectedDaySlots}
                               isEditMode={isEditMode}
-                              ignoreCourseCode={selectedCourse?.code}
-                              ignoreSection={selectedSection}
-                              ignoreType={selectedType}
-                              ignoreEntryIds={[
-                                ...(editingEntryId ? [editingEntryId] : []),
-                                ...((sectionPlotEntries || [])
-                                  .filter((e) => {
-                                    const codeMatches = String(e.courseCode || e.title || '').trim().toUpperCase() === String(selectedCourse?.code || '').trim().toUpperCase();
-                                    const isLabEntry = String(e.type || '').toLowerCase().includes('lab');
-                                    const isLabSelected = String(selectedType || '').toLowerCase().includes('lab');
-                                    return codeMatches && isLabEntry === isLabSelected;
-                                  })
-                                  .map((e) => e.id)
-                                  .filter(Boolean)),
-                              ]}
+                              ignoreEntryIds={editingEntryId ? [editingEntryId] : []}
                               onTimeSelect={(clickedDay, startHour, endHour) => {
                                 if (!selectedDays.includes(clickedDay)) {
                                   setSelectedDays([...selectedDays, clickedDay].sort((a, b) => a - b));
@@ -2568,21 +2820,37 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={saving || (step === 4 && (!selectedRoom || selectedDaySlots.length === 0 || roomConflicts.length > 0))}
+                disabled={
+                  saving ||
+                  (step === 4 && (!selectedRoom || selectedDaySlots.length === 0 || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0)) ||
+                  (step === 2 && selectedTeacherConflict.hasConflict)
+                }
                 className={`btn-maroon flex items-center gap-2 text-xs transition-all cursor-pointer ${
-                  step === 4 && (roomConflicts.length > 0 || selectedDaySlots.length === 0)
+                  (step === 4 && (roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0 || selectedDaySlots.length === 0)) ||
+                  (step === 2 && selectedTeacherConflict.hasConflict)
                     ? 'opacity-50 cursor-not-allowed bg-red-950/70 border border-red-800'
                     : ''
                 }`}
                 title={
-                  step === 4 && roomConflicts.length > 0
-                    ? `Cannot proceed: ${roomConflicts.length} schedule conflict(s) detected`
+                  step === 4 && roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0
+                    ? 'Cannot proceed: Room or section schedule conflict detected'
+                    : step === 2 && selectedTeacherConflict.hasConflict
+                    ? `Cannot proceed: ${selectedTeacher?.name || 'Selected teacher'} has a schedule conflict`
                     : step === 4 && selectedDaySlots.length === 0
                     ? 'Please select schedule day(s) and time to proceed'
                     : undefined
                 }
               >
                 Next <ChevronRight size={16} />
+              </button>
+            ) : isEditMode ? (
+              <button
+                type="button"
+                onClick={() => handleSubmit(false)}
+                disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md font-bold"
+              >
+                {saving ? 'Saving Changes...' : 'Save Changes'}
               </button>
             ) : isOtherTypePending ? (
               <>
@@ -2600,7 +2868,7 @@ export default function AddPlotEntryModalEnhanced({
                   type="button"
                   onClick={() => handleSubmit(true)}
                   disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
-                  className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md"
+                  className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md font-bold"
                   title={`Save ${selectedType} and continue to configure ${otherType}`}
                 >
                   {saving ? 'Saving...' : `Save & Schedule ${otherType}`} <ArrowRight size={15} />
@@ -2611,7 +2879,7 @@ export default function AddPlotEntryModalEnhanced({
                 type="button"
                 onClick={() => handleSubmit(false)}
                 disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
-                className="btn-maroon flex items-center gap-2 text-xs cursor-pointer"
+                className="btn-maroon flex items-center gap-2 text-xs cursor-pointer font-bold"
               >
                 {saving
                   ? 'Saving...'
@@ -2866,6 +3134,23 @@ export default function AddPlotEntryModalEnhanced({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Teacher Schedule Grid Modal (View Schedule button on faculty card) */}
+      {viewTeacherSchedule && (
+        <TeacherScheduleModal
+          teacher={viewTeacherSchedule.teacher || viewTeacherSchedule}
+          initialSemester={String(semester || '1')}
+          collegeCode={
+            deanCollege ||
+            (viewTeacherSchedule.teacher?.department ||
+              viewTeacherSchedule.department ||
+              viewTeacherSchedule.teacher?.college ||
+              viewTeacherSchedule.college ||
+              '')
+          }
+          onClose={() => setViewTeacherSchedule(null)}
+        />
       )}
     </div>
   );

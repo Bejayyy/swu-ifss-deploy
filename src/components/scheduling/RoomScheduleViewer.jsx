@@ -21,6 +21,7 @@ import {
 export default function RoomScheduleViewer({ 
   roomCode, 
   sectionName = null, // Current Section being scheduled (e.g. 'BSMT1-A1')
+  teacher = null, // Current Teacher being scheduled (e.g. { name: 'James Isidro', email: '...' })
   roomType = null,
   scheduleMode = 'regular',
   semester = '1',
@@ -37,12 +38,16 @@ export default function RoomScheduleViewer({
 }) {
   const [roomEntries, setRoomEntries] = useState([]);
   const [sectionEntries, setSectionEntries] = useState([]);
+  const [teacherEntries, setTeacherEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [drag, setDrag] = useState(null);
   const dragRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   const gridHeight = gridTotalHeightPx();
+
+  const cleanTeacherName = typeof teacher === 'object' ? (teacher?.name || teacher?.displayName || '') : String(teacher || '');
+  const isTeacherTba = !cleanTeacherName || cleanTeacherName.toLowerCase().includes('tba') || cleanTeacherName.toLowerCase().includes('to be assigned');
 
   // Normalize single slot or array of slots
   const effectiveTimeSlots = useMemo(() => {
@@ -69,11 +74,12 @@ export default function RoomScheduleViewer({
     }
   }, [effectiveTimeSlots, roomCode]);
 
-  // Subscribe to all schedule entries for this room AND this section across all deans
+  // Subscribe to all schedule entries for this room, section, and teacher across all deans
   useEffect(() => {
-    if (!roomCode && !sectionName) {
+    if (!roomCode && !sectionName && (!cleanTeacherName || isTeacherTba)) {
       setRoomEntries([]);
       setSectionEntries([]);
+      setTeacherEntries([]);
       setLoading(false);
       return undefined;
     }
@@ -85,17 +91,20 @@ export default function RoomScheduleViewer({
       semester,
       scheduleMode,
       deanUid,
-      ({ roomEntries: rData, sectionEntries: sData }) => {
+      null,
+      ({ roomEntries: rData, sectionEntries: sData, teacherEntries: tData }) => {
         setRoomEntries(rData || []);
         setSectionEntries(sData || []);
+        setTeacherEntries(tData || []);
         setLoading(false);
       },
       (err) => {
-        console.error('Error loading room & section schedule:', err);
+        console.error('Error loading room, section & teacher schedule:', err);
         setLoading(false);
-      }
+      },
+      isTeacherTba ? null : teacher
     );
-  }, [roomCode, sectionName, semester, scheduleMode, deanUid]);
+  }, [roomCode, sectionName, semester, scheduleMode, deanUid, cleanTeacherName, isTeacherTba]);
 
   const parseDay = (d, dateStr, dayLabelStr) => {
     if (typeof d === 'number' && d >= 0 && d <= 6) return d;
@@ -107,7 +116,7 @@ export default function RoomScheduleViewer({
   const normalizeRoom = (str) => String(str || '').replace(/[\s\-_]/g, '').toUpperCase();
   const currentRoomNorm = normalizeRoom(roomCode);
 
-  // Convert entries to blocks for rendering (combining room blocks and section-only blocks)
+  // Convert entries to blocks for rendering (combining room blocks, section blocks, and teacher blocks)
   const blocks = useMemo(() => {
     const all = [];
     const seenIds = new Set();
@@ -129,16 +138,17 @@ export default function RoomScheduleViewer({
         program: entry.program || entry.programCode || '',
         roomCode: entry.roomCode || roomCode,
         isSectionOnly: false,
+        isTeacherOnly: false,
       });
     });
 
     // 2. Section Blocks (This section has class in OTHER rooms)
     sectionEntries.forEach((entry) => {
       const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
-      // If this entry is already taking place in the current room, it is already rendered in roomBlocks
       if (eRoomNorm === currentRoomNorm || seenIds.has(entry.id)) {
         return;
       }
+      seenIds.add(entry.id);
 
       all.push({
         id: `sec-${entry.id}`,
@@ -154,11 +164,39 @@ export default function RoomScheduleViewer({
         program: entry.program || entry.programCode || '',
         roomCode: entry.roomCode || 'Other Room',
         isSectionOnly: true,
+        isTeacherOnly: false,
       });
     });
 
+    // 3. Teacher Blocks (This teacher is teaching in OTHER rooms/sections)
+    if (!isTeacherTba && teacherEntries.length > 0) {
+      teacherEntries.forEach((entry) => {
+        const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
+        if (seenIds.has(entry.id) || (eRoomNorm === currentRoomNorm && entry.section === sectionName)) {
+          return;
+        }
+
+        all.push({
+          id: `teacher-${entry.id}`,
+          originalId: entry.id,
+          day: parseDay(entry.day, entry.date, entry.dayLabel),
+          start: Number(entry.startHour) || 0,
+          end: Number(entry.endHour) || 0,
+          title: entry.title || entry.courseCode || '',
+          course: entry.courseCode || entry.title || '',
+          instructor: entry.instructor || cleanTeacherName,
+          type: 'TeacherBusy',
+          section: entry.section || 'Other Section',
+          program: entry.program || entry.programCode || '',
+          roomCode: entry.roomCode || 'Other Room',
+          isSectionOnly: false,
+          isTeacherOnly: true,
+        });
+      });
+    }
+
     return all;
-  }, [roomEntries, sectionEntries, roomCode, currentRoomNorm, sectionName]);
+  }, [roomEntries, sectionEntries, teacherEntries, roomCode, currentRoomNorm, sectionName, isTeacherTba, cleanTeacherName]);
 
   // Group blocks by day
   const blocksByDay = useMemo(() => {
@@ -231,24 +269,9 @@ export default function RoomScheduleViewer({
     const seenConflictKeys = new Set();
 
     const isConflictIgnored = (block) => {
+      // If specific entry IDs are provided (e.g. editingEntryId), ignore ONLY that specific entry
       if (ignoreEntryIds && Array.isArray(ignoreEntryIds) && ignoreEntryIds.length > 0) {
         if (ignoreEntryIds.includes(block.originalId) || ignoreEntryIds.includes(block.id)) {
-          return true;
-        }
-      }
-      if (ignoreCourseCode) {
-        const codeMatches =
-          String(block.course || '').trim().toUpperCase() === String(ignoreCourseCode).trim().toUpperCase() ||
-          String(block.title || '').trim().toUpperCase().includes(String(ignoreCourseCode).trim().toUpperCase());
-        const secMatches =
-          !ignoreSection ||
-          String(block.section || '').trim().toUpperCase() === String(ignoreSection).trim().toUpperCase();
-
-        const isLabBlock = String(block.type || '').toLowerCase().includes('lab');
-        const isLabIgnore = String(ignoreType || '').toLowerCase().includes('lab');
-        const typeMatches = !ignoreType || isLabBlock === isLabIgnore;
-
-        if (codeMatches && secMatches && typeMatches) {
           return true;
         }
       }
@@ -262,10 +285,19 @@ export default function RoomScheduleViewer({
 
         // Check time overlap: (start1 < end2) AND (start2 < end1)
         if (block.start < slot.endHour && block.end > slot.startHour) {
-          const conflictType = block.isSectionOnly ? 'section' : 'room';
+          const conflictType = block.isTeacherOnly ? 'teacher' : block.isSectionOnly ? 'section' : 'room';
           const key = `${conflictType}-${block.originalId || block.id}-${slot.day}`;
           if (seenConflictKeys.has(key)) return;
           seenConflictKeys.add(key);
+
+          let msg = '';
+          if (conflictType === 'teacher') {
+            msg = `Teacher ${cleanTeacherName || block.instructor} is already teaching "${block.course || block.title}" in Room ${block.roomCode || 'another room'} (${formatScheduleHour(block.start)} – ${formatScheduleHour(block.end)})`;
+          } else if (conflictType === 'section') {
+            msg = `Section ${sectionName || 'this section'} already has "${block.course || block.title}" scheduled in Room ${block.roomCode || 'another room'} (${formatScheduleHour(block.start)} – ${formatScheduleHour(block.end)})`;
+          } else {
+            msg = `Room ${roomCode} is already occupied by "${block.course || block.title}"${block.section ? ` (Sec: ${block.section})` : ''} (${formatScheduleHour(block.start)} – ${formatScheduleHour(block.end)})`;
+          }
 
           result.push({
             ...block,
@@ -274,15 +306,13 @@ export default function RoomScheduleViewer({
             conflictDayName: SCHEDULE_DAYS[slot.day],
             conflictStart: slot.startHour,
             conflictEnd: slot.endHour,
-            message: conflictType === 'section'
-              ? `Section ${sectionName || 'this section'} already has "${block.course || block.title}" scheduled in Room ${block.roomCode || 'another room'} (${formatScheduleHour(block.start)} – ${formatScheduleHour(block.end)})`
-              : `Room ${roomCode} is already occupied by "${block.course || block.title}"${block.section ? ` (Sec: ${block.section})` : ''} (${formatScheduleHour(block.start)} – ${formatScheduleHour(block.end)})`,
+            message: msg,
           });
         }
       });
     });
     return result;
-  }, [effectiveTimeSlots, blocks, roomCode, sectionName, isEditMode, ignoreCourseCode, ignoreSection, ignoreType, ignoreEntryIds]);
+  }, [effectiveTimeSlots, blocks, roomCode, sectionName, cleanTeacherName, isEditMode, ignoreCourseCode, ignoreSection, ignoreType, ignoreEntryIds]);
 
   // Propagate conflicts to parent
   useEffect(() => {
@@ -307,9 +337,11 @@ export default function RoomScheduleViewer({
     Maintenance: { bg: '#FFEDD5', border: '#FDBA74', text: '#C2410C', badgeBg: '#FFF7ED', badgeText: '#C2410C' },
     Reservation: { bg: '#F3E8FF', border: '#D8B4FE', text: '#6B21A8', badgeBg: '#FAF5FF', badgeText: '#6B21A8' },
     SectionBusy: { bg: '#EEF2FF', border: '#6366F1', text: '#312E81', badgeBg: '#4F46E5', badgeText: '#FFFFFF' },
+    TeacherBusy: { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E', badgeBg: '#D97706', badgeText: '#FFFFFF' },
   };
 
   const sectionBusyBlocksCount = blocks.filter((b) => b.isSectionOnly).length;
+  const teacherBusyBlocksCount = blocks.filter((b) => b.isTeacherOnly).length;
 
   return (
     <div className="space-y-3 select-none">
@@ -324,7 +356,12 @@ export default function RoomScheduleViewer({
               : `${roomEntries.length} scheduled ${roomEntries.length === 1 ? 'class' : 'classes'} in this room`}
             {sectionName && sectionBusyBlocksCount > 0 && (
               <span className="text-indigo-700 font-bold ml-1.5">
-                • {sectionBusyBlocksCount} other {sectionBusyBlocksCount === 1 ? 'class' : 'classes'} scheduled for Section {sectionName}
+                • {sectionBusyBlocksCount} section {sectionBusyBlocksCount === 1 ? 'class' : 'classes'} in other rooms
+              </span>
+            )}
+            {!isTeacherTba && cleanTeacherName && teacherBusyBlocksCount > 0 && (
+              <span className="text-amber-700 font-bold ml-1.5">
+                • {teacherBusyBlocksCount} teacher {teacherBusyBlocksCount === 1 ? 'class' : 'classes'} in other rooms ({cleanTeacherName})
               </span>
             )}
           </p>
@@ -364,6 +401,7 @@ export default function RoomScheduleViewer({
 
           <div className="space-y-3">
             {conflicts.map((conflict, cIdx) => {
+              const isTeacherConflict = conflict.conflictType === 'teacher';
               const isSectionConflict = conflict.conflictType === 'section';
               return (
                 <div
@@ -375,12 +413,18 @@ export default function RoomScheduleViewer({
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                          isSectionConflict
+                          isTeacherConflict
+                            ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                            : isSectionConflict
                             ? 'bg-indigo-100 text-indigo-950 border border-indigo-300'
                             : 'bg-red-100 text-red-950 border border-red-300'
                         }`}
                       >
-                        {isSectionConflict ? '📌 Section Schedule Conflict' : '🚪 Room Occupancy Conflict'}
+                        {isTeacherConflict
+                          ? '👨‍🏫 Teacher Schedule Conflict'
+                          : isSectionConflict
+                          ? '📌 Section Schedule Conflict'
+                          : '🚪 Room Occupancy Conflict'}
                       </span>
                       <span className="font-black text-xs text-gray-900">
                         {conflict.conflictDayName || SCHEDULE_DAYS[conflict.day]}
@@ -395,7 +439,17 @@ export default function RoomScheduleViewer({
                   {/* Explicit Explanation of Why it is a Conflict */}
                   <div className="p-3 rounded-xl bg-gray-50/90 border border-gray-200 text-xs space-y-1.5">
                     <p className="font-bold text-gray-900 leading-relaxed">
-                      {isSectionConflict ? (
+                      {isTeacherConflict ? (
+                        <>
+                          <span className="text-amber-900 font-extrabold">Why this is a conflict: </span>
+                          Teacher <span className="font-black underline text-amber-950">{cleanTeacherName || conflict.instructor}</span> is already assigned to teach{' '}
+                          <span className="font-black text-[#7A0808]">{conflict.course || conflict.title}</span>
+                          {conflict.section && <span className="text-gray-700 font-medium"> for Section {conflict.section}</span>} in{' '}
+                          <span className="font-black text-amber-900 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">Room {conflict.roomCode}</span> on{' '}
+                          <span className="font-bold">{conflict.conflictDayName}</span> from{' '}
+                          <span className="font-black text-red-900">{formatScheduleHour(conflict.start)} to {formatScheduleHour(conflict.end)}</span>.
+                        </>
+                      ) : isSectionConflict ? (
                         <>
                           <span className="text-indigo-900 font-extrabold">Why this is a conflict: </span>
                           Section <span className="font-black underline text-indigo-950">{sectionName || conflict.section}</span> is already scheduled for{' '}
@@ -419,7 +473,11 @@ export default function RoomScheduleViewer({
                     </p>
 
                     <p className="text-[11px] font-medium text-gray-600 flex items-center gap-1.5">
-                      {isSectionConflict ? (
+                      {isTeacherConflict ? (
+                        <>
+                          <span className="text-amber-600 font-black">⚠️ Teacher Double-Booking:</span> Teacher <span className="font-bold text-gray-900">{cleanTeacherName || conflict.instructor}</span> cannot be teaching in <span className="font-bold text-gray-900">{roomCode}</span> and <span className="font-bold text-amber-900">{conflict.roomCode}</span> at the same time.
+                        </>
+                      ) : isSectionConflict ? (
                         <>
                           <span className="text-amber-600 font-black">⚠️ Student Double-Booking:</span> Students in section <span className="font-bold text-gray-900">{sectionName || conflict.section}</span> cannot be attending class in <span className="font-bold text-gray-900">{roomCode}</span> and <span className="font-bold text-indigo-900">{conflict.roomCode}</span> at the same time.
                         </>
@@ -435,7 +493,9 @@ export default function RoomScheduleViewer({
                   <div className="p-2.5 rounded-lg bg-gray-100/80 text-[10.5px] font-medium text-gray-700 flex items-center gap-1.5">
                     <span className="font-black text-gray-900 flex-shrink-0">💡 How to resolve:</span>
                     <span className="truncate">
-                      {isSectionConflict
+                      {isTeacherConflict
+                        ? `Select a time slot when ${cleanTeacherName || 'this teacher'} is available, change the scheduled day, or assign a different faculty member in Step 4.`
+                        : isSectionConflict
                         ? `Change ${conflict.conflictDayName}'s time to before ${formatScheduleHour(conflict.start)} or after ${formatScheduleHour(conflict.end)}, uncheck ${conflict.conflictDayName}, or select an alternate vacant day/time.`
                         : `Choose an available time slot on the grid, select another room from the left floor list, or choose a different day.`}
                     </span>
@@ -453,6 +513,12 @@ export default function RoomScheduleViewer({
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-sm bg-indigo-100 border-2 border-dashed border-indigo-500"></div>
             <span className="text-indigo-900 font-extrabold">Section {sectionName} (Other Room)</span>
+          </div>
+        )}
+        {!isTeacherTba && cleanTeacherName && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-amber-100 border-2 border-dashed border-amber-500"></div>
+            <span className="text-amber-900 font-extrabold">Teacher Busy: {cleanTeacherName}</span>
           </div>
         )}
         {effectiveTimeSlots.length > 0 && (
@@ -624,7 +690,27 @@ export default function RoomScheduleViewer({
                           border: block.isSectionOnly ? `2px dashed ${colors.border}` : `1.5px solid ${colors.border}`,
                         }}
                       >
-                        {block.isSectionOnly ? (
+                        {block.isTeacherOnly ? (
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded bg-amber-600 text-white uppercase tracking-wider">
+                                Teacher Busy
+                              </span>
+                              <span className="text-[7.5px] font-black text-amber-800 truncate">
+                                📍 Rm: {block.roomCode}
+                              </span>
+                            </div>
+                            <p className="text-[9px] font-black text-amber-950 truncate">
+                              {block.title || block.course}
+                            </p>
+                            <p className="text-[8px] font-bold text-amber-800 truncate">
+                              {block.instructor} · {block.section || 'Class'}
+                            </p>
+                            <p className="text-[8px] font-semibold text-amber-700">
+                              {formatScheduleHour(block.start)} – {formatScheduleHour(block.end)}
+                            </p>
+                          </div>
+                        ) : block.isSectionOnly ? (
                           <div>
                             <div className="flex items-center justify-between gap-1 mb-0.5">
                               <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded bg-indigo-600 text-white uppercase tracking-wider">

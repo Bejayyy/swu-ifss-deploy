@@ -1,10 +1,12 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
+import { isCollegeMatch } from './scheduleAccessService';
+
 const COURSES_COLLECTION = 'courses';
 
 /**
- * Subscribe to courses for a specific college
+ * Subscribe to courses for a specific college (matches acronyms, names, and program codes)
  */
 export function subscribeCollegeCourses(collegeCode, onData, onError) {
   if (!collegeCode) {
@@ -12,22 +14,30 @@ export function subscribeCollegeCourses(collegeCode, onData, onError) {
     return () => {};
   }
 
-  const cleanCode = String(collegeCode).trim().toUpperCase();
-
-  const q = query(
-    collection(db, COURSES_COLLECTION),
-    where('collegeCode', '==', cleanCode)
-  );
+  const q = query(collection(db, COURSES_COLLECTION));
 
   return onSnapshot(
     q,
     (snapshot) => {
-      const courses = snapshot.docs.map((doc) => ({
+      const allCourses = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      courses.sort((a, b) => {
+      const filtered = allCourses.filter((c) => {
+        const cCode = c.collegeCode || c.college || '';
+        const pCode = c.programCode || '';
+        return (
+          isCollegeMatch(collegeCode, cCode) ||
+          isCollegeMatch(collegeCode, pCode) ||
+          (cCode && String(collegeCode).toUpperCase().includes(String(cCode).toUpperCase())) ||
+          (pCode && String(collegeCode).toUpperCase().includes(String(pCode).toUpperCase())) ||
+          (cCode && String(cCode).toUpperCase().includes(String(collegeCode).toUpperCase())) ||
+          (pCode && String(pCode).toUpperCase().includes(String(collegeCode).toUpperCase()))
+        );
+      });
+
+      filtered.sort((a, b) => {
         const yA = a.yearLevel || '';
         const yB = b.yearLevel || '';
         if (yA !== yB) return yA.localeCompare(yB);
@@ -37,7 +47,7 @@ export function subscribeCollegeCourses(collegeCode, onData, onError) {
         return (a.code || '').localeCompare(b.code || '');
       });
 
-      onData(courses);
+      onData(filtered);
     },
     (err) => {
       console.error('subscribeCollegeCourses error:', err);

@@ -58,7 +58,18 @@ export const NAV_PERMISSIONS_CATALOG = [
     navKey: 'teachers',
     label: 'Teachers Directory',
     description: 'View teachers and manage course schedules & weekly timetables',
-    actions: [],
+    actions: [
+      {
+        permission: PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS,
+        label: 'Manage teachers (Assign subjects)',
+        description: 'Assign, unassign, and manage course subject loads for faculty members',
+      },
+      {
+        permission: PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE,
+        label: 'View personal schedule',
+        description: 'Allow faculty members to view their own assigned class schedule and timetable',
+      },
+    ],
   },
   {
     navKey: 'collegeInventory',
@@ -137,6 +148,8 @@ export const ACCESS_CATALOG = [
       { type: 'permission', permission: PERMISSIONS.SCHEDULING_SUBMIT, label: 'Submit course schedules', description: 'Plot and submit course schedules', requiredNavKey: 'courseScheduling', requiredNavLabel: 'Course Scheduling' },
       { type: 'permission', permission: PERMISSIONS.SCHEDULING_MANAGE, label: 'Manage scheduling operations', description: 'Advanced scheduling management', requiredNavKey: 'courseScheduling', requiredNavLabel: 'Course Scheduling' },
       { type: 'permission', permission: PERMISSIONS.CALENDAR_MANAGE, label: 'Manage academic calendar', description: 'Edit holidays, no-class periods, and exam dates', requiredNavKey: 'academicCalendar', requiredNavLabel: 'Academic Calendar' },
+      { type: 'permission', permission: PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS, label: 'Manage teachers (Assign subjects)', description: 'Assign, unassign, and manage course subject loads for faculty members', requiredNavKey: 'teachers', requiredNavLabel: 'Teachers Directory' },
+      { type: 'permission', permission: PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE, label: 'View personal schedule', description: 'Allow faculty members to view their own assigned timetable and class schedule', requiredNavKey: 'teachers', requiredNavLabel: 'Teachers Directory' },
     ],
   },
   {

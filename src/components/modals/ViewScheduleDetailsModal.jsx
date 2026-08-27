@@ -216,6 +216,61 @@ export default function ViewScheduleDetailsModal({
             </div>
           </div>
 
+          {/* Required Hours & Time Compliance Status */}
+          {(() => {
+            const reqHours = isLab
+              ? Number(raw.labHours || block.labHours || (Number(raw.labUnits || block.labUnits || 1) * 3))
+              : Number(raw.lecHours || block.lecHours || (Number(raw.lecUnits || block.lecUnits || raw.units || block.units || 2) * 1));
+            
+            const roundedDuration = Math.round(durationHours * 10) / 10;
+            const roundedReq = Math.round(reqHours * 10) / 10;
+            const diffHours = Math.round(Math.abs(roundedDuration - roundedReq) * 10) / 10;
+
+            if (roundedDuration === roundedReq) {
+              return (
+                <div className="p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl flex items-center justify-between gap-2 text-emerald-900">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={15} className="text-emerald-600 flex-shrink-0" />
+                    <p className="text-xs font-semibold">
+                      Exact Match: Duration (<strong>{roundedDuration} hrs</strong>) matches the required <strong>{roundedReq} hrs/week</strong> for {type}.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-600 text-white whitespace-nowrap">
+                    ✓ Exact Match
+                  </span>
+                </div>
+              );
+            } else if (roundedDuration > roundedReq) {
+              return (
+                <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl flex items-center justify-between gap-2 text-amber-900">
+                  <div className="flex items-center gap-2">
+                    <Clock size={15} className="text-amber-600 flex-shrink-0" />
+                    <p className="text-xs font-semibold">
+                      Overlapping / Exceeding Time: Duration (<strong>{roundedDuration} hrs</strong>) exceeds the required <strong>{roundedReq} hrs/week</strong> by <strong>{diffHours} hr(s)</strong>.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-600 text-white whitespace-nowrap">
+                    ⚠️ +{diffHours}h Over
+                  </span>
+                </div>
+              );
+            } else {
+              return (
+                <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl flex items-center justify-between gap-2 text-rose-900">
+                  <div className="flex items-center gap-2">
+                    <Clock size={15} className="text-rose-600 flex-shrink-0" />
+                    <p className="text-xs font-semibold">
+                      Lacking Time: Duration (<strong>{roundedDuration} hrs</strong>) is lacking <strong>{diffHours} hr(s)</strong> to meet the required <strong>{roundedReq} hrs/week</strong>.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-600 text-white whitespace-nowrap">
+                    ⚠️ -{diffHours}h Lacking
+                  </span>
+                </div>
+              );
+            }
+          })()}
+
           {/* Additional Details */}
           <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100 flex items-center justify-between text-xs font-medium text-gray-600 flex-wrap gap-2">
             <span className="flex items-center gap-1.5">

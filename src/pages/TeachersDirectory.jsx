@@ -25,7 +25,9 @@ import NotificationModal from '../components/modals/NotificationModal';
 import TeacherScheduleModal from '../components/modals/TeacherScheduleModal';
 import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import { ROLES } from '../firebase/constants';
+import { PERMISSIONS } from '../constants/rolePermissions';
 import { subscribeStaffUsers } from '../services/systemUserService';
 import { subscribeCollegeCourses, assignTeacherToCourse, unassignTeacherFromCourse } from '../services/courseService';
 import { formatCollegeName } from '../constants/colleges';
@@ -35,9 +37,16 @@ const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
 
 export default function TeachersDirectory() {
   const { profile } = useAuth();
+  const { canAssignTeacherSubjects, canViewPersonalTeacherSchedule, hasPermission } = useRolePermissions();
   const isDean = profile?.role === ROLES.DEAN;
   const isRegistrar = profile?.role === ROLES.REGISTRAR;
+  const isTeacherRole = profile?.role === ROLES.TEACHER;
   const myDepartment = profile?.department || profile?.college;
+
+  // Permission evaluation
+  const canAssign = isRegistrar || isDean || canAssignTeacherSubjects() || hasPermission(PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS);
+  const canViewPersonal = canViewPersonalTeacherSchedule() || hasPermission(PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE) || isTeacherRole;
+  const isPersonalScheduleOnly = !canAssign && canViewPersonal;
 
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,9 +76,17 @@ export default function TeachersDirectory() {
     setLoading(true);
     return subscribeStaffUsers(
       (users) => {
-        // Filter only teachers from the same department/college
-        const filteredTeachers = users.filter((user) => {
-          if (user.roleValue !== 'teacher') return false;
+        // Filter only teachers
+        let filteredTeachers = users.filter((user) => {
+          if (user.roleValue !== 'teacher' && user.role !== 'teacher') return false;
+
+          // If personal schedule only, only match the logged in user
+          if (isPersonalScheduleOnly) {
+            return (
+              (user.uid && profile?.uid && user.uid === profile.uid) ||
+              (user.email && profile?.email && user.email.toLowerCase() === profile.email.toLowerCase())
+            );
+          }
 
           // If dean, only show teachers from same department/college
           if (isDean && myDepartment) {
@@ -83,8 +100,21 @@ export default function TeachersDirectory() {
             );
           }
 
-          return true; // Registrar sees all
+          return true; // Registrar / Admin sees all
         });
+
+        // Fallback for personal schedule if no user doc matched
+        if (isPersonalScheduleOnly && filteredTeachers.length === 0 && profile) {
+          filteredTeachers = [{
+            uid: profile.uid,
+            name: profile.name || profile.displayName || 'Faculty Member',
+            email: profile.email || '',
+            department: profile.department || profile.college || '',
+            college: profile.college || profile.department || '',
+            roleValue: 'teacher',
+            status: 'Active',
+          }];
+        }
 
         setTeachers(filteredTeachers);
         setLoading(false);
@@ -94,11 +124,11 @@ export default function TeachersDirectory() {
         setLoading(false);
       }
     );
-  }, [isDean, myDepartment]);
+  }, [isDean, myDepartment, isPersonalScheduleOnly, profile]);
 
   // Subscribe to courses for the college (for assignment)
   useEffect(() => {
-    if (isDean && myDepartment) {
+    if ((canAssign || isDean) && myDepartment) {
       return subscribeCollegeCourses(
         myDepartment,
         (data) => setCourses(data),
@@ -106,7 +136,7 @@ export default function TeachersDirectory() {
       );
     }
     return () => {};
-  }, [isDean, myDepartment]);
+  }, [canAssign, isDean, myDepartment]);
 
   // Get courses assigned to a teacher
   const getTeacherCourses = (teacherUid) => {
@@ -308,15 +338,41 @@ export default function TeachersDirectory() {
 
   return (
     <Layout
-      title="Teachers Directory"
-      subtitle={isDean ? `Teachers in ${myDepartment || 'your college'}` : 'View and manage all faculty members across colleges'}
+      title={isPersonalScheduleOnly ? 'My Faculty Schedule' : 'Teachers Directory'}
+      subtitle={
+        isPersonalScheduleOnly
+          ? 'View your assigned subjects, classroom venues, and weekly class timetable'
+          : isDean
+          ? `Teachers in ${myDepartment || 'your college'}`
+          : 'View and manage all faculty members across colleges'
+      }
     >
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCardItem label="Total Teachers" value={teachers.length} icon={Users} color="blue" />
-        <StatCardItem label="Active Teachers" value={teachers.filter((t) => t.status === 'Active' || !t.status).length} icon={GraduationCap} color="emerald" />
-        <StatCardItem label="Inactive Teachers" value={teachers.filter((t) => t.status === 'Inactive').length} icon={Users} color="slate" />
-        <StatCardItem label={isDean ? 'Your Department' : 'Colleges Covered'} value={departmentList.length} icon={Building2} color="amber" />
+        <StatCardItem
+          label={isPersonalScheduleOnly ? 'My Assigned Subjects' : 'Total Teachers'}
+          value={isPersonalScheduleOnly ? (teachers[0] ? getTeacherCourses(teachers[0].uid).length : 0) : teachers.length}
+          icon={isPersonalScheduleOnly ? BookOpen : Users}
+          color="blue"
+        />
+        <StatCardItem
+          label={isPersonalScheduleOnly ? 'My Status' : 'Active Teachers'}
+          value={isPersonalScheduleOnly ? (profile?.status || 'Active') : teachers.filter((t) => t.status === 'Active' || !t.status).length}
+          icon={GraduationCap}
+          color="emerald"
+        />
+        <StatCardItem
+          label={isPersonalScheduleOnly ? 'Account Role' : 'Inactive Teachers'}
+          value={isPersonalScheduleOnly ? 'Faculty / Teacher' : teachers.filter((t) => t.status === 'Inactive').length}
+          icon={Users}
+          color="slate"
+        />
+        <StatCardItem
+          label={isDean || isPersonalScheduleOnly ? 'Department / College' : 'Colleges Covered'}
+          value={isPersonalScheduleOnly ? (myDepartment || 'General') : isDean ? 'Your Department' : departmentList.length}
+          icon={Building2}
+          color="amber"
+        />
       </div>
 
 
@@ -492,7 +548,7 @@ export default function TeachersDirectory() {
                                 title={`${c.code} - ${c.title}`}
                               >
                                 <span>{c.code}</span>
-                                {isDean && (
+                                {canAssign && (
                                   <button
                                     type="button"
                                     onClick={() => handleUnassignCourse(c.id, `${c.code} - ${c.title}`)}
@@ -530,11 +586,11 @@ export default function TeachersDirectory() {
                             type="button"
                             onClick={() => handleViewSchedule(teacher)}
                             className="btn-table-action btn-table-action-maroon"
-                            title="View weekly schedule"
+                            title={isPersonalScheduleOnly ? 'View my weekly class schedule' : 'View weekly schedule'}
                           >
-                            <Calendar size={13} /> Schedule
+                            <Calendar size={13} /> {isPersonalScheduleOnly ? 'My Schedule' : 'Schedule'}
                           </button>
-                          {isDean && (
+                          {canAssign && (
                             <button
                               type="button"
                               onClick={() => handleAssignCourse(teacher)}

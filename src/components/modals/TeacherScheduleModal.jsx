@@ -13,6 +13,9 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
   const [semester, setSemester] = useState(initialSemester);
   const [selectedSection, setSelectedSection] = useState('all');
 
+  const teacherName = typeof teacher === 'object' ? (teacher?.name || teacher?.displayName || '') : String(teacher || '');
+  const teacherCollege = collegeCode || (typeof teacher === 'object' ? (teacher?.department || teacher?.college || '') : '');
+
   const semesterOptions = useMemo(() => {
     if (Array.isArray(calendarData?.config?.semesters) && calendarData.config.semesters.length > 0) {
       return calendarData.config.semesters.map((s, idx) => ({
@@ -29,16 +32,16 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
 
   // Subscribe to all schedule entries for this teacher
   useEffect(() => {
-    if (!teacher?.name) {
+    if (!teacherName) {
       setLoading(false);
       return;
     }
 
-    console.log('Fetching schedules for teacher:', teacher.name, 'semester:', semester, 'schoolYear:', activeSchoolYearId);
+    console.log('Fetching schedules for teacher:', teacherName, 'semester:', semester, 'schoolYear:', activeSchoolYearId);
     setLoading(true);
 
     return subscribePlotEntriesForTeacher(
-      teacher.name, // Teacher's full name
+      teacher, // Teacher object or name
       semester,
       activeSchoolYearId,
       (data) => {
@@ -51,7 +54,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
         setLoading(false);
       }
     );
-  }, [teacher?.name, semester, activeSchoolYearId]);
+  }, [teacher, teacherName, semester, activeSchoolYearId]);
 
   // Get unique sections from entries
   const sections = useMemo(() => {
@@ -93,7 +96,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
   }, [filteredEntries]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[100] flex items-center justify-center p-4">
       <div 
         className="bg-white rounded-2xl shadow-2xl w-full relative flex flex-col"
         style={{ maxWidth: '95vw', maxHeight: '90vh' }}
@@ -104,7 +107,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-5 top-5 text-gray-400 hover:text-gray-700"
+            className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -117,12 +120,12 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
               <div className="flex items-center gap-2">
                 <User size={16} className="text-[#7A0808]" />
                 <span className="text-sm font-bold text-gray-700">
-                  {teacher.name}
+                  {teacherName || 'Faculty Member'}
                 </span>
               </div>
-              {collegeCode && (
-                <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#7A0808] text-white">
-                  {collegeCode}
+              {teacherCollege && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#7A0808] text-white">
+                  {teacherCollege}
                 </span>
               )}
             </div>

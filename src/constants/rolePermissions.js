@@ -19,6 +19,8 @@ export const PERMISSIONS = {
   SCHEDULING_MANAGE: 'scheduling.manage',
   CALENDAR_MANAGE: 'calendar.manage',
   APPROVAL_WORKFLOW_MANAGE: 'approval.workflow.manage',
+  TEACHERS_ASSIGN_SUBJECTS: 'teachers.assign.subjects',
+  TEACHERS_VIEW_PERSONAL_SCHEDULE: 'teachers.view.personal.schedule',
 };
 
 const GENERAL_PERMISSIONS = [
@@ -38,6 +40,8 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.APPROVAL_ENDORSE_ACTIVITY,
     PERMISSIONS.ROOMS_MANAGE_ASSIGNED,
     PERMISSIONS.SCHEDULING_MANAGE,
+    PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS,
+    PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE,
   ],
   [ROLES.GSD]: [
     ...GENERAL_PERMISSIONS,
@@ -53,6 +57,7 @@ const ROLE_PERMISSIONS = {
   [ROLES.TEACHER]: [
     ...GENERAL_PERMISSIONS,
     PERMISSIONS.RESERVATION_SUBMIT,
+    PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE,
   ],
   [ROLES.ORGANIZATION_HEAD]: [
     ...GENERAL_PERMISSIONS,
@@ -141,6 +146,7 @@ const ROLE_NAV_KEYS = {
   ],
   [ROLES.TEACHER]: [
     'dashboard',
+    'teachers',
     'buildings',
     'collegeInventory',
     'roomFinder',
@@ -367,6 +373,16 @@ export function canManageApprovalWorkflow(role, roleDefinitions = {}, profile = 
 export function canManageCalendar(role, roleDefinitions = {}, profile = null) {
   if (profile) return hasEffectivePermission(profile, PERMISSIONS.CALENDAR_MANAGE, roleDefinitions);
   return hasPermission(role, PERMISSIONS.CALENDAR_MANAGE, roleDefinitions);
+}
+
+export function canAssignTeacherSubjects(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS, roleDefinitions) || profile.role === ROLES.REGISTRAR;
+  return hasPermission(role, PERMISSIONS.TEACHERS_ASSIGN_SUBJECTS, roleDefinitions) || role === ROLES.REGISTRAR;
+}
+
+export function canViewPersonalTeacherSchedule(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE, roleDefinitions) || profile.role === ROLES.TEACHER;
+  return hasPermission(role, PERMISSIONS.TEACHERS_VIEW_PERSONAL_SCHEDULE, roleDefinitions) || role === ROLES.TEACHER;
 }
 
 export function canManageAllRooms(role) {

@@ -541,11 +541,21 @@ export default function CourseSchedulingNew() {
   }, [selectedDeanUid, selectedSection, semester, scheduleTab, selectedExamPeriod, activeSchoolYearId]);
 
   // Check if current dean has scheduling access
-  const myCollege = isDean ? (profile?.college || profile?.department) : null;
+  const deanCollegeContext = useMemo(() => {
+    if (!isDean) return null;
+    return {
+      college: profile?.college,
+      department: profile?.department,
+      code: activeCollegeObj?.code,
+      name: activeCollegeObj?.name,
+      programs: activeCollegeObj?.programs,
+    };
+  }, [isDean, profile, activeCollegeObj]);
+
   const accessStatus = useMemo(() => {
-    if (!isDean || !myCollege) return { hasAccess: true, message: '', isFirst: false }; // Registrar always has access for viewing
-    return getAccessStatusMessage(scheduleAccess, myCollege);
-  }, [isDean, myCollege, scheduleAccess]);
+    if (!isDean || !deanCollegeContext) return { hasAccess: true, message: '', isFirst: false }; // Registrar always has access for viewing
+    return getAccessStatusMessage(scheduleAccess, deanCollegeContext);
+  }, [isDean, deanCollegeContext, scheduleAccess]);
 
   const canPlot = useMemo(() => {
     if (isRegistrar) return false; // Registrar can only view
@@ -687,15 +697,17 @@ export default function CourseSchedulingNew() {
   const openEditModal = (block) => {
     // Allow dean to edit their own schedules
     if (!isDean || !selectedDeanUid || profile?.uid !== selectedDeanUid) return;
-    const dayIdx = block.day;
-    const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[dayIdx] : (block.date || weekDates[dayIdx]);
+    const dayIdx = typeof block.day === 'number' ? block.day : WEEKDAYS.indexOf(block.date);
+    const validDayIdx = dayIdx >= 0 && dayIdx <= 6 ? dayIdx : 0;
+    const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[validDayIdx] : (block.date || weekDates[validDayIdx]);
     
     setEntryModal({
       mode: 'edit',
       id: block.id,
       date: dayIdentifier,
-      dayLabel: SCHEDULE_DAYS[dayIdx],
+      dayLabel: SCHEDULE_DAYS[validDayIdx],
       initial: {
+        id: block.id,
         title: block.title,
         courseCode: block.course,
         instructor: block.instructor,
@@ -703,6 +715,10 @@ export default function CourseSchedulingNew() {
         startTime: hourToTimeInput(block.start),
         endTime: hourToTimeInput(block.end),
         roomCode: block.roomCode,
+        buildingName: block.buildingName,
+        buildingId: block.buildingId,
+        day: validDayIdx,
+        days: block.days && block.days.length > 0 ? block.days : [validDayIdx],
       },
     });
   };
@@ -710,61 +726,69 @@ export default function CourseSchedulingNew() {
   const handleSaveEntry = async (payload) => {
     if (!selectedDeanUid || !selectedSection) return;
     
-    console.log('handleSaveEntry called with payload:', payload);
-    console.log('Selected dean UID:', selectedDeanUid);
-    console.log('Selected section:', selectedSection);
-    console.log('Schedule mode:', scheduleTab);
+    setIsLoading(true);
+    setLoadingMessage(entryModal?.mode === 'edit' ? 'Saving schedule changes...' : 'Adding schedule block...');
     
-    // For regular schedule, use day index (0-6) instead of actual date
-    // For exam schedule, use actual date
-    const dayIdx = scheduleTab === 'regular' 
-      ? WEEKDAYS.indexOf(payload.date) // Use weekday name for regular
-      : weekDates.indexOf(payload.date); // Use actual date for exam
-    
-    console.log('Calculated dayIdx:', dayIdx, 'from date:', payload.date);
-    
-    // Only check date status for exam schedule
-    if (scheduleTab === 'exam') {
-      const status = getPlotDayStatus(
-        payload.date, 
-        calendarData, 
-        semester, 
-        scheduleTab,
-        selectedExamPeriod,
-        selectedStudentCategory
-      );
-      if (status.disabled) throw new Error(status.reason || 'This date is blocked.');
+    try {
+      // For regular schedule, use day index (0-6) instead of actual date
+      // For exam schedule, use actual date
+      const dayIdx = scheduleTab === 'regular' 
+        ? WEEKDAYS.indexOf(payload.date)
+        : weekDates.indexOf(payload.date);
+      
+      // Only check date status for exam schedule
+      if (scheduleTab === 'exam') {
+        const status = getPlotDayStatus(
+          payload.date, 
+          calendarData, 
+          semester, 
+          scheduleTab,
+          selectedExamPeriod,
+          selectedStudentCategory
+        );
+        if (status.disabled) throw new Error(status.reason || 'This date is blocked.');
+      }
+
+      const entry = {
+        ...payload,
+        day: dayIdx,
+        semester: Number(semester),
+        schoolYearId: activeSchoolYearId || null,
+        schoolYear: selectedSchoolYear?.label || selectedSchoolYear?.displayLabel || activeSchoolYearId || null,
+        section: selectedSection,
+        studentCategory: scheduleTab === 'exam' ? selectedStudentCategory : null,
+        examPeriod: scheduleTab === 'exam' ? selectedExamPeriod : null,
+        deanUid: selectedDeanUid,
+        deanName: selectedDean?.name || '',
+        college: selectedDean?.college || selectedDean?.department || '',
+        scheduleMode: scheduleTab,
+        plottedBy: profile?.uid || null,
+        plottedByEmail: normalizeEmail(profile?.email),
+      };
+
+      if (entryModal?.mode === 'edit' && entryModal.id) {
+        await updatePlotEntryForSection(selectedDeanUid, selectedSection, entryModal.id, entry);
+      } else {
+        await addPlotEntryForSection(selectedDeanUid, selectedSection, entry);
+      }
+
+      setEntryModal(null);
+      setIsLoading(false);
+      showNotification({
+        type: 'success',
+        title: entryModal?.mode === 'edit' ? 'Schedule Updated!' : 'Schedule Block Added!',
+        message: `${payload.courseCode || payload.title || 'Course'} schedule has been successfully ${entryModal?.mode === 'edit' ? 'updated' : 'plotted'} for ${selectedSection}.`,
+      });
+    } catch (err) {
+      console.error('handleSaveEntry error:', err);
+      setIsLoading(false);
+      showNotification({
+        type: 'error',
+        title: 'Failed to Save Schedule',
+        message: err.message || 'An error occurred while saving schedule.',
+      });
+      throw err;
     }
-
-    const entry = {
-      ...payload,
-      day: dayIdx,
-      semester: Number(semester), // Always store semester for both regular and exam schedules
-      schoolYearId: activeSchoolYearId || null,
-      schoolYear: selectedSchoolYear?.label || selectedSchoolYear?.displayLabel || activeSchoolYearId || null,
-      section: selectedSection,
-      studentCategory: scheduleTab === 'exam' ? selectedStudentCategory : null, // Store category for exam filtering
-      examPeriod: scheduleTab === 'exam' ? selectedExamPeriod : null, // Store exam period (p1, p2, p3, rbe)
-      deanUid: selectedDeanUid,
-      deanName: selectedDean?.name || '',
-      college: selectedDean?.college || selectedDean?.department || '',
-      scheduleMode: scheduleTab, // 'regular' or 'exam'
-      plottedBy: profile?.uid || null,
-      plottedByEmail: normalizeEmail(profile?.email),
-    };
-
-    console.log('Entry to be saved:', entry);
-
-    if (entryModal?.mode === 'edit' && entryModal.id) {
-      console.log('Updating entry:', entryModal.id);
-      await updatePlotEntryForSection(selectedDeanUid, selectedSection, entryModal.id, entry);
-    } else {
-      console.log('Adding new entry');
-      const newId = await addPlotEntryForSection(selectedDeanUid, selectedSection, entry);
-      console.log('New entry ID:', newId);
-    }
-    
-    console.log('Save completed successfully');
   };
 
   const handleDeleteEntry = async (block) => {
@@ -1597,7 +1621,8 @@ export default function CourseSchedulingNew() {
           assignedRooms={deanAssignedRooms}
           dayBlockReason={entryModalDayStatus?.disabled ? entryModalDayStatus.reason : null}
           lockTimes={entryModal.lockTimes}
-          deanCollege={selectedDean?.college || selectedDean?.department}
+          deanCollege={activeCollegeObj?.code || selectedDean?.college || selectedDean?.department}
+          collegeCode={activeCollegeObj?.code || selectedDean?.college}
           deanUid={selectedDeanUid}
           programCode={currentSectionObj?.programCode || (selectedProgram !== 'ALL' ? selectedProgram : null)}
           programName={availablePrograms.find((p) => p.code === (currentSectionObj?.programCode || selectedProgram))?.name || ''}

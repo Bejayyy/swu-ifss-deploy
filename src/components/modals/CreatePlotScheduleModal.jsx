@@ -101,8 +101,6 @@ export default function CreatePlotScheduleModal({
     return opts;
   }, [buildingList]);
 
-  const selectedSchoolYear = schoolYears.find((sy) => sy.id === form.schoolYearId);
-
   const getDeansForRecipient = (rcp) => {
     if (rcp.assignType === 'by_name') {
       const dean = deanUsers.find((u) => u.uid === rcp.uid);

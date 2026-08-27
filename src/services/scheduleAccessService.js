@@ -15,6 +15,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase/firebase';
 import { ROLES } from '../firebase/constants';
+import { COLLEGE_ACRONYM_MAP } from '../constants/colleges';
 
 const ACCESS_CONTROL_COLLECTION = 'schedule_access_control';
 
@@ -25,6 +26,54 @@ function getAccessControlDocId(schoolYearId, semester) {
 
 function accessControlRef(schoolYearId, semester) {
   return doc(db, ACCESS_CONTROL_COLLECTION, getAccessControlDocId(schoolYearId, semester));
+}
+
+/**
+ * Checks if two college identifiers match (handles acronyms, full names, and fuzzy college prefixes)
+ */
+export function isCollegeMatch(targetCollege, approvedCollegeEntry) {
+  if (!targetCollege || !approvedCollegeEntry) return false;
+
+  const cleanTarget = String(targetCollege).trim().toLowerCase();
+  const cleanApproved = String(approvedCollegeEntry).trim().toLowerCase();
+
+  if (cleanTarget === cleanApproved) return true;
+
+  // Normalize by stripping common institutional prefixes and punctuation
+  const normalize = (s) =>
+    String(s || '')
+      .replace(/^college\s+of\s+/i, '')
+      .replace(/^school\s+of\s+/i, '')
+      .replace(/^department\s+of\s+/i, '')
+      .replace(/[\s\-_()]/g, '')
+      .toLowerCase();
+
+  const normTarget = normalize(cleanTarget);
+  const normApproved = normalize(cleanApproved);
+
+  if (normTarget && normApproved) {
+    if (normTarget === normApproved || normTarget.includes(normApproved) || normApproved.includes(normTarget)) {
+      return true;
+    }
+  }
+
+  // Cross-check COLLEGE_ACRONYM_MAP (e.g. BSMT <-> College of Medical Technology)
+  for (const [acronym, fullName] of Object.entries(COLLEGE_ACRONYM_MAP)) {
+    const aLower = acronym.toLowerCase();
+    const fNorm = normalize(fullName);
+
+    const targetIsAcronym = cleanTarget === aLower || normTarget === aLower;
+    const targetIsFull = normTarget === fNorm || cleanTarget.includes(fNorm) || fNorm.includes(normTarget);
+
+    const approvedIsAcronym = cleanApproved === aLower || normApproved === aLower;
+    const approvedIsFull = normApproved === fNorm || cleanApproved.includes(fNorm) || fNorm.includes(normApproved);
+
+    if ((targetIsAcronym || targetIsFull) && (approvedIsAcronym || approvedIsFull)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -53,17 +102,17 @@ export async function notifyDeansAccessGranted({
     if (allDeans.length === 0) return;
 
     const grantedCodes = grantedColleges.map((c) =>
-      (typeof c === 'string' ? c : c.code || '').trim().toLowerCase()
+      (typeof c === 'string' ? c : c.code || '').trim()
     );
 
-    const isAllGranted = grantedCodes.includes('all') || grantedCodes.length === 0;
+    const isAllGranted = grantedCodes.some((c) => String(c).toUpperCase() === 'ALL') || grantedCodes.length === 0;
 
     const matchingDeans = allDeans.filter((dean) => {
       if (isAllGranted) return true;
-      const dept = (dean.department || dean.departmentCode || '').trim().toLowerCase();
-      const col = (dean.college || dean.collegeCode || '').trim().toLowerCase();
+      const dept = dean.department || dean.departmentCode || '';
+      const col = dean.college || dean.collegeCode || '';
       return grantedCodes.some((code) =>
-        dept.includes(code) || col.includes(code) || code.includes(dept) || code.includes(col)
+        isCollegeMatch(dept, code) || isCollegeMatch(col, code)
       );
     });
 
@@ -311,8 +360,8 @@ export async function grantCollegeAccess(schoolYearId, semester, collegeCode) {
 /**
  * Check if a college has scheduling access
  */
-export function hasSchedulingAccess(accessControl, collegeCode) {
-  if (!accessControl || !collegeCode) return false;
+export function hasSchedulingAccess(accessControl, collegeOrUser) {
+  if (!accessControl || !collegeOrUser) return false;
   
   const todayStr = new Date().toISOString().split('T')[0];
   const startDate = accessControl.startDate || accessControl.firstCollege?.startDate;
@@ -325,23 +374,65 @@ export function hasSchedulingAccess(accessControl, collegeCode) {
   if (accessControl.status === 'all_allowed') {
     return true;
   }
-  
-  // Otherwise, only approved colleges can schedule
-  return (accessControl.approvedColleges || []).includes(collegeCode);
+
+  // Extract all candidate strings for the target college/user
+  const targetCandidates = [];
+  if (typeof collegeOrUser === 'string') {
+    targetCandidates.push(collegeOrUser);
+  } else if (collegeOrUser && typeof collegeOrUser === 'object') {
+    if (collegeOrUser.college) targetCandidates.push(collegeOrUser.college);
+    if (collegeOrUser.department) targetCandidates.push(collegeOrUser.department);
+    if (collegeOrUser.code) targetCandidates.push(collegeOrUser.code);
+    if (collegeOrUser.name) targetCandidates.push(collegeOrUser.name);
+    if (collegeOrUser.collegeCode) targetCandidates.push(collegeOrUser.collegeCode);
+    if (Array.isArray(collegeOrUser.programs)) {
+      collegeOrUser.programs.forEach((p) => {
+        if (p.code) targetCandidates.push(p.code);
+        if (p.name) targetCandidates.push(p.name);
+      });
+    }
+  }
+
+  if (targetCandidates.length === 0) return false;
+
+  const approvedList = Array.isArray(accessControl.approvedColleges) ? accessControl.approvedColleges : [];
+  const firstCollegeCodes = (accessControl.firstCollege?.code || '').split(',').map((s) => s.trim());
+  const firstCollegeNames = (accessControl.firstCollege?.name || '').split(',').map((s) => s.trim());
+
+  const allApproved = [...approvedList, ...firstCollegeCodes, ...firstCollegeNames].filter(Boolean);
+
+  return targetCandidates.some((candidate) =>
+    allApproved.some((approved) => isCollegeMatch(candidate, approved))
+  );
 }
 
 /**
  * Check if this is the first college (for special UI treatment)
  */
-export function isFirstCollege(accessControl, collegeCode) {
-  if (!accessControl || !collegeCode) return false;
-  return accessControl.firstCollege?.code === collegeCode;
+export function isFirstCollege(accessControl, collegeOrUser) {
+  if (!accessControl || !collegeOrUser) return false;
+  const firstCode = accessControl.firstCollege?.code || '';
+  const firstName = accessControl.firstCollege?.name || '';
+
+  const targetCandidates = [];
+  if (typeof collegeOrUser === 'string') {
+    targetCandidates.push(collegeOrUser);
+  } else if (collegeOrUser && typeof collegeOrUser === 'object') {
+    if (collegeOrUser.college) targetCandidates.push(collegeOrUser.college);
+    if (collegeOrUser.department) targetCandidates.push(collegeOrUser.department);
+    if (collegeOrUser.code) targetCandidates.push(collegeOrUser.code);
+    if (collegeOrUser.name) targetCandidates.push(collegeOrUser.name);
+  }
+
+  return targetCandidates.some((candidate) =>
+    isCollegeMatch(candidate, firstCode) || isCollegeMatch(candidate, firstName)
+  );
 }
 
 /**
  * Get access status message for a college
  */
-export function getAccessStatusMessage(accessControl, collegeCode) {
+export function getAccessStatusMessage(accessControl, collegeOrUser) {
   if (!accessControl) {
     return {
       hasAccess: false,
@@ -374,8 +465,8 @@ export function getAccessStatusMessage(accessControl, collegeCode) {
     };
   }
 
-  const hasAccess = hasSchedulingAccess(accessControl, collegeCode);
-  const isFirst = isFirstCollege(accessControl, collegeCode);
+  const hasAccess = hasSchedulingAccess(accessControl, collegeOrUser);
+  const isFirst = isFirstCollege(accessControl, collegeOrUser);
 
   if (hasAccess) {
     const windowNotice = (startDate || endDate)
@@ -419,16 +510,9 @@ export function getAssignedRoomsForCollege(accessControl, collegeCode) {
   if (!accessControl) return [];
 
   if (accessControl.assignedRoomsByCollege && collegeCode) {
-    const code = String(collegeCode).trim().toUpperCase();
-    if (Array.isArray(accessControl.assignedRoomsByCollege[code]) && accessControl.assignedRoomsByCollege[code].length > 0) {
-      return accessControl.assignedRoomsByCollege[code];
-    }
     for (const [k, v] of Object.entries(accessControl.assignedRoomsByCollege)) {
-      if (Array.isArray(v) && v.length > 0) {
-        const kUpper = k.toUpperCase();
-        if (kUpper === code || kUpper.includes(code) || code.includes(kUpper)) {
-          return v;
-        }
+      if (Array.isArray(v) && v.length > 0 && isCollegeMatch(collegeCode, k)) {
+        return v;
       }
     }
   }
