@@ -10,6 +10,7 @@ import {
   Trash2,
   RefreshCw,
   BookOpen,
+  Building2,
 } from 'lucide-react';
 import {
   downloadBulkCourseTemplate,
@@ -17,6 +18,8 @@ import {
   toTitleCase,
 } from '../../utils/excelTemplate';
 import { addCourse, updateCourse } from '../../services/courseService';
+import { subscribeColleges } from '../../services/collegeService';
+import { notifyServiceCollegeDeans } from '../../services/notificationService';
 import CustomSelect from '../ui/CustomSelect';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
@@ -38,6 +41,14 @@ export default function AddCourseModal({
   defaultProgramCode = '',
 }) {
   const [activeTab, setActiveTab] = useState('individual'); // 'individual' | 'bulk'
+  const [allColleges, setAllColleges] = useState([]);
+
+  useEffect(() => {
+    const unsub = subscribeColleges((data) => {
+      setAllColleges(data || []);
+    });
+    return unsub;
+  }, []);
 
   // Helper functions for initial parsing of units and hours
   const getInitialLecUnits = (course) => {
@@ -87,6 +98,9 @@ export default function AddCourseModal({
     labHours: initialLabHours,
     totalHours: initialTotalHours,
     type: editingCourse?.type || (parseFloat(initialLabUnits) > 0 && parseFloat(initialLecUnits) > 0 ? 'both' : (parseFloat(initialLabUnits) > 0 ? 'laboratory' : 'lecture')),
+    requiresServiceCollege: Boolean(editingCourse?.requiresServiceCollege || editingCourse?.lecServiceCollege || editingCourse?.labServiceCollege),
+    lecServiceCollege: editingCourse?.lecServiceCollege || '',
+    labServiceCollege: editingCourse?.labServiceCollege || '',
   });
   const [individualError, setIndividualError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -113,6 +127,9 @@ export default function AddCourseModal({
         labHours: lbHours,
         totalHours: tHours,
         type: editingCourse.type || (parseFloat(lbUnits) > 0 && parseFloat(lUnits) > 0 ? 'both' : (parseFloat(lbUnits) > 0 ? 'laboratory' : 'lecture')),
+        requiresServiceCollege: Boolean(editingCourse.requiresServiceCollege || editingCourse.lecServiceCollege || editingCourse.labServiceCollege),
+        lecServiceCollege: editingCourse.lecServiceCollege || '',
+        labServiceCollege: editingCourse.labServiceCollege || '',
       });
       setActiveTab('individual');
     } else if (defaultProgramCode) {
@@ -205,6 +222,7 @@ export default function AddCourseModal({
 
     setIsSubmitting(true);
     try {
+      const reqSvc = Boolean(individualForm.lecServiceCollege || individualForm.labServiceCollege);
       const coursePayload = {
         code,
         title,
@@ -219,6 +237,10 @@ export default function AddCourseModal({
         totalHours: totalHours,
         type: individualForm.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
         collegeCode,
+        requiresServiceCollege: reqSvc,
+        lecServiceCollege: individualForm.lecServiceCollege ? String(individualForm.lecServiceCollege).trim().toUpperCase() : null,
+        labServiceCollege: individualForm.labServiceCollege ? String(individualForm.labServiceCollege).trim().toUpperCase() : null,
+        serviceStatus: editingCourse?.serviceStatus || 'pending',
       };
 
       if (editingCourse?.id) {
@@ -232,6 +254,29 @@ export default function AddCourseModal({
           onSaveSuccess(`Course ${code} saved successfully.`);
         }
       }
+
+      // Send notification to Service College Dean(s)
+      if (individualForm.lecServiceCollege) {
+        notifyServiceCollegeDeans({
+          serviceCollegeCode: individualForm.lecServiceCollege,
+          motherCollege: collegeName || collegeCode,
+          courseCode: coursePayload.code,
+          courseTitle: coursePayload.title,
+          component: 'Lecture',
+          statusType: 'assigned',
+        });
+      }
+      if (individualForm.labServiceCollege) {
+        notifyServiceCollegeDeans({
+          serviceCollegeCode: individualForm.labServiceCollege,
+          motherCollege: collegeName || collegeCode,
+          courseCode: coursePayload.code,
+          courseTitle: coursePayload.title,
+          component: 'Laboratory',
+          statusType: 'assigned',
+        });
+      }
+
       onClose();
     } catch (err) {
       console.error('Error saving individual course:', err);
@@ -681,6 +726,72 @@ export default function AddCourseModal({
                   </div>
                 </div>
               )}
+
+              {/* Section 3: Service College (Inter-College Teaching Assignment) */}
+              <div className="bg-indigo-50/50 border border-indigo-200/80 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 size={14} className="text-indigo-700" />
+                    Service College Assignment (Optional)
+                  </span>
+                  {(individualForm.lecServiceCollege || individualForm.labServiceCollege) && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
+                      🏛️ Inter-College Serviced
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-indigo-900/80 font-medium">
+                  If faculty from another college will teach this subject (e.g. IT teaching Programming for Dentistry), designate the Service College below:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Lecture Service College */}
+                  {parseFloat(individualForm.lecUnits || '0') > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-bold mb-1 text-indigo-950">
+                        {parseFloat(individualForm.labUnits || '0') > 0 ? 'Lecture Service College' : 'Service College (Taught By)'}
+                      </label>
+                      <select
+                        value={individualForm.lecServiceCollege || ''}
+                        onChange={(e) => setIndividualForm({ ...individualForm, lecServiceCollege: e.target.value })}
+                        className="form-input bg-white text-xs font-semibold py-1.5 px-2.5 rounded-xl border border-indigo-200 focus:border-[#7A0808] w-full"
+                      >
+                        <option value="">{collegeName || collegeCode || 'Own College'} (Default / Internal)</option>
+                        {allColleges
+                          .filter((c) => c.code !== collegeCode && c.name !== collegeName)
+                          .map((c) => (
+                            <option key={c.id || c.code} value={c.code || c.name}>
+                              {c.code} - {c.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Lab Service College */}
+                  {parseFloat(individualForm.labUnits || '0') > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-bold mb-1 text-indigo-950">
+                        {parseFloat(individualForm.lecUnits || '0') > 0 ? 'Laboratory Service College' : 'Service College (Taught By)'}
+                      </label>
+                      <select
+                        value={individualForm.labServiceCollege || ''}
+                        onChange={(e) => setIndividualForm({ ...individualForm, labServiceCollege: e.target.value })}
+                        className="form-input bg-white text-xs font-semibold py-1.5 px-2.5 rounded-xl border border-indigo-200 focus:border-[#7A0808] w-full"
+                      >
+                        <option value="">{collegeName || collegeCode || 'Own College'} (Default / Internal)</option>
+                        {allColleges
+                          .filter((c) => c.code !== collegeCode && c.name !== collegeName)
+                          .map((c) => (
+                            <option key={c.id || c.code} value={c.code || c.name}>
+                              {c.code} - {c.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <div className="flex gap-3 pt-4 border-t border-gray-100 font-bold">
                 <button

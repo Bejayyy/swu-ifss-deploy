@@ -13,9 +13,11 @@ import {
   RefreshCw,
   Clock,
   Users,
+  Building2,
 } from 'lucide-react';
-import { addCollege, updateCollege } from '../../services/collegeService';
+import { addCollege, updateCollege, subscribeColleges } from '../../services/collegeService';
 import { addCourse, updateCourse, subscribeCollegeCourses } from '../../services/courseService';
+import { notifyServiceCollegeDeans } from '../../services/notificationService';
 import {
   generateSectionNames,
   getYearLabel,
@@ -50,6 +52,9 @@ const createEmptyCourse = () => ({
   labHours: '0',
   totalHours: '3',
   type: 'lecture',
+  requiresServiceCollege: false,
+  lecServiceCollege: '',
+  labServiceCollege: '',
 });
 
 const createEmptyProgram = () => ({
@@ -59,6 +64,7 @@ const createEmptyProgram = () => ({
   courses: [createEmptyCourse()],
   sections: { 1: '', 2: '', 3: '', 4: '' },
   studentCapacities: { 1: '40', 2: '40', 3: '40', 4: '40' },
+  ojtModality: { 1: false, 2: false, 3: false, 4: false },
   extraYears: [],
 });
 
@@ -74,6 +80,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           courses: p.courses?.length ? p.courses : [createEmptyCourse()],
           sections: p.sections || { 1: '', 2: '', 3: '', 4: '' },
           studentCapacities: p.studentCapacities || { 1: '40', 2: '40', 3: '40', 4: '40' },
+          ojtModality: p.ojtModality || { 1: false, 2: false, 3: false, 4: false },
           extraYears: p.extraYears || [],
         }))
       : [createEmptyProgram()],
@@ -90,6 +97,19 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
     });
     return new Set(Object.keys(counts).filter((cd) => counts[cd] > 1));
   };
+
+  const [allColleges, setAllColleges] = useState(colleges || []);
+
+  useEffect(() => {
+    if (colleges && colleges.length > 0) {
+      setAllColleges(colleges);
+      return;
+    }
+    const unsub = subscribeColleges((data) => {
+      setAllColleges(data || []);
+    });
+    return unsub;
+  }, [colleges]);
 
   // Tab state per program index: { 0: 'individual', 1: 'bulk' }
   const [programCourseTabs, setProgramCourseTabs] = useState({ 0: 'individual' });
@@ -138,6 +158,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   labHours: String(labH),
                   totalHours: String(totalH),
                   type: crs.type || (labU > 0 && lecU > 0 ? 'both' : (labU > 0 ? 'laboratory' : 'lecture')),
+                  requiresServiceCollege: Boolean(crs.requiresServiceCollege || crs.lecServiceCollege || crs.labServiceCollege),
+                  lecServiceCollege: crs.lecServiceCollege || '',
+                  labServiceCollege: crs.labServiceCollege || '',
                 };
                 if (
                   updatedPrograms[targetIdx].courses.length === 1 &&
@@ -169,6 +192,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               );
               const secCounts = { 1: '', 2: '', 3: '', 4: '', ...(p.sections || {}) };
               const secCaps = { 1: '40', 2: '40', 3: '40', 4: '40', ...(p.studentCapacities || {}) };
+              const ojtMods = { 1: false, 2: false, 3: false, 4: false, ...(p.ojtModality || {}) };
               const extraY = [...(p.extraYears || [])];
 
               matchedSecDocs.forEach((sDoc) => {
@@ -177,6 +201,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   if (sDoc.studentsPerSection || sDoc.studentCapacity) {
                     secCaps[sDoc.yearNumber] = String(sDoc.studentsPerSection || sDoc.studentCapacity);
                   }
+                  ojtMods[sDoc.yearNumber] = Boolean(sDoc.hasOjtAlternatingModality || sDoc.modality === 'ojt_alternating');
                   if (sDoc.yearNumber > 4 && !extraY.includes(sDoc.yearNumber)) {
                     extraY.push(sDoc.yearNumber);
                   }
@@ -187,6 +212,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                 ...p,
                 sections: secCounts,
                 studentCapacities: secCaps,
+                ojtModality: ojtMods,
                 extraYears: extraY.sort((a, b) => a - b),
               };
             });
@@ -319,6 +345,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       const prg = updatedPrgs[pIdx];
       const updatedCap = { ...(prg.studentCapacities || { 1: '40', 2: '40', 3: '40', 4: '40' }), [yearNum]: value };
       updatedPrgs[pIdx] = { ...prg, studentCapacities: updatedCap };
+      return { ...prev, programs: updatedPrgs };
+    });
+  };
+
+  const updateProgramSectionOjtModality = (pIdx, yearNum, value) => {
+    setForm((prev) => {
+      const updatedPrgs = [...prev.programs];
+      const prg = updatedPrgs[pIdx];
+      const updatedOjt = { ...(prg.ojtModality || { 1: false, 2: false, 3: false, 4: false }), [yearNum]: value };
+      updatedPrgs[pIdx] = { ...prg, ojtModality: updatedOjt };
       return { ...prev, programs: updatedPrgs };
     });
   };
@@ -508,6 +544,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             const labHours = numLab > 0 ? (crs.labHours !== undefined && crs.labHours !== '' ? Number(crs.labHours) : numLab * 3.0) : 0;
             const totalHours = lecHours + labHours;
 
+            const reqSvc = Boolean(crs.lecServiceCollege || crs.labServiceCollege);
             const coursePayload = {
               code: crs.code.trim().toUpperCase(),
               title: toTitleCase(crs.title.trim()),
@@ -522,12 +559,38 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               type: crs.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
               collegeCode: code,
               programCode: prgCode,
+              requiresServiceCollege: reqSvc,
+              lecServiceCollege: crs.lecServiceCollege ? String(crs.lecServiceCollege).trim().toUpperCase() : null,
+              labServiceCollege: crs.labServiceCollege ? String(crs.labServiceCollege).trim().toUpperCase() : null,
+              serviceStatus: crs.serviceStatus || 'pending',
             };
 
             if (crs.id && !crs.id.startsWith('crs_')) {
               await updateCourse(crs.id, coursePayload);
             } else {
               await addCourse(coursePayload);
+            }
+
+            // Send notification to Service College Dean(s)
+            if (crs.lecServiceCollege) {
+              notifyServiceCollegeDeans({
+                serviceCollegeCode: crs.lecServiceCollege,
+                motherCollege: form.name || code,
+                courseCode: coursePayload.code,
+                courseTitle: coursePayload.title,
+                component: 'Lecture',
+                statusType: 'assigned',
+              });
+            }
+            if (crs.labServiceCollege) {
+              notifyServiceCollegeDeans({
+                serviceCollegeCode: crs.labServiceCollege,
+                motherCollege: form.name || code,
+                courseCode: coursePayload.code,
+                courseTitle: coursePayload.title,
+                component: 'Laboratory',
+                statusType: 'assigned',
+              });
             }
           }
         }
@@ -541,8 +604,12 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         for (const yearNum of allYears) {
           const count = Number(prg.sections?.[yearNum]) || 0;
           const capacity = Number(prg.studentCapacities?.[yearNum]) || 40;
+          const hasOjt = Boolean(prg.ojtModality?.[yearNum]);
           if (count > 0 || editingCollege) {
-            await upsertProgramYearSections(code, prgCode, yearNum, count, capacity);
+            await upsertProgramYearSections(code, prgCode, yearNum, count, capacity, {
+              hasOjtAlternatingModality: hasOjt,
+              modality: hasOjt ? 'ojt_alternating' : 'regular',
+            });
           }
         }
       }
@@ -934,6 +1001,66 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           <span className="sm:hidden">Remove</span>
                                         </button>
                                       </div>
+
+                                      {/* Sub-row: Service College Assignment (Inter-College Teaching) */}
+                                      <div className="sm:col-span-12 flex flex-wrap items-center gap-3 pt-2 pb-1 px-3 border border-indigo-200/80 rounded-xl text-xs bg-indigo-50/60 mt-1.5 shadow-2xs">
+                                        <div className="flex items-center gap-1.5 text-indigo-950 font-black text-[11px] shrink-0">
+                                          <Building2 size={14} className="text-indigo-750" />
+                                          <span className="uppercase tracking-wider">Service College:</span>
+                                        </div>
+
+                                        {/* If Course has Lecture Units or default */}
+                                        {(Number(crs.lecUnits || 0) > 0 || Number(crs.labUnits || 0) === 0) && (
+                                          <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
+                                            <label className="text-[10px] font-extrabold text-indigo-900 shrink-0">
+                                              {Number(crs.labUnits || 0) > 0 ? 'Lecture by:' : 'Taught by:'}
+                                            </label>
+                                            <select
+                                              value={crs.lecServiceCollege || ''}
+                                              onChange={(e) => updateCourseField(pIdx, cIdx, 'lecServiceCollege', e.target.value)}
+                                              className="form-input bg-white text-xs font-semibold py-1 px-2 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full shadow-2xs"
+                                            >
+                                              <option value="">{form.name || form.code || 'Own College'} (Default / Internal)</option>
+                                              {allColleges
+                                                .filter((c) => c.code !== form.code && c.name !== form.name)
+                                                .map((c) => (
+                                                  <option key={c.id || c.code} value={c.code || c.name}>
+                                                    {c.code} - {c.name}
+                                                  </option>
+                                                ))}
+                                            </select>
+                                          </div>
+                                        )}
+
+                                        {/* If Course has Lab Units */}
+                                        {Number(crs.labUnits || 0) > 0 && (
+                                          <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
+                                            <label className="text-[10px] font-extrabold text-indigo-900 shrink-0">
+                                              {Number(crs.lecUnits || 0) > 0 ? 'Lab by:' : 'Taught by:'}
+                                            </label>
+                                            <select
+                                              value={crs.labServiceCollege || ''}
+                                              onChange={(e) => updateCourseField(pIdx, cIdx, 'labServiceCollege', e.target.value)}
+                                              className="form-input bg-white text-xs font-semibold py-1 px-2 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full shadow-2xs"
+                                            >
+                                              <option value="">{form.name || form.code || 'Own College'} (Default / Internal)</option>
+                                              {allColleges
+                                                .filter((c) => c.code !== form.code && c.name !== form.name)
+                                                .map((c) => (
+                                                  <option key={c.id || c.code} value={c.code || c.name}>
+                                                    {c.code} - {c.name}
+                                                  </option>
+                                                ))}
+                                            </select>
+                                          </div>
+                                        )}
+
+                                        {(crs.lecServiceCollege || crs.labServiceCollege) && (
+                                          <span className="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300 shrink-0">
+                                            🏛️ Inter-College Serviced
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1039,64 +1166,91 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                           return (
                             <div
                               key={yearNum}
-                              className="flex flex-wrap items-center gap-3 p-2.5 bg-gray-50/80 rounded-xl border border-gray-200"
+                              className={`p-3 rounded-xl border transition-all space-y-2.5 ${
+                                program.ojtModality?.[yearNum]
+                                  ? 'bg-amber-50/40 border-amber-200 shadow-2xs'
+                                  : 'bg-gray-50/80 border-gray-200'
+                              }`}
                             >
-                              {/* Year label */}
-                              <div className="w-20 flex-shrink-0">
-                                <span className="text-xs font-bold text-[#7A0808]">{getYearLabel(yearNum)}</span>
-                              </div>
+                              {/* Top row: Year, Sections, Capacity, and Preview chips */}
+                              <div className="flex flex-wrap items-center gap-3">
+                                {/* Year label */}
+                                <div className="w-20 flex-shrink-0">
+                                  <span className="text-xs font-black text-[#7A0808]">{getYearLabel(yearNum)}</span>
+                                </div>
 
-                              {/* Section count input */}
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-gray-600 font-semibold">Sections:</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={rawVal ?? ''}
-                                  onChange={(e) => {
-                                    const clean = e.target.value.replace(/[^0-9]/g, '');
-                                    const formatted = clean === '' ? '' : String(parseInt(clean, 10));
-                                    updateProgramSectionCount(pIdx, yearNum, formatted);
-                                  }}
-                                  className="form-input bg-white w-16 text-center text-xs font-bold py-1 px-2"
-                                  placeholder="0"
-                                />
-                              </div>
+                                {/* Section count input */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-gray-600 font-semibold">Sections:</span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={rawVal ?? ''}
+                                    onChange={(e) => {
+                                      const clean = e.target.value.replace(/[^0-9]/g, '');
+                                      const formatted = clean === '' ? '' : String(parseInt(clean, 10));
+                                      updateProgramSectionCount(pIdx, yearNum, formatted);
+                                    }}
+                                    className="form-input bg-white w-16 text-center text-xs font-bold py-1 px-2"
+                                    placeholder="0"
+                                  />
+                                </div>
 
-                              {/* Student capacity / Enrollees per section input */}
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-gray-600 font-semibold">Students / Section:</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={rawCap}
-                                  onChange={(e) => {
-                                    const clean = e.target.value.replace(/[^0-9]/g, '');
-                                    updateProgramSectionCapacity(pIdx, yearNum, clean);
-                                  }}
-                                  className="form-input bg-white w-16 text-center text-xs font-bold py-1 px-2"
-                                  placeholder="40"
-                                  title="Target student capacity per section"
-                                />
-                              </div>
+                                {/* Student capacity / Enrollees per section input */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-gray-600 font-semibold">Students / Section:</span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={rawCap}
+                                    onChange={(e) => {
+                                      const clean = e.target.value.replace(/[^0-9]/g, '');
+                                      updateProgramSectionCapacity(pIdx, yearNum, clean);
+                                    }}
+                                    className="form-input bg-white w-16 text-center text-xs font-bold py-1 px-2"
+                                    placeholder="40"
+                                    title="Target student capacity per section"
+                                  />
+                                </div>
 
-                              {/* Section name preview chips */}
-                              <div className="flex-1 flex flex-wrap gap-1 min-w-0">
-                                {preview.length > 0 ? (
-                                  preview.map((name) => (
-                                    <span
-                                      key={name}
-                                      className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
-                                    >
-                                      <span>{name}</span>
-                                      <span className="text-[9px] text-[#7A0808]/70 font-normal">({rawCap || 40} stds)</span>
+                                {/* Section name preview chips */}
+                                <div className="flex-1 flex flex-wrap gap-1 min-w-0">
+                                  {preview.length > 0 ? (
+                                    preview.map((name) => (
+                                      <span
+                                        key={name}
+                                        className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
+                                      >
+                                        <span>{name}</span>
+                                        <span className="text-[9px] text-[#7A0808]/70 font-normal">({rawCap || 40} stds)</span>
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-[10px] text-gray-400 italic">
+                                      {count > 0 ? 'Enter Program Code above to see name preview' : '0 sections (none)'}
                                     </span>
-                                  ))
-                                ) : (
-                                  <span className="text-[10px] text-gray-400 italic">
-                                    {count > 0 ? 'Enter Program Code above to see name preview' : '0 sections (none)'}
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Bottom row: OJT Alternating Modality Toggle aligned to bottom right */}
+                              <div className="flex items-center justify-end pt-1.5 border-t border-gray-200/60">
+                                <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-gray-200 hover:border-amber-400 transition-all select-none shadow-2xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(program.ojtModality?.[yearNum])}
+                                    onChange={(e) => updateProgramSectionOjtModality(pIdx, yearNum, e.target.checked)}
+                                    className="w-3.5 h-3.5 text-[#7A0808] rounded border-gray-300 focus:ring-[#7A0808] cursor-pointer"
+                                  />
+                                  <span className="text-[11px] font-bold text-gray-700">
+                                    OJT Alternating (1 Wk Campus / 1 Wk OJT)
                                   </span>
-                                )}
+                                  {program.ojtModality?.[yearNum] && (
+                                    <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shrink-0">
+                                      Active
+                                    </span>
+                                  )}
+                                </label>
                               </div>
                             </div>
                           );

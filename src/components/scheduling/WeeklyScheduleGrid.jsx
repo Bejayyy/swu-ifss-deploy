@@ -567,13 +567,30 @@ export default function WeeklyScheduleGrid({
                             borderRadius: '8px',
                           }}
                         >
-                          <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                            {sched.rotationCycle === 'week_a' && (
+                              <span className="text-[8px] font-black uppercase px-1 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 shrink-0">
+                                Week A
+                              </span>
+                            )}
+                            {sched.rotationCycle === 'week_b' && (
+                              <span className="text-[8px] font-black uppercase px-1 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 shrink-0">
+                                Week B
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                             {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                           </p>
                           {(sched.section || sched.sectionName || sched.program) && (
-                            <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
-                              Sec: {sched.section || sched.sectionName || sched.program}
+                            <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight flex items-center gap-1" style={{ color: colors.text }}>
+                              <span>Sec: {sched.section || sched.sectionName || sched.program}</span>
+                              {sched.isCombinedSection && (
+                                <span className="text-[8px] font-black uppercase px-1 rounded bg-purple-100 text-purple-800 border border-purple-300">
+                                  Merged
+                                </span>
+                              )}
                             </p>
                           )}
                           {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}

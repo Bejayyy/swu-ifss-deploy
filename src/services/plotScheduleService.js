@@ -296,8 +296,6 @@ export async function completePlotTurn(plotId, profile) {
 }
 
 export function entriesToGridBlocks(entries, weekDates = []) {
-  console.log('entriesToGridBlocks called with entries:', entries.length, 'weekDates:', weekDates);
-  
   // Helper function to extract first name from full name
   const getFirstName = (fullName) => {
     if (!fullName) return '';
@@ -345,6 +343,10 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         scheduleMode: e.scheduleMode || 'regular',
         section: e.section || e.sectionName || '',
         sectionName: e.section || e.sectionName || '',
+        partnerSection: e.partnerSection || null,
+        rotationCycle: e.rotationCycle || e.weekCycle || 'all',
+        isCombinedSection: Boolean(e.isCombinedSection || (e.combinedSections && e.combinedSections.length > 1)),
+        combinedSections: e.combinedSections || (e.section ? [e.section] : []),
         yearLevel: e.yearLevel || '',
         semester: e.semester || '',
         program: e.program || e.programCode || '',
@@ -353,7 +355,6 @@ export function entriesToGridBlocks(entries, weekDates = []) {
     })
     .filter((e) => e.day >= 0 && e.day <= 6); // Only include valid days (0-6)
   
-  console.log('entriesToGridBlocks result:', blocks.length, 'blocks');
   return blocks;
 }
 
@@ -533,10 +534,76 @@ export function subscribePlotEntriesForDeanSection(
 }
 
 /**
+ * Subscribe to all plot entries for a specific section across ALL deans / mother / service colleges
+ */
+export function subscribeAllPlotEntriesForSection(
+  section,
+  semester,
+  scheduleMode = 'regular',
+  examPeriod = null,
+  schoolYearId = null,
+  onData = null,
+  onError = null
+) {
+  if (!section) {
+    if (onData) onData([]);
+    return () => {};
+  }
+
+  const targetSecNorm = String(section).trim().toUpperCase();
+  const entriesRef = collectionGroup(db, 'entries');
+
+  return onSnapshot(
+    entriesRef,
+    (snapshot) => {
+      const allDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const filtered = allDocs.filter((e) => {
+        // Section matching (or combined sections matching)
+        const eSecNorm = String(e.section || e.sectionName || '').trim().toUpperCase();
+        const comb = Array.isArray(e.combinedSections)
+          ? e.combinedSections.map((s) => String(s).trim().toUpperCase())
+          : [];
+        const matchesSec = eSecNorm === targetSecNorm || comb.includes(targetSecNorm);
+        if (!matchesSec) return false;
+
+        // School year matching
+        if (!matchSchoolYear(e, schoolYearId)) return false;
+
+        // Semester matching
+        if (!matchSemesterHelper(e.semester, semester)) return false;
+
+        // Regular vs Exam mode
+        if (scheduleMode === 'regular') {
+          const isReg = !e.scheduleMode || e.scheduleMode === 'regular';
+          if (!isReg) return false;
+        } else if (scheduleMode === 'exam') {
+          if (e.scheduleMode !== 'exam') return false;
+          if (examPeriod && e.examPeriod && e.examPeriod !== examPeriod) return false;
+        }
+
+        return true;
+      });
+
+      if (onData) onData(filtered);
+    },
+    (err) => {
+      console.error('Error in subscribeAllPlotEntriesForSection:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
  * Add a plot entry for a specific dean and section
  */
-export async function addPlotEntryForSection(deanUid, section, entry) {
-  const ref = doc(deanSectionEntriesRef(deanUid, section));
+export async function addPlotEntryForSection(deanUid, section, entry, customId = null) {
+  const ref = customId
+    ? doc(deanSectionEntriesRef(deanUid, section), customId)
+    : doc(deanSectionEntriesRef(deanUid, section));
   await setDoc(ref, {
     ...entry,
     createdAt: serverTimestamp(),

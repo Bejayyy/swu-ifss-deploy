@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
 export default function CustomSelect({
@@ -13,16 +14,53 @@ export default function CustomSelect({
   menuClassName = '',
   disabled = false,
   size = 'md', // 'sm' | 'md'
-  placement = 'bottom', // 'bottom' | 'top'
+  placement = 'auto', // 'auto' | 'bottom' | 'top'
   required = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+  const menuRef = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, placement: 'bottom' });
+
+  const updateCoords = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const dropdownHeight = 280;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const shouldPlaceTop = placement === 'top' || (placement === 'auto' && spaceBelow < dropdownHeight && rect.top > dropdownHeight);
+
+    setCoords({
+      top: shouldPlaceTop ? undefined : rect.bottom + 6,
+      bottom: shouldPlaceTop ? window.innerHeight - rect.top + 6 : undefined,
+      left: rect.left,
+      width: Math.max(rect.width, 160),
+      placement: shouldPlaceTop ? 'top' : 'bottom',
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updateCoords();
+      const handleScrollOrResize = () => {
+        updateCoords();
+      };
+      window.addEventListener('resize', handleScrollOrResize);
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      return () => {
+        window.removeEventListener('resize', handleScrollOrResize);
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+      };
+    }
+  }, [isOpen, placement]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target) &&
+        (!menuRef.current || !menuRef.current.contains(e.target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -64,7 +102,7 @@ export default function CustomSelect({
   const isSmall = size === 'sm';
 
   return (
-    <div ref={containerRef} className={`relative inline-block w-full font-sans select-none ${isOpen ? 'z-[90]' : 'z-[10]'} ${className}`}>
+    <div ref={containerRef} className={`relative inline-block w-full font-sans select-none ${className}`}>
       {/* Hidden input for HTML form validation if required */}
       {required && (
         <input
@@ -82,7 +120,12 @@ export default function CustomSelect({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!disabled) {
+            updateCoords();
+            setIsOpen(!isOpen);
+          }
+        }}
         className={`w-full bg-white rounded-xl border flex items-center justify-between transition-all cursor-pointer shadow-2xs ${
           isSmall ? 'px-3 py-1.5 text-xs font-semibold' : 'px-4 py-2.5 text-xs font-medium'
         } ${
@@ -103,12 +146,19 @@ export default function CustomSelect({
         />
       </button>
 
-      {/* Popover Options Card with Ample Space on Every Side */}
-      {isOpen && (
+      {/* Popover Options Card rendered through Portal to avoid modal overflow clipping */}
+      {isOpen && typeof document !== 'undefined' && createPortal(
         <div
-          className={`absolute left-0 right-0 ${
-            placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-[100] animate-in fade-in zoom-in-95 duration-150 min-w-[160px] max-h-[280px] overflow-y-auto space-y-1 ${menuClassName}`}
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            top: coords.top !== undefined ? `${coords.top}px` : undefined,
+            bottom: coords.bottom !== undefined ? `${coords.bottom}px` : undefined,
+            left: `${coords.left}px`,
+            width: `${coords.width}px`,
+            zIndex: 999999,
+          }}
+          className={`bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-150 max-h-[280px] overflow-y-auto space-y-1 ${menuClassName}`}
         >
           {label && (
             <div className="px-4 pt-2 pb-1.5 border-b border-slate-100 mb-1">
@@ -150,7 +200,8 @@ export default function CustomSelect({
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -13,6 +13,8 @@ import {
   Trash2,
   Tag,
   CheckCircle,
+  RefreshCw,
+  Users,
 } from 'lucide-react';
 import { formatScheduleHour, SCHEDULE_DAYS } from '../../constants/scheduleGrid';
 
@@ -215,6 +217,46 @@ export default function ViewScheduleDetailsModal({
               </span>
             </div>
           </div>
+
+          {/* Rotational Modality & Combined Sections Info */}
+          {((block.rotationCycle && block.rotationCycle !== 'all') || (raw.rotationCycle && raw.rotationCycle !== 'all') || block.partnerSection || raw.partnerSection || block.isCombinedSection || raw.isCombinedSection) && (
+            <div className="p-3.5 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-purple-50/70 border border-blue-200/80 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                  <RefreshCw size={13} className="text-[#7A0808]" /> Rotational Modality & Capacity
+                </span>
+                {(block.rotationCycle === 'week_a' || raw.rotationCycle === 'week_a') && (
+                  <span className="text-[10px] font-black uppercase text-blue-800 bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-300">
+                    🔵 Week A (Odd Weeks)
+                  </span>
+                )}
+                {(block.rotationCycle === 'week_b' || raw.rotationCycle === 'week_b') && (
+                  <span className="text-[10px] font-black uppercase text-purple-800 bg-purple-100 px-2.5 py-0.5 rounded-full border border-purple-300">
+                    🟣 Week B (Even Weeks)
+                  </span>
+                )}
+              </div>
+
+              {(block.partnerSection || raw.partnerSection) && (
+                <p className="text-[11px] text-gray-700">
+                  Rotational Partner Section: <strong className="text-gray-900">{block.partnerSection || raw.partnerSection}</strong> (takes over room during reciprocal weeks)
+                </p>
+              )}
+
+              {(block.isCombinedSection || raw.isCombinedSection) && (
+                <div className="pt-1.5 border-t border-blue-200/60 flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-purple-900 flex items-center gap-1">
+                    <Users size={12} /> Combined Sections:
+                  </span>
+                  {(block.combinedSections || raw.combinedSections || []).map((sec) => (
+                    <span key={sec} className="bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-800 font-bold text-[10px] shadow-2xs">
+                      {sec}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Required Hours & Time Compliance Status */}
           {(() => {

@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
 
+let activeLockCount = 0;
+
 /**
  * Hook to lock body scroll when a modal is open.
- * Prevents background page scrolling while maintaining layout stability.
+ * Uses reference counting so multiple open modals (e.g. nested or loading modals)
+ * don't prematurely unlock or permanently trap scroll.
  * 
  * @param {boolean} isLocked - Whether scroll locking is active
  */
@@ -10,19 +13,18 @@ export function useBodyScrollLock(isLocked = true) {
   useEffect(() => {
     if (!isLocked) return;
 
-    const originalOverflow = document.body.style.overflow;
-    const originalTouchAction = document.body.style.touchAction;
-
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
-    document.body.classList.add('modal-open');
+    activeLockCount++;
+    if (activeLockCount === 1) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      document.body.classList.add('modal-open');
+    }
 
     return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.touchAction = originalTouchAction;
-      
-      // Only remove modal-open class if no other modal-overlays remain in DOM
-      if (!document.querySelector('.modal-overlay')) {
+      activeLockCount = Math.max(0, activeLockCount - 1);
+      if (activeLockCount === 0) {
+        document.body.style.overflow = '';
+        document.body.style.touchAction = '';
         document.body.classList.remove('modal-open');
       }
     };
@@ -30,3 +32,4 @@ export function useBodyScrollLock(isLocked = true) {
 }
 
 export default useBodyScrollLock;
+

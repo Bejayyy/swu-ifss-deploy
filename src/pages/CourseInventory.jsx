@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { BookOpen, Plus, Pencil, Trash2, Clock, Users } from 'lucide-react';
+import { BookOpen, Plus, Pencil, Trash2, Clock, Users, Building2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
@@ -322,6 +322,21 @@ export default function CourseInventory() {
                           </div>
                         )}
                       </div>
+
+                      {/* Service College Badge */}
+                      {(course.lecServiceCollege || course.labServiceCollege) && (
+                        <div className="mt-2.5 pt-2 border-t border-indigo-100 text-[10px] flex items-center gap-1.5 font-bold text-indigo-900 bg-indigo-50/70 px-2.5 py-1 rounded-lg">
+                          <Building2 size={12} className="text-indigo-700 shrink-0" />
+                          <span>
+                            Serviced by:{' '}
+                            {course.lecServiceCollege && course.labServiceCollege
+                              ? (course.lecServiceCollege === course.labServiceCollege
+                                  ? `${course.lecServiceCollege} (Lec & Lab)`
+                                  : `Lec: ${course.lecServiceCollege} · Lab: ${course.labServiceCollege}`)
+                              : (course.lecServiceCollege ? `Lec: ${course.lecServiceCollege}` : `Lab: ${course.labServiceCollege}`)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

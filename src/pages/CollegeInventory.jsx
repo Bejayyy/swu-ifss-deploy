@@ -79,9 +79,10 @@ export default function CollegeInventory() {
   // Sections management states
   const [selectedSectionProgram, setSelectedSectionProgram] = useState(null); // { code, name }
   const [programSectionRows, setProgramSectionRows] = useState([]); // from Firestore
-  const [sectionDraftCounts, setSectionDraftCounts] = useState({}); // yearNumber -> count (draft)
-  const [sectionDraftCapacities, setSectionDraftCapacities] = useState({}); // yearNumber -> capacity (draft)
-  const [savingSectionYear, setSavingSectionYear] = useState(null); // yearNumber being saved
+  const [sectionDraftCounts, setSectionDraftCounts] = useState({}); // { [yearNumber]: string|number }
+  const [sectionDraftCapacities, setSectionDraftCapacities] = useState({}); // { [yearNumber]: string|number }
+  const [sectionDraftOjtModality, setSectionDraftOjtModality] = useState({}); // { [yearNumber]: boolean }
+  const [savingSectionYear, setSavingSectionYear] = useState(null); // yearNumber currently savinged
   const [extraYears, setExtraYears] = useState([]); // additional years beyond 4 added by registrar
 
   // Subscribe to colleges
@@ -299,6 +300,15 @@ export default function CollegeInventory() {
           });
           return next;
         });
+        setSectionDraftOjtModality((prev) => {
+          const next = { ...prev };
+          rows.forEach((r) => {
+            if (next[r.yearNumber] === undefined) {
+              next[r.yearNumber] = Boolean(r.hasOjtAlternatingModality || r.modality === 'ojt_alternating');
+            }
+          });
+          return next;
+        });
         // Determine extra years (beyond year 4) that are already saved
         const savedExtraYears = rows
           .filter((r) => r.yearNumber > 4)
@@ -318,6 +328,7 @@ export default function CollegeInventory() {
     if (!selectedSectionProgram || !viewingCollegeCourses) return;
     const count = Number(sectionDraftCounts[yearNumber]) || 0;
     const capacity = Number(sectionDraftCapacities[yearNumber]) || 40;
+    const hasOjt = Boolean(sectionDraftOjtModality[yearNumber]);
     setSavingSectionYear(yearNumber);
     try {
       await upsertProgramYearSections(
@@ -325,19 +336,20 @@ export default function CollegeInventory() {
         selectedSectionProgram.code,
         yearNumber,
         count,
-        capacity
+        capacity,
+        { hasOjtAlternatingModality: hasOjt, modality: hasOjt ? 'ojt_alternating' : 'regular' }
       );
       setNotification({
         type: 'success',
         title: 'Sections Saved',
-        message: `${getYearLabel(yearNumber)} sections for ${selectedSectionProgram.code} saved successfully.`,
+        message: `${getYearLabel(yearNumber)} sections for ${selectedSectionProgram.code} saved successfully${hasOjt ? ' (OJT Rotation Modality Enabled)' : ''}.`,
       });
     } catch (err) {
       setNotification({ type: 'error', title: 'Save Failed', message: err.message });
     } finally {
       setSavingSectionYear(null);
     }
-  }, [selectedSectionProgram, viewingCollegeCourses, sectionDraftCounts, sectionDraftCapacities]);
+  }, [selectedSectionProgram, viewingCollegeCourses, sectionDraftCounts, sectionDraftCapacities, sectionDraftOjtModality]);
 
   const handleAddCourse = () => {
     setEditingCourse(null);
@@ -997,6 +1009,13 @@ export default function CollegeInventory() {
                                 <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold text-[11px] capitalize">
                                   {course.type}
                                 </span>
+                                {(course.lecServiceCollege || course.labServiceCollege) && (
+                                  <span className="block mt-1 text-[9px] font-black text-indigo-900 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                    🏛️ Svc: {course.lecServiceCollege && course.labServiceCollege
+                                      ? (course.lecServiceCollege === course.labServiceCollege ? `${course.lecServiceCollege}` : `Lec:${course.lecServiceCollege} Lab:${course.labServiceCollege}`)
+                                      : (course.lecServiceCollege ? `Lec:${course.lecServiceCollege}` : `Lab:${course.labServiceCollege}`)}
+                                  </span>
+                                )}
                               </td>
                               <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
@@ -1123,83 +1142,115 @@ export default function CollegeInventory() {
 
                         const rawDraftCap = sectionDraftCapacities[yearNum];
                         const capVal = rawDraftCap !== undefined ? rawDraftCap : (savedRow?.studentsPerSection || savedRow?.studentCapacity !== undefined ? String(savedRow?.studentsPerSection || savedRow?.studentCapacity) : '40');
+                        const rawDraftOjt = sectionDraftOjtModality[yearNum];
+                        const ojtVal = rawDraftOjt !== undefined ? rawDraftOjt : Boolean(savedRow?.hasOjtAlternatingModality || savedRow?.modality === 'ojt_alternating');
 
                         return (
                           <div
                             key={yearNum}
-                            className="flex flex-wrap items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100"
+                            className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
+                              ojtVal ? 'bg-amber-50/40 border-amber-200 shadow-2xs' : 'bg-gray-50 border-gray-100'
+                            }`}
                           >
-                            {/* Year label */}
-                            <div className="w-24 flex-shrink-0 pt-1">
-                              <span className="text-xs font-black text-[#7A0808]">{getYearLabel(yearNum)}</span>
+                            {/* Top row: Year, Sections, Capacity, Preview chips, and Save */}
+                            <div className="flex flex-wrap items-center gap-3">
+                              {/* Year label */}
+                              <div className="w-20 flex-shrink-0">
+                                <span className="text-xs font-black text-[#7A0808]">{getYearLabel(yearNum)}</span>
+                              </div>
+
+                              {/* Section count input */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-gray-600">Sections:</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={displayVal}
+                                  onChange={(e) => {
+                                    const clean = e.target.value.replace(/[^0-9]/g, '');
+                                    const formatted = clean === '' ? '' : String(parseInt(clean, 10));
+                                    setSectionDraftCounts((prev) => ({
+                                      ...prev,
+                                      [yearNum]: formatted,
+                                    }));
+                                  }}
+                                  className="w-14 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold bg-white"
+                                  placeholder="0"
+                                />
+                              </div>
+
+                              {/* Students per section input */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-gray-600">Students/Sec:</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={capVal}
+                                  onChange={(e) => {
+                                    const clean = e.target.value.replace(/[^0-9]/g, '');
+                                    setSectionDraftCapacities((prev) => ({
+                                      ...prev,
+                                      [yearNum]: clean,
+                                    }));
+                                  }}
+                                  className="w-14 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold bg-white"
+                                  placeholder="40"
+                                />
+                              </div>
+
+                              {/* Section name preview chips */}
+                              <div className="flex-1 flex flex-wrap gap-1 min-w-0">
+                                {preview.length > 0 ? (
+                                  preview.map((name) => (
+                                    <span
+                                      key={name}
+                                      className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
+                                    >
+                                      <span>{name}</span>
+                                      <span className="text-[9px] text-[#7A0808]/70 font-normal">({capVal || 40} stds)</span>
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 italic pt-1">No sections — set count above</span>
+                                )}
+                              </div>
+
+                              {/* Save button */}
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSectionYear(yearNum)}
+                                disabled={isSaving}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#7A0808] text-white hover:bg-[#5A0606] disabled:opacity-50 transition-all flex-shrink-0"
+                              >
+                                <Save size={12} />
+                                {isSaving ? 'Saving…' : 'Save'}
+                              </button>
                             </div>
 
-                            {/* Section count input */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-gray-600">Sections:</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={displayVal}
-                                onChange={(e) => {
-                                  const clean = e.target.value.replace(/[^0-9]/g, '');
-                                  const formatted = clean === '' ? '' : String(parseInt(clean, 10));
-                                  setSectionDraftCounts((prev) => ({
-                                    ...prev,
-                                    [yearNum]: formatted,
-                                  }));
-                                }}
-                                className="w-16 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold"
-                                placeholder="0"
-                              />
-                            </div>
-
-                            {/* Students per section input */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-gray-600">Students/Sec:</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={capVal}
-                                onChange={(e) => {
-                                  const clean = e.target.value.replace(/[^0-9]/g, '');
-                                  setSectionDraftCapacities((prev) => ({
-                                    ...prev,
-                                    [yearNum]: clean,
-                                  }));
-                                }}
-                                className="w-16 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold"
-                                placeholder="40"
-                              />
-                            </div>
-
-                            {/* Section name preview chips */}
-                            <div className="flex-1 flex flex-wrap gap-1 min-w-0">
-                              {preview.length > 0 ? (
-                                preview.map((name) => (
-                                  <span
-                                    key={name}
-                                    className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
-                                  >
-                                    <span>{name}</span>
-                                    <span className="text-[9px] text-[#7A0808]/70 font-normal">({capVal || 40} stds)</span>
+                            {/* Bottom row: OJT Alternating Modality Toggle aligned to bottom right */}
+                            <div className="flex items-center justify-end pt-1.5 border-t border-gray-200/60">
+                              <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-gray-200 hover:border-amber-400 transition-all select-none shadow-2xs">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(ojtVal)}
+                                  onChange={(e) => {
+                                    setSectionDraftOjtModality((prev) => ({
+                                      ...prev,
+                                      [yearNum]: e.target.checked,
+                                    }));
+                                  }}
+                                  className="w-3.5 h-3.5 text-[#7A0808] rounded border-gray-300 focus:ring-[#7A0808] cursor-pointer"
+                                />
+                                <span className="text-[11px] font-bold text-gray-700">
+                                  OJT Alternating (1 Wk Campus / 1 Wk OJT)
+                                </span>
+                                {ojtVal && (
+                                  <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shrink-0">
+                                    Rotation Active
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-[10px] text-gray-400 italic pt-1">No sections — set count above</span>
-                              )}
+                                )}
+                              </label>
                             </div>
-
-                            {/* Save button */}
-                            <button
-                              type="button"
-                              onClick={() => handleSaveSectionYear(yearNum)}
-                              disabled={isSaving}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#7A0808] text-white hover:bg-[#5A0606] disabled:opacity-50 transition-all flex-shrink-0"
-                            >
-                              <Save size={12} />
-                              {isSaving ? 'Saving…' : 'Save'}
-                            </button>
                           </div>
                         );
                       })}

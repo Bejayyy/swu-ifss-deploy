@@ -353,23 +353,109 @@ export function getSemesterWeekNumber(targetDate, semesterStartStr) {
  */
 export function isScheduleActiveOnWeek(modality = 'regular', weekNumber = 1, customOjtWeeks = []) {
   if (!modality || modality === 'regular') return true;
-  
-  if (modality === 'odd-weeks') {
+
+  if (modality === 'odd-weeks' || modality === 'week_a') {
     // Active if week number is odd (1, 3, 5...)
-    return weekNumber % 2 !== 0;
+    return Number(weekNumber) % 2 !== 0;
   }
-  
-  if (modality === 'even-weeks') {
+
+  if (modality === 'even-weeks' || modality === 'week_b') {
     // Active if week number is even (2, 4, 6...)
-    return weekNumber % 2 === 0;
+    return Number(weekNumber) % 2 === 0;
   }
-  
+
   if (modality === 'custom-ojt') {
     // Inactive if current week number is in customOjtWeeks
     const ojtList = Array.isArray(customOjtWeeks) ? customOjtWeeks.map(Number) : [];
     return !ojtList.includes(Number(weekNumber));
   }
-  
+
   return true;
+}
+
+/**
+ * Generate all semester academic weeks with date range and cycle tags (Week A vs Week B).
+ */
+export function getSemesterAcademicWeeks(semesterStartStr, totalWeeks = 18, startOnWeekA = true) {
+  if (!semesterStartStr) {
+    return Array.from({ length: totalWeeks }, (_, i) => {
+      const wNum = i + 1;
+      const isWeekA = startOnWeekA ? wNum % 2 !== 0 : wNum % 2 === 0;
+      return {
+        weekNumber: wNum,
+        label: `Week ${wNum}`,
+        dateRangeLabel: `Week ${wNum}`,
+        cycleTag: isWeekA ? 'Week A' : 'Week B',
+        isWeekA,
+        isOdd: wNum % 2 !== 0,
+      };
+    });
+  }
+
+  const startDt = parseDateOnly(semesterStartStr);
+  const baseMonday = startDt ? getMondayOfWeek(startDt) : new Date();
+
+  return Array.from({ length: totalWeeks }, (_, i) => {
+    const wNum = i + 1;
+    const isWeekA = startOnWeekA ? wNum % 2 !== 0 : wNum % 2 === 0;
+
+    const wStart = new Date(baseMonday);
+    wStart.setDate(baseMonday.getDate() + i * 7);
+
+    const wEnd = new Date(wStart);
+    wEnd.setDate(wStart.getDate() + 4); // Friday
+
+    const startMonth = wStart.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = wEnd.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = wStart.getDate();
+    const endDay = wEnd.getDate();
+
+    const rangeStr = startMonth === endMonth
+      ? `${startMonth} ${startDay}–${endDay}`
+      : `${startMonth} ${startDay} – ${endMonth} ${endDay}`;
+
+    return {
+      weekNumber: wNum,
+      label: `Week ${wNum} (${rangeStr})`,
+      shortLabel: `Wk ${wNum}`,
+      dateRangeLabel: rangeStr,
+      startDate: wStart.toISOString().split('T')[0],
+      endDate: wEnd.toISOString().split('T')[0],
+      cycleTag: isWeekA ? 'Week A' : 'Week B',
+      isWeekA,
+      isOdd: wNum % 2 !== 0,
+    };
+  });
+}
+
+/**
+ * Format cycle tag and week details for an entry or section
+ */
+export function getCycleDisplayInfo(rotationCycle = 'all', partnerSection = null) {
+  if (rotationCycle === 'week_a') {
+    return {
+      tag: 'Week A (Odd Weeks)',
+      shortTag: 'Week A',
+      color: 'blue',
+      badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+      description: `In-Campus on Week A (Odd Weeks)${partnerSection ? ` | Partner: ${partnerSection} (Week B)` : ''}`,
+    };
+  }
+  if (rotationCycle === 'week_b') {
+    return {
+      tag: 'Week B (Even Weeks)',
+      shortTag: 'Week B',
+      color: 'purple',
+      badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+      description: `In-Campus on Week B (Even Weeks)${partnerSection ? ` | Partner: ${partnerSection} (Week A)` : ''}`,
+    };
+  }
+  return {
+    tag: 'All Weeks (Regular)',
+    shortTag: 'Regular',
+    color: 'gray',
+    badgeClass: 'bg-gray-100 text-gray-700 border-gray-200',
+    description: 'In-Campus every week',
+  };
 }
 

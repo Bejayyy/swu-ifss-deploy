@@ -5,6 +5,8 @@ import {
   where,
   orderBy,
   onSnapshot,
+  getDocs,
+  addDoc,
   updateDoc,
   deleteDoc,
   writeBatch,
@@ -106,5 +108,102 @@ export async function deleteNotification(notificationId) {
     await deleteDoc(docRef);
   } catch (err) {
     console.error('Error deleting notification:', err);
+  }
+}
+
+/**
+ * Send a notification to a specific user or role
+ */
+export async function sendNotification({
+  userId = null,
+  recipientId = null,
+  recipientEmail = null,
+  title = 'System Notification',
+  message = '',
+  link = null,
+  type = 'info',
+  metadata = {},
+}) {
+  try {
+    const targetUserId = userId || recipientId;
+    const cleanPayload = {
+      userId: targetUserId || null,
+      recipientId: targetUserId || null,
+      recipientEmail: recipientEmail || null,
+      title,
+      message,
+      link,
+      type,
+      read: false,
+      createdAt: serverTimestamp(),
+      ...metadata,
+    };
+
+    const docRef = await addDoc(collection(db, NOTIFICATIONS_COLLECTION), cleanPayload);
+    return docRef.id;
+  } catch (err) {
+    console.error('Error sending notification:', err);
+    return null;
+  }
+}
+
+/**
+ * Notify Dean(s) of a Service College regarding an assignment or ready status
+ */
+export async function notifyServiceCollegeDeans({
+  serviceCollegeCode,
+  motherCollege,
+  courseCode,
+  courseTitle,
+  component = 'Lecture',
+  sectionName = '',
+  statusType = 'ready', // 'assigned' | 'ready'
+}) {
+  if (!serviceCollegeCode) return;
+
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('role', '==', 'dean'));
+    const snap = await getDocs(q);
+
+    const sCodeNorm = String(serviceCollegeCode).trim().toUpperCase();
+
+    const deans = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((d) => {
+        const dCol = String(d.college || d.department || '').trim().toUpperCase();
+        return dCol === sCodeNorm || dCol.includes(sCodeNorm) || sCodeNorm.includes(dCol);
+      });
+
+    for (const dean of deans) {
+      const isReady = statusType === 'ready';
+      const title = isReady
+        ? `🏛️ Ready to Schedule: ${courseCode} (${component})`
+        : `🏛️ Service College Assignment: ${courseCode} (${component})`;
+
+      const message = isReady
+        ? `${motherCollege || 'Mother College'} has completed internal scheduling and released ${courseCode} - ${courseTitle} (${component})${sectionName ? ` for Section ${sectionName}` : ''}. You may now assign faculty and room.`
+        : `Your college (${serviceCollegeCode}) was designated as the Service College for ${courseCode} - ${courseTitle} (${component})${sectionName ? ` for Section ${sectionName}` : ''} by ${motherCollege || 'the Registrar'}.`;
+
+      await sendNotification({
+        userId: dean.id || dean.uid,
+        recipientEmail: dean.email,
+        title,
+        message,
+        link: '/course-scheduling',
+        type: 'course_scheduling',
+        metadata: {
+          serviceCollegeCode,
+          motherCollege,
+          courseCode,
+          courseTitle,
+          component,
+          sectionName,
+          statusType,
+        },
+      });
+    }
+  } catch (err) {
+    console.error('Error notifying service college deans:', err);
   }
 }

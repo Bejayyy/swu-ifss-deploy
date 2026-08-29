@@ -58,7 +58,14 @@ function sectionDocId(programCode, yearNumber) {
  * Save (upsert) section count for a specific program and year.
  * Generates and stores all section names.
  */
-export async function upsertProgramYearSections(collegeCode, programCode, yearNumber, sectionCount, studentsPerSection = 40) {
+export async function upsertProgramYearSections(
+  collegeCode,
+  programCode,
+  yearNumber,
+  sectionCount,
+  studentsPerSection = 40,
+  options = {}
+) {
   if (!programCode || !yearNumber) throw new Error('Program code and year number are required.');
 
   const code = String(programCode).toUpperCase();
@@ -71,7 +78,7 @@ export async function upsertProgramYearSections(collegeCode, programCode, yearNu
   const docId = sectionDocId(code, year);
   const ref = doc(db, PROGRAM_SECTIONS_COLLECTION, docId);
 
-  await setDoc(ref, {
+  const payload = {
     collegeCode: String(collegeCode).toUpperCase(),
     programCode: code,
     yearNumber: year,
@@ -80,9 +87,13 @@ export async function upsertProgramYearSections(collegeCode, programCode, yearNu
     sections,
     studentsPerSection: capacity,
     studentCapacity: capacity,
+    hasOjtAlternatingModality: Boolean(options.hasOjtAlternatingModality),
+    modality: options.hasOjtAlternatingModality ? 'ojt_alternating' : (options.modality || 'regular'),
     updatedAt: serverTimestamp(),
     createdAt: serverTimestamp(),
-  }, { merge: true });
+  };
+
+  await setDoc(ref, payload, { merge: true });
 
   return sections;
 }

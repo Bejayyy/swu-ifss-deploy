@@ -18,6 +18,8 @@ import {
   GraduationCap,
   ArrowRight,
   Pencil,
+  RefreshCw,
+  Users,
 } from 'lucide-react';
 import {
   parseTimeToHour,
@@ -25,6 +27,7 @@ import {
   hourToTimeInput,
   subscribeDeanSections,
   subscribePlotEntriesForDeanSection,
+  subscribeAllPlotEntriesForSection,
   subscribeAllSemesterPlotEntries,
 } from '../../services/plotScheduleService';
 import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HOUR } from '../../constants/scheduleGrid';
@@ -170,6 +173,9 @@ export default function AddPlotEntryModalEnhanced({
   initialSection = '',
   skipTypeStep = false,
   schoolYearId = null,
+  isServiceCollegeMode = false,
+  serviceComponent = null,
+  serviceCollegeCode = null,
 }) {
   // Multi-step form state
   const isEditingExisting = Boolean(initial?.id || initial?.entryId || initial?.courseCode);
@@ -191,6 +197,26 @@ export default function AddPlotEntryModalEnhanced({
   const activeYearLevel = useMemo(() => {
     return currentSectionObj?.yearLevel || sectionYearLevel || '1st Year';
   }, [currentSectionObj, sectionYearLevel]);
+
+  // Available sections for combining MUST be in the same year level and program as selectedSection
+  const mergeableSections = useMemo(() => {
+    if (!selectedSection) return [];
+    const currentYl = String(activeYearLevel || '').toLowerCase().trim();
+    const currentPCode = String(programCode || currentSectionObj?.programCode || '').toUpperCase().trim();
+
+    return deanSections.filter((s) => {
+      // Must match program code if present
+      if (currentPCode && s.programCode && s.programCode.toUpperCase().trim() !== currentPCode) {
+        return false;
+      }
+      // Must match exact same year level
+      const sYl = String(s.yearLevel || '').toLowerCase().trim();
+      if (currentYl && sYl && sYl !== currentYl) {
+        return false;
+      }
+      return true;
+    });
+  }, [deanSections, selectedSection, activeYearLevel, programCode, currentSectionObj?.programCode]);
 
   // Data loading states
   const [courses, setCourses] = useState([]);
@@ -241,6 +267,29 @@ export default function AddPlotEntryModalEnhanced({
     }
     return {};
   });
+
+  // OJT Rotation & Combined Sections States
+  const [rotationCycle, setRotationCycle] = useState(initial?.rotationCycle || initial?.weekCycle || 'all'); // 'all' | 'week_a' | 'week_b'
+  const [partnerSection, setPartnerSection] = useState(initial?.partnerSection || '');
+  const [autoMirrorPartner, setAutoMirrorPartner] = useState(true);
+  const [selectedCombinedSections, setSelectedCombinedSections] = useState(() => {
+    if (initial?.combinedSections && Array.isArray(initial.combinedSections) && initial.combinedSections.length > 0) {
+      return initial.combinedSections;
+    }
+    return [initialSection || selectedSection || ''];
+  });
+
+  // Keep selectedCombinedSections locked to primary selectedSection and valid within mergeableSections
+  useEffect(() => {
+    if (selectedSection) {
+      setSelectedCombinedSections((prev) => {
+        const validNames = new Set(mergeableSections.map((s) => s.name));
+        const filtered = prev.filter((name) => validNames.has(name) && name !== selectedSection);
+        return [selectedSection, ...filtered];
+      });
+    }
+  }, [selectedSection, mergeableSections]);
+
   const [roomConflicts, setRoomConflicts] = useState([]); // Track conflicting schedules for selected room/day/time
   const [completedTypes, setCompletedTypes] = useState([]); // Tracks saved components (e.g. ['Laboratory']) for combined courses
   const [transitionBanner, setTransitionBanner] = useState(null); // Notice after saving first part of combined course
@@ -308,14 +357,13 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [deanUid, sections]);
 
-  // Subscribe to section plot entries in current semester & scheduleMode
+  // Subscribe to section plot entries in current semester & scheduleMode (across all colleges)
   useEffect(() => {
-    if (!deanUid || !selectedSection) {
+    if (!selectedSection) {
       setSectionPlotEntries([]);
       return undefined;
     }
-    return subscribePlotEntriesForDeanSection(
-      deanUid,
+    return subscribeAllPlotEntriesForSection(
       selectedSection,
       semester,
       scheduleMode,
@@ -324,7 +372,7 @@ export default function AddPlotEntryModalEnhanced({
       (entries) => setSectionPlotEntries(entries),
       (err) => console.warn('Error loading section plot entries:', err)
     );
-  }, [deanUid, selectedSection, semester, scheduleMode, schoolYearId]);
+  }, [selectedSection, semester, scheduleMode, schoolYearId]);
 
   // Subscribe to courses for the Dean's college
   useEffect(() => {
@@ -809,16 +857,42 @@ export default function AddPlotEntryModalEnhanced({
   const availableTypes = useMemo(() => {
     if (!selectedCourse) return COURSE_TYPES;
     const cu = getCourseUnitBreakdown(selectedCourse);
-    if (cu.isCombined) return ['Lecture', 'Laboratory'];
-    if (cu.isLabOnly) return ['Laboratory'];
+
+    if (isServiceCollegeMode && serviceComponent) {
+      return [serviceComponent];
+    }
+
+    const motherCol = String(selectedCourse.collegeCode || selectedCourse.college || deanCollege || '').trim().toUpperCase();
+    const lecSvc = selectedCourse.lecServiceCollege ? String(selectedCourse.lecServiceCollege).trim().toUpperCase() : '';
+    const labSvc = selectedCourse.labServiceCollege ? String(selectedCourse.labServiceCollege).trim().toUpperCase() : '';
+
+    const isLecOut = lecSvc && lecSvc !== motherCol;
+    const isLabOut = labSvc && labSvc !== motherCol;
+
+    if (cu.isCombined) {
+      if (isLecOut && !isLabOut) return ['Laboratory'];
+      if (!isLecOut && isLabOut) return ['Lecture'];
+      if (isLecOut && isLabOut) return [];
+      return ['Lecture', 'Laboratory'];
+    }
+    if (cu.isLabOnly) {
+      if (isLabOut) return [];
+      return ['Laboratory'];
+    }
+    if (cu.isLecOnly) {
+      if (isLecOut) return [];
+      return ['Lecture'];
+    }
     return ['Lecture'];
-  }, [selectedCourse]);
+  }, [selectedCourse, isServiceCollegeMode, serviceComponent, deanCollege]);
 
   const isTypeSkipped = useMemo(() => {
     if (skipTypeStep || Boolean(initialRoom || initialRoomCode)) return true;
     if (!selectedCourse) return false;
+    if (isServiceCollegeMode && serviceComponent) return true;
+    if (availableTypes.length <= 1) return true;
     return courseUnits.isLecOnly || courseUnits.isLabOnly;
-  }, [skipTypeStep, initialRoom, initialRoomCode, selectedCourse, courseUnits]);
+  }, [skipTypeStep, initialRoom, initialRoomCode, selectedCourse, courseUnits, isServiceCollegeMode, serviceComponent, availableTypes]);
 
   // Step Configuration
   const stepConfig = useMemo(() => {
@@ -902,14 +976,26 @@ export default function AddPlotEntryModalEnhanced({
 
   const otherType = useMemo(() => {
     if (!courseUnits?.isCombined) return null;
-    if (selectedType === 'Laboratory') return 'Lecture';
-    if (selectedType === 'Lecture') return 'Laboratory';
-    return null;
-  }, [courseUnits, selectedType]);
+    if (!selectedType) return null;
+    const target = selectedType === 'Laboratory' ? 'Lecture' : 'Laboratory';
+    if (!availableTypes.includes(target)) return null;
+    return target;
+  }, [courseUnits, selectedType, availableTypes]);
 
   const isOtherTypePending = useMemo(() => {
-    return Boolean(otherType && !completedTypes.includes(otherType));
-  }, [otherType, completedTypes]);
+    if (!otherType) return false;
+    if (completedTypes.includes(otherType)) return false;
+    if (!availableTypes.includes(otherType)) return false;
+
+    // Check if the other component is already plotted in sectionPlotEntries
+    if (selectedCourse) {
+      const status = getCourseScheduleStatus(selectedCourse);
+      if (otherType === 'Lecture' && status.lecDone) return false;
+      if (otherType === 'Laboratory' && status.labDone) return false;
+    }
+
+    return true;
+  }, [otherType, completedTypes, availableTypes, selectedCourse, sectionPlotEntries]);
 
   // Helper to parse day from entry
   const parseDayIndex = (d, dateStr, dayLabelStr) => {
@@ -929,8 +1015,28 @@ export default function AddPlotEntryModalEnhanced({
     const tName = selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? String(selectedTeacher.name).trim().toLowerCase() : '';
     const tEmail = selectedTeacher?.email ? String(selectedTeacher.email).trim().toLowerCase() : '';
 
+    const activeEditId = editingEntryId || initial?.id || initial?.entryId;
+    const initialCourseCodeNorm = String(initial?.courseCode || initial?.title || selectedCourse?.code || '').trim().toUpperCase();
+
     allSemesterEntries.forEach((entry) => {
-      if (editingEntryId && (entry.id === editingEntryId || entry.originalId === editingEntryId)) return;
+      // 1. Exclude the exact entry being edited by ID
+      if (activeEditId && (entry.id === activeEditId || entry.originalId === activeEditId || entry.combinedGroupId === activeEditId)) {
+        return;
+      }
+
+      // 2. Exclude matching entry if in edit mode (same course, section, and day)
+      if (isEditMode && initialCourseCodeNorm) {
+        const eCode = String(entry.courseCode || entry.title || '').trim().toUpperCase();
+        const eSec = String(entry.section || entry.sectionName || '').trim().toUpperCase();
+        const eDay = typeof entry.day === 'number' && entry.day >= 0 && entry.day <= 6
+          ? entry.day
+          : parseDayIndex(entry.day, entry.date, entry.dayLabel);
+        const initDay = typeof initial?.day === 'number' ? initial.day : dayIndex;
+
+        if (eCode === initialCourseCodeNorm && (eSec === secNorm || (initial?.combinedSections || []).map(s => String(s).toUpperCase()).includes(eSec)) && eDay === initDay) {
+          return;
+        }
+      }
 
       const eDay = typeof entry.day === 'number' && entry.day >= 0 && entry.day <= 6
         ? entry.day
@@ -944,12 +1050,18 @@ export default function AddPlotEntryModalEnhanced({
       let isOccupied = false;
       let reason = '';
 
-      // 1. Room is occupied
-      if (rCodeNorm) {
+      // Check rotation cycle compatibility
+      const entryCycle = entry.rotationCycle || entry.weekCycle || 'all';
+      const isOppositeCycle =
+        (rotationCycle === 'week_a' && entryCycle === 'week_b') ||
+        (rotationCycle === 'week_b' && entryCycle === 'week_a');
+
+      // 1. Room is occupied (only if NOT opposite rotation cycles!)
+      if (rCodeNorm && !isOppositeCycle) {
         const entryRoomNorm = String(entry.roomCode || entry.room || '').replace(/[\s\-_]/g, '').toUpperCase();
         if (entryRoomNorm === rCodeNorm) {
           isOccupied = true;
-          reason = `Room ${selectedRoom.roomCode} Occupied (${entry.courseCode || entry.title || 'Class'})`;
+          reason = `Room ${selectedRoom.roomCode} Occupied (${entry.courseCode || entry.title || 'Class'}${entryCycle !== 'all' ? ` • ${entryCycle.toUpperCase()}` : ''})`;
         }
       }
 
@@ -985,7 +1097,7 @@ export default function AddPlotEntryModalEnhanced({
     });
 
     return map;
-  }, [allSemesterEntries, selectedRoom, selectedSection, selectedTeacher, editingEntryId]);
+  }, [allSemesterEntries, selectedRoom, selectedSection, selectedTeacher, editingEntryId, initial, isEditMode, selectedCourse, dayIndex]);
 
   // Generates start time dropdown options with occupied slots disabled
   const getStartTimeOptions = useCallback((daysToCheck) => {
@@ -1074,14 +1186,18 @@ export default function AddPlotEntryModalEnhanced({
       
       // If current start time is occupied/disabled, switch to first available start time
       if (!currentStartOpt || currentStartOpt.disabled) {
-        const firstAvailable = startOpts.find((o) => !o.disabled);
-        if (firstAvailable) {
-          setCombinedStartTime(firstAvailable.value);
-          const sH = parseTimeToHour(firstAvailable.value);
-          const endOpts = getEndTimeOptions(selectedDays, firstAvailable.value);
-          const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
-          if (firstValidEnd) {
-            setCombinedEndTime(firstValidEnd.value);
+        if (isEditMode && initial?.startTime && combinedStartTime === initial.startTime) {
+          // Keep initial start time in edit mode
+        } else {
+          const firstAvailable = startOpts.find((o) => !o.disabled);
+          if (firstAvailable) {
+            setCombinedStartTime(firstAvailable.value);
+            const sH = parseTimeToHour(firstAvailable.value);
+            const endOpts = getEndTimeOptions(selectedDays, firstAvailable.value);
+            const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
+            if (firstValidEnd) {
+              setCombinedEndTime(firstValidEnd.value);
+            }
           }
         }
       } else {
@@ -1089,10 +1205,14 @@ export default function AddPlotEntryModalEnhanced({
         const endOpts = getEndTimeOptions(selectedDays, combinedStartTime);
         const currentEndOpt = endOpts.find((o) => o.value === combinedEndTime);
         if (!currentEndOpt || currentEndOpt.disabled) {
-          const sH = parseTimeToHour(combinedStartTime);
-          const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
-          if (firstValidEnd) {
-            setCombinedEndTime(firstValidEnd.value);
+          if (isEditMode && initial?.endTime && combinedEndTime === initial.endTime) {
+            // Keep initial end time in edit mode
+          } else {
+            const sH = parseTimeToHour(combinedStartTime);
+            const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
+            if (firstValidEnd) {
+              setCombinedEndTime(firstValidEnd.value);
+            }
           }
         }
       }
@@ -1119,7 +1239,7 @@ export default function AddPlotEntryModalEnhanced({
         }
       });
     }
-  }, [selectedRoom, selectedDays, occupiedIntervalsByDay, timeMode, getStartTimeOptions, getEndTimeOptions]);
+  }, [selectedRoom, selectedDays, occupiedIntervalsByDay, timeMode, getStartTimeOptions, getEndTimeOptions, isEditMode, initial]);
 
   const hoursStatus = useMemo(() => {
     if (selectedDaySlots.length === 0) {
@@ -1168,7 +1288,19 @@ export default function AddPlotEntryModalEnhanced({
     const tEmail = String(t.email || '').trim().toLowerCase();
 
     const teacherDocs = (allSemesterEntries || []).filter((e) => {
-      if (editingEntryId && (e.id === editingEntryId || e.originalId === editingEntryId)) return false;
+      const activeEditId = editingEntryId || initial?.id || initial?.entryId;
+      if (activeEditId && (e.id === activeEditId || e.originalId === activeEditId || e.combinedGroupId === activeEditId)) return false;
+      if (isEditMode && initial?.courseCode) {
+        const eCode = String(e.courseCode || e.title || '').trim().toUpperCase();
+        const initCode = String(initial.courseCode || initial.title || '').trim().toUpperCase();
+        const eSec = String(e.section || e.sectionName || '').trim().toUpperCase();
+        const eDay = typeof e.day === 'number' ? e.day : parseDayIndex(e.day, e.date, e.dayLabel);
+        const initDay = typeof initial?.day === 'number' ? initial.day : dayIndex;
+        if (eCode === initCode && (eSec === (selectedSection || '').toUpperCase() || (initial?.combinedSections || []).map(s => String(s).toUpperCase()).includes(eSec)) && eDay === initDay) {
+          return false;
+        }
+      }
+      
       const inst = String(e.instructor || '').trim().toLowerCase();
       const instEmail = String(e.instructorEmail || '').trim().toLowerCase();
       if (!inst || inst.includes('tba') || inst.includes('to be assigned')) return false;
@@ -1216,7 +1348,7 @@ export default function AddPlotEntryModalEnhanced({
 
   const selectedTeacherConflict = useMemo(() => {
     return getTeacherConflictStatus(selectedTeacher);
-  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId]);
+  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, dayIndex]);
 
   // Allows freely clicking between any steps in the stepper header
   const handleStepClick = (targetStepId) => {
@@ -1399,7 +1531,7 @@ export default function AddPlotEntryModalEnhanced({
         return;
       }
       if (selectedDaySlots.length === 0) {
-        setError('Please select valid start and end times for all selected days.');
+        setError('Please select valid start and end times for the scheduled days.');
         return;
       }
       // Check each day slot has valid time
@@ -1421,11 +1553,8 @@ export default function AddPlotEntryModalEnhanced({
     }
 
     if (step === 2) {
-      // Step 2 is teacher selection (Optional): default to TBA if none selected
-      if (!selectedTeacher) {
-        setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
-      } else if (selectedTeacherConflict.hasConflict) {
-        setError(`Cannot proceed: ${selectedTeacher.name} has a schedule conflict during the selected class time. Please choose another faculty member or select TBA.`);
+      if (selectedTeacherConflict.hasConflict) {
+        setError(`Cannot proceed: ${selectedTeacher?.name || 'Selected teacher'} has a schedule conflict.`);
         return;
       }
     }
@@ -1473,12 +1602,16 @@ export default function AddPlotEntryModalEnhanced({
 
     setSaving(true);
     try {
+      const isCombined = selectedCombinedSections.length > 1;
+      const combinedSecList = isCombined ? selectedCombinedSections : [selectedSection || 'Section 1'];
+
       // Save schedule blocks for each plotted day
       for (const slot of selectedDaySlots) {
         const finalDate = scheduleMode === 'regular' ? dayNames[slot.day] : date;
         const finalDayLabel = scheduleMode === 'regular' ? dayLabels[slot.day] : dayLabel;
 
-        await onSave({
+        const mainPayload = {
+          id: editingEntryId || initial?.id || null,
           date: finalDate,
           day: slot.day,
           dayLabel: finalDayLabel,
@@ -1494,13 +1627,51 @@ export default function AddPlotEntryModalEnhanced({
           buildingId: selectedBuilding?.id || selectedBuilding?.docId,
           buildingName: selectedBuilding?.name,
           section: selectedSection || 'Section 1',
+          partnerSection: partnerSection || null,
+          rotationCycle: rotationCycle || 'all',
+          isCombinedSection: isCombined,
+          combinedSections: combinedSecList,
           yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
           scheduleMode,
           semester,
-        });
+        };
+
+        // If auto-mirror partner is checked and partner is selected for rotation
+        if (autoMirrorPartner && partnerSection && rotationCycle !== 'all') {
+          mainPayload.reciprocalEntry = {
+            date: finalDate,
+            day: slot.day,
+            dayLabel: finalDayLabel,
+            title: selectedCourse.title,
+            courseCode: selectedCourse.code,
+            instructor: selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? selectedTeacher.name : 'TBA',
+            instructorUid: selectedTeacher?.uid || null,
+            instructorEmail: selectedTeacher?.email || null,
+            type: selectedType,
+            startHour: slot.startHour,
+            endHour: slot.endHour,
+            roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
+            buildingId: selectedBuilding?.id || selectedBuilding?.docId,
+            buildingName: selectedBuilding?.name,
+            section: partnerSection,
+            partnerSection: selectedSection,
+            rotationCycle: rotationCycle === 'week_a' ? 'week_b' : 'week_a',
+            yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
+            scheduleMode,
+            semester,
+          };
+          mainPayload.partnerSection = partnerSection;
+        }
+
+        await onSave(mainPayload);
       }
 
-      if (!isEditMode && continueToOther && otherType) {
+      if (isEditMode) {
+        onClose();
+        return;
+      }
+
+      if (!isEditMode && continueToOther && otherType && isOtherTypePending) {
         const justSavedType = selectedType;
         const nextTargetType = otherType;
         setCompletedTypes((prev) => [...prev, justSavedType]);
@@ -1687,6 +1858,69 @@ export default function AddPlotEntryModalEnhanced({
                         Program: <span className="font-black">{programCode || deanSections.find((s) => s.name === selectedSection)?.programCode}</span>
                         {programName ? ` (${programName})` : ''}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Multi-Section Merging / Combination Selector (Scoped to SAME Year Level & Program) */}
+                  {mergeableSections.length > 1 && (
+                    <div className="mt-3 p-3 bg-gray-50/90 rounded-2xl border border-gray-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Users size={13} className="text-[#7A0808]" /> Section Merging in {activeYearLevel} (Capacity Optimization)
+                        </span>
+                        {selectedCombinedSections.length > 1 && (
+                          <span className="text-[10px] font-black uppercase text-purple-800 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200">
+                            Merged ({selectedCombinedSections.length} Sections)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        Merge other {activeYearLevel} sections into this classroom schedule block to maximize room capacity.
+                      </p>
+
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {mergeableSections.map((sec) => {
+                          const isPrimary = sec.name === selectedSection;
+                          const isChecked = selectedCombinedSections.includes(sec.name);
+                          return (
+                            <button
+                              key={sec.name}
+                              type="button"
+                              disabled={isPrimary}
+                              onClick={() => {
+                                if (isPrimary) return;
+                                if (isChecked) {
+                                  setSelectedCombinedSections(selectedCombinedSections.filter((s) => s !== sec.name));
+                                } else {
+                                  setSelectedCombinedSections([...selectedCombinedSections, sec.name]);
+                                }
+                              }}
+                              title={isPrimary ? 'Primary Active Section (Cannot be deselected)' : 'Click to toggle combine/merge'}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all ${
+                                isPrimary
+                                  ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs cursor-default'
+                                  : isChecked
+                                  ? 'bg-purple-700 text-white border-purple-700 shadow-2xs cursor-pointer'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 cursor-pointer'
+                              }`}
+                            >
+                              <span>{sec.name}</span>
+                              {isPrimary ? (
+                                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded font-black uppercase">
+                                  Active
+                                </span>
+                              ) : isChecked ? (
+                                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded font-black uppercase">
+                                  Merged
+                                </span>
+                              ) : null}
+                              <span className={`text-[9px] ${isPrimary || isChecked ? 'text-white/80' : 'text-gray-400'} font-normal`}>
+                                ({sec.studentCount || sec.studentsPerSection || 40} stds)
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2593,6 +2827,95 @@ export default function AddPlotEntryModalEnhanced({
                               </div>
                             </div>
 
+                            {/* OJT Rotation Cycle & Partner Section Pairing Controls */}
+                            <div className="p-3 bg-white border border-red-200/80 rounded-2xl space-y-2.5 shadow-2xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <RefreshCw size={13} className="text-[#7A0808]" />
+                                  <span className="text-[10px] font-black text-gray-800 uppercase tracking-wider">
+                                    OJT Rotational Modality (Week A / Week B)
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRotationCycle('all')}
+                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                      rotationCycle === 'all'
+                                        ? 'bg-white text-gray-900 shadow-2xs border border-gray-200'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                  >
+                                    All Weeks (Regular)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRotationCycle('week_a')}
+                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                      rotationCycle === 'week_a'
+                                        ? 'bg-blue-600 text-white shadow-2xs'
+                                        : 'text-blue-700 hover:bg-blue-50'
+                                    }`}
+                                  >
+                                    🔵 Week A (Odd)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRotationCycle('week_b')}
+                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                      rotationCycle === 'week_b'
+                                        ? 'bg-purple-600 text-white shadow-2xs'
+                                        : 'text-purple-700 hover:bg-purple-50'
+                                    }`}
+                                  >
+                                    🟣 Week B (Even)
+                                  </button>
+                                </div>
+                              </div>
+
+                              {rotationCycle !== 'all' && (
+                                <div className="p-2.5 bg-gradient-to-r from-blue-50/70 to-purple-50/70 border border-blue-200 rounded-xl space-y-2 text-xs">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-gray-800">
+                                      Partner Section for {rotationCycle === 'week_a' ? 'Week B (Reciprocal)' : 'Week A (Reciprocal)'}:
+                                    </span>
+                                    <div className="w-full sm:w-52">
+                                      <CustomSelect
+                                        size="sm"
+                                        value={partnerSection || ''}
+                                        onChange={(e) => setPartnerSection(e.target.value)}
+                                        options={[
+                                          { value: '', label: 'None (Solo Rotation)' },
+                                          ...deanSections
+                                            .filter((s) => s.name !== selectedSection)
+                                            .map((s) => ({
+                                              value: s.name,
+                                              label: `${s.name} (${s.studentCount || 40} stds)`,
+                                            })),
+                                        ]}
+                                        placeholder="Select partner section..."
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {partnerSection && (
+                                    <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-blue-200/60 select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={autoMirrorPartner}
+                                        onChange={(e) => setAutoMirrorPartner(e.target.checked)}
+                                        className="w-3.5 h-3.5 text-[#7A0808] rounded border-gray-300 focus:ring-[#7A0808] cursor-pointer"
+                                      />
+                                      <span className="text-[11px] font-medium text-gray-700">
+                                        <strong className="text-[#7A0808]">1-Click Auto-Mirror:</strong> Automatically schedule reciprocal {rotationCycle === 'week_a' ? 'Week B' : 'Week A'} slot for <strong className="text-gray-900">{partnerSection}</strong> in this room.
+                                      </span>
+                                    </label>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
                             {/* Time Controls: Combined vs Individual */}
                             <div className="pt-2 border-t border-red-200/60">
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -2631,7 +2954,7 @@ export default function AddPlotEntryModalEnhanced({
 
                               {timeMode === 'combined' ? (
                                 /* Combined Mode: Single Start & End Time */
-                                <div className="relative z-30 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-gray-200">
+                                <div className="relative z-[9999] grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-gray-200">
                                   <div>
                                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
                                       Start Time (All Selected Days)
@@ -2678,7 +3001,7 @@ export default function AddPlotEntryModalEnhanced({
                                     return (
                                       <div
                                         key={d}
-                                        style={{ zIndex: 40 - dIdx }}
+                                        style={{ zIndex: 9999 - dIdx }}
                                         className="relative flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-200 text-xs"
                                       >
                                         <span className="font-bold text-gray-900 w-24 truncate">
@@ -2769,12 +3092,14 @@ export default function AddPlotEntryModalEnhanced({
                               sectionName={selectedSection}
                               teacher={selectedTeacher}
                               roomType={selectedRoom.type || selectedRoom.roomType}
+                              rotationCycle={rotationCycle}
                               scheduleMode={scheduleMode}
                               semester={semester}
                               deanUid={deanUid}
                               currentTimeSlots={selectedDaySlots}
                               isEditMode={isEditMode}
-                              ignoreEntryIds={editingEntryId ? [editingEntryId] : []}
+                              ignoreEntryIds={editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : [])}
+                              initialCourse={selectedCourse?.code || initial?.courseCode || initial?.title || ''}
                               onTimeSelect={(clickedDay, startHour, endHour) => {
                                 if (!selectedDays.includes(clickedDay)) {
                                   setSelectedDays([...selectedDays, clickedDay].sort((a, b) => a - b));

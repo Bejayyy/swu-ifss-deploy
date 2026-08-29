@@ -23,18 +23,17 @@ export default function RoomScheduleViewer({
   sectionName = null, // Current Section being scheduled (e.g. 'BSMT1-A1')
   teacher = null, // Current Teacher being scheduled (e.g. { name: 'James Isidro', email: '...' })
   roomType = null,
+  rotationCycle = 'all', // 'all' | 'week_a' | 'week_b'
   scheduleMode = 'regular',
   semester = '1',
   deanUid, // Dean's UID if available
   currentTimeSlot = null, // Single slot: { day, startHour, endHour }
-  currentTimeSlots = null, // Multi-slot array: [ { day, startHour, endHour }, ... ]
+  currentTimeSlots = [], // Multi-slot array: [ { day, startHour, endHour }, ... ]
   isEditMode = false,
-  ignoreCourseCode = null,
-  ignoreSection = null,
-  ignoreType = null,
+  initialCourse = '',
   ignoreEntryIds = [],
-  onTimeSelect, // Callback when user drags to select a time: (day, startHour, endHour) => void
-  onConflictsChange, // Callback when conflicts are detected or cleared: (conflictsList) => void
+  onTimeSelect = null, // Callback when user drags to select a time: (day, startHour, endHour) => void
+  onConflictsChange = null, // Callback when conflicts are detected or cleared: (conflictsList) => void
 }) {
   const [roomEntries, setRoomEntries] = useState([]);
   const [sectionEntries, setSectionEntries] = useState([]);
@@ -137,6 +136,10 @@ export default function RoomScheduleViewer({
         section: entry.section || entry.sectionName || '',
         program: entry.program || entry.programCode || '',
         roomCode: entry.roomCode || roomCode,
+        rotationCycle: entry.rotationCycle || entry.weekCycle || 'all',
+        partnerSection: entry.partnerSection || null,
+        isCombinedSection: entry.isCombinedSection || false,
+        combinedSections: entry.combinedSections || [],
         isSectionOnly: false,
         isTeacherOnly: false,
       });
@@ -163,6 +166,10 @@ export default function RoomScheduleViewer({
         section: entry.section || sectionName,
         program: entry.program || entry.programCode || '',
         roomCode: entry.roomCode || 'Other Room',
+        rotationCycle: entry.rotationCycle || entry.weekCycle || 'all',
+        partnerSection: entry.partnerSection || null,
+        isCombinedSection: entry.isCombinedSection || false,
+        combinedSections: entry.combinedSections || [],
         isSectionOnly: true,
         isTeacherOnly: false,
       });
@@ -189,6 +196,10 @@ export default function RoomScheduleViewer({
           section: entry.section || 'Other Section',
           program: entry.program || entry.programCode || '',
           roomCode: entry.roomCode || 'Other Room',
+          rotationCycle: entry.rotationCycle || entry.weekCycle || 'all',
+          partnerSection: entry.partnerSection || null,
+          isCombinedSection: entry.isCombinedSection || false,
+          combinedSections: entry.combinedSections || [],
           isSectionOnly: false,
           isTeacherOnly: true,
         });
@@ -269,12 +280,24 @@ export default function RoomScheduleViewer({
     const seenConflictKeys = new Set();
 
     const isConflictIgnored = (block) => {
-      // If specific entry IDs are provided (e.g. editingEntryId), ignore ONLY that specific entry
+      // 1. If specific entry IDs are provided (e.g. editingEntryId), ignore that specific entry
       if (ignoreEntryIds && Array.isArray(ignoreEntryIds) && ignoreEntryIds.length > 0) {
         if (ignoreEntryIds.includes(block.originalId) || ignoreEntryIds.includes(block.id)) {
           return true;
         }
       }
+
+      // 2. In edit mode, also ignore the block if it matches the editing course and current section
+      if (isEditMode && initialCourse) {
+        const bCourse = String(block.course || block.title || '').trim().toUpperCase();
+        const initCourse = String(initialCourse || '').trim().toUpperCase();
+        const bSec = String(block.section || '').trim().toUpperCase();
+        const curSec = String(sectionName || '').trim().toUpperCase();
+        if (bCourse === initCourse && (bSec === curSec || (block.combinedSections || []).map(s => String(s).toUpperCase()).includes(curSec))) {
+          return true;
+        }
+      }
+
       return false;
     };
 
@@ -286,6 +309,18 @@ export default function RoomScheduleViewer({
         // Check time overlap: (start1 < end2) AND (start2 < end1)
         if (block.start < slot.endHour && block.end > slot.startHour) {
           const conflictType = block.isTeacherOnly ? 'teacher' : block.isSectionOnly ? 'section' : 'room';
+          
+          // Rotation Cycle awareness: Opposite rotation cycles (Week A vs Week B) DO NOT conflict for room occupancy
+          const currentCycle = String(rotationCycle || 'all').toLowerCase().trim();
+          const blockCycle = String(block.rotationCycle || block.weekCycle || 'all').toLowerCase().trim();
+          const isOppositeRotation =
+            (currentCycle === 'week_a' && blockCycle === 'week_b') ||
+            (currentCycle === 'week_b' && blockCycle === 'week_a');
+
+          if (conflictType === 'room' && isOppositeRotation) {
+            return; // Room is occupied by opposite week partner, so it is free during our week!
+          }
+
           const key = `${conflictType}-${block.originalId || block.id}-${slot.day}`;
           if (seenConflictKeys.has(key)) return;
           seenConflictKeys.add(key);
@@ -312,7 +347,7 @@ export default function RoomScheduleViewer({
       });
     });
     return result;
-  }, [effectiveTimeSlots, blocks, roomCode, sectionName, cleanTeacherName, isEditMode, ignoreCourseCode, ignoreSection, ignoreType, ignoreEntryIds]);
+  }, [effectiveTimeSlots, blocks, roomCode, sectionName, cleanTeacherName, isEditMode, initialCourse, rotationCycle, ignoreEntryIds]);
 
   // Propagate conflicts to parent
   useEffect(() => {

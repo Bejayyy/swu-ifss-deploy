@@ -90,6 +90,43 @@ export function subscribeAllCourses(onData, onError) {
 }
 
 /**
+ * Subscribe to courses assigned to a specific college as a SERVICE college
+ */
+export function subscribeServiceCollegeCourses(serviceCollegeCode, onData, onError) {
+  if (!serviceCollegeCode) {
+    onData([]);
+    return () => {};
+  }
+
+  const q = query(collection(db, COURSES_COLLECTION));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const allCourses = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const serviceCourses = allCourses.filter((c) => {
+        const lecSvc = c.lecServiceCollege || '';
+        const labSvc = c.labServiceCollege || '';
+        return (
+          (lecSvc && (isCollegeMatch(serviceCollegeCode, lecSvc) || String(serviceCollegeCode).toUpperCase() === String(lecSvc).toUpperCase())) ||
+          (labSvc && (isCollegeMatch(serviceCollegeCode, labSvc) || String(serviceCollegeCode).toUpperCase() === String(labSvc).toUpperCase()))
+        );
+      });
+
+      onData(serviceCourses);
+    },
+    (err) => {
+      console.error('subscribeServiceCollegeCourses error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
  * Add a new course
  */
 export async function addCourse(courseData) {
@@ -124,6 +161,10 @@ export async function addCourse(courseData) {
     totalHours: Number(totalHours) || 0,
     collegeCode: (courseData.collegeCode || '').trim().toUpperCase(),
     programCode: (courseData.programCode || '').trim().toUpperCase(),
+    requiresServiceCollege: Boolean(courseData.requiresServiceCollege),
+    lecServiceCollege: courseData.lecServiceCollege ? (courseData.lecServiceCollege).trim().toUpperCase() : null,
+    labServiceCollege: courseData.labServiceCollege ? (courseData.labServiceCollege).trim().toUpperCase() : null,
+    serviceStatus: courseData.serviceStatus || 'pending',
     assignedTeacherUid: courseData.assignedTeacherUid || null,
     assignedTeacherName: courseData.assignedTeacherName || null,
     assignedTeacherEmail: courseData.assignedTeacherEmail || null,
@@ -158,6 +199,10 @@ export async function updateCourse(courseId, updates) {
   if (updates.yearLevel) cleanUpdates.yearLevel = updates.yearLevel;
   if (updates.collegeCode) cleanUpdates.collegeCode = updates.collegeCode.trim().toUpperCase();
   if (updates.programCode) cleanUpdates.programCode = updates.programCode.trim().toUpperCase();
+  if (updates.requiresServiceCollege !== undefined) cleanUpdates.requiresServiceCollege = Boolean(updates.requiresServiceCollege);
+  if (updates.lecServiceCollege !== undefined) cleanUpdates.lecServiceCollege = updates.lecServiceCollege ? String(updates.lecServiceCollege).trim().toUpperCase() : null;
+  if (updates.labServiceCollege !== undefined) cleanUpdates.labServiceCollege = updates.labServiceCollege ? String(updates.labServiceCollege).trim().toUpperCase() : null;
+  if (updates.serviceStatus !== undefined) cleanUpdates.serviceStatus = updates.serviceStatus;
 
   await updateDoc(docRef, cleanUpdates);
 }
