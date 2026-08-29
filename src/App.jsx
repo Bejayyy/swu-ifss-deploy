@@ -8,6 +8,7 @@ import { DeveloperRoute, PasswordSetupRoute, PublicOnlyRoute, RegistrarRoute } f
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import DeveloperDashboard from './pages/developer/DeveloperDashboard';
+import DeveloperSystemRecords from './pages/developer/DeveloperSystemRecords';
 import PasswordSetup from './pages/PasswordSetup';
 import Dashboard from './pages/Dashboard';
 import ApprovalManagement from './pages/ApprovalManagement';
@@ -76,6 +77,14 @@ export default function App() {
               element={
                 <DeveloperRoute>
                   <DeveloperDashboard />
+                </DeveloperRoute>
+              }
+            />
+            <Route
+              path="/developer/records"
+              element={
+                <DeveloperRoute>
+                  <DeveloperSystemRecords />
                 </DeveloperRoute>
               }
             />

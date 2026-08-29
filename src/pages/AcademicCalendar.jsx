@@ -16,6 +16,7 @@ import {
   formatDisplayDate,
   formatExamRange,
   normalizeExamPeriods,
+  normalizeSchoolYearLabel,
 } from '../utils/academicCalendarUtils';
 
 export default function AcademicCalendar() {
@@ -95,7 +96,7 @@ export default function AcademicCalendar() {
                   onChange={(e) => setActiveSchoolYearId(e.target.value || null)}
                   options={schoolYears.map((sy) => ({
                     value: sy.id,
-                    label: sy.displayLabel || `SY ${sy.label}`,
+                    label: `SY ${normalizeSchoolYearLabel(sy.label || sy.displayLabel || sy.id)}`,
                   }))}
                   placeholder="School Year"
                 />

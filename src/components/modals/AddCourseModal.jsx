@@ -456,7 +456,8 @@ export default function AddCourseModal({
                   <input
                     type="text"
                     value={individualForm.title}
-                    onChange={(e) => setIndividualForm({ ...individualForm, title: toTitleCase(e.target.value) })}
+                    onChange={(e) => setIndividualForm({ ...individualForm, title: e.target.value })}
+                    onBlur={(e) => setIndividualForm({ ...individualForm, title: toTitleCase(e.target.value.trim()) })}
                     placeholder="e.g., Introduction to Programming"
                     className="form-input w-full font-bold"
                     required

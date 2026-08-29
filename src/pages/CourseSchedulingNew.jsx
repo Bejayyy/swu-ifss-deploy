@@ -27,6 +27,7 @@ import {
   getExamDatesForPeriod,
   getSemesterWeekNumber,
   isScheduleActiveOnWeek,
+  normalizeSchoolYearLabel,
 } from '../utils/academicCalendarUtils';
 import {
   subscribePlotEntriesForDeanSection,
@@ -616,7 +617,7 @@ export default function CourseSchedulingNew() {
   const schoolYearOptions = useMemo(
     () => schoolYears.map((sy) => ({
       value: sy.id,
-      label: sy.displayLabel || `SY ${sy.label}`,
+      label: `SY ${normalizeSchoolYearLabel(sy.label || sy.displayLabel || sy.id)}`,
     })),
     [schoolYears]
   );

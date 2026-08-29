@@ -28,6 +28,7 @@ import {
   hourToTimeInput as gridHourToTimeInput,
   clampScheduleHours,
 } from '../constants/scheduleGrid';
+import { normalizeSchoolYearLabel } from '../utils/academicCalendarUtils';
 
 function plotRef(id) {
   return doc(db, COLLECTIONS.SCHEDULE_PLOT_REQUESTS, id);
@@ -399,16 +400,34 @@ function deanSectionEntriesRef(deanUid, section) {
 
 function matchSchoolYear(entry, schoolYearId) {
   if (!schoolYearId) return true;
+  const targetCanonical = normalizeSchoolYearLabel(schoolYearId);
+  const cleanTargetSy = targetCanonical.replace(/[\s_-]+/g, '').toLowerCase();
+
   if (entry.schoolYearId) {
-    return entry.schoolYearId === schoolYearId;
+    const entryIdCanonical = normalizeSchoolYearLabel(entry.schoolYearId);
+    if (entry.schoolYearId === schoolYearId || entryIdCanonical === targetCanonical) return true;
   }
-  if (entry.schoolYear) {
-    const cleanEntrySy = String(entry.schoolYear).replace(/^sy\s+/i, '').replace(/[\s_-]+/g, '').toLowerCase();
-    const cleanTargetSy = String(schoolYearId).replace(/^sy_/i, '').replace(/^sy\s+/i, '').replace(/[\s_-]+/g, '').toLowerCase();
-    return cleanEntrySy === cleanTargetSy || cleanTargetSy.includes(cleanEntrySy);
+  if (entry.schoolYear || entry.schoolYearLabel || entry.academicYear || entry.sy) {
+    const raw = entry.schoolYear || entry.schoolYearLabel || entry.academicYear || entry.sy;
+    const cleanEntrySy = normalizeSchoolYearLabel(raw).replace(/[\s_-]+/g, '').toLowerCase();
+    return cleanEntrySy === cleanTargetSy || cleanTargetSy.includes(cleanEntrySy) || cleanEntrySy.includes(cleanTargetSy);
   }
   // Legacy entries without schoolYear field belong to original 2026-2027 school year
-  return schoolYearId.includes('2026') || schoolYearId === 'sy_2026-2027';
+  return targetCanonical === '2026-2027' || schoolYearId.includes('2026') || schoolYearId === 'sy_2026-2027';
+}
+
+function matchSemesterHelper(entrySem, targetSem) {
+  if (!targetSem || entrySem === undefined || entrySem === null) return true;
+  const s1 = String(entrySem).toLowerCase().trim();
+  const s2 = String(targetSem).toLowerCase().trim();
+  if (s1 === s2) return true;
+  const is1st = (s) => s === '1' || s.includes('1st') || s.includes('first');
+  const is2nd = (s) => s === '2' || s.includes('2nd') || s.includes('second');
+  const isSum = (s) => s === '3' || s.includes('summer') || s.includes('midyear');
+  if (is1st(s1) && is1st(s2)) return true;
+  if (is2nd(s1) && is2nd(s2)) return true;
+  if (isSum(s1) && isSum(s2)) return true;
+  return false;
 }
 
 /**
@@ -1012,10 +1031,8 @@ export function subscribePlotEntriesForRoom(
         }
 
         // Match semester if specified
-        if (semester && e.semester !== undefined && e.semester !== null) {
-          if (String(e.semester) !== String(semester)) {
-            return false;
-          }
+        if (!matchSemesterHelper(e.semester, semester)) {
+          return false;
         }
 
         // Match scheduleMode if specified
@@ -1100,10 +1117,8 @@ export function subscribePlotEntriesForRoomAndSection(
         if (!matchSchoolYear(e, schoolYearId)) {
           return false;
         }
-        if (semester && e.semester !== undefined && e.semester !== null) {
-          if (String(e.semester) !== String(semester)) {
-            return false;
-          }
+        if (!matchSemesterHelper(e.semester, semester)) {
+          return false;
         }
         if (scheduleMode) {
           const entryMode = e.scheduleMode || 'regular';
@@ -1281,9 +1296,7 @@ export function subscribeAllSemesterPlotEntries(
 
       const relevantDocs = allDocs.filter((e) => {
         if (!matchSchoolYear(e, schoolYearId)) return false;
-        if (semester && e.semester !== undefined && e.semester !== null) {
-          if (String(e.semester) !== String(semester)) return false;
-        }
+        if (!matchSemesterHelper(e.semester, semester)) return false;
         if (scheduleMode) {
           const entryMode = e.scheduleMode || 'regular';
           if (entryMode !== scheduleMode) return false;

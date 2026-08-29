@@ -254,11 +254,19 @@ function sanitizeAndCrossCheckExamPeriods(parsedData, targetSchoolYear = '2026-2
   return parsedData;
 }
 
-/**
- * Enriches parsed calendar data by ensuring exam table rows are in the events array
- */
 function enrichParsedCalendarData(parsedData, targetSchoolYear = '2026-2027') {
   if (!parsedData) return parsedData;
+
+  // Normalize schoolYear to canonical format (e.g. "2027-2028", never "AY 2027-2028")
+  if (parsedData.schoolYear) {
+    const raw = String(parsedData.schoolYear).trim();
+    const match = raw.match(/(\d{4})\s*[-/–—]\s*(\d{4})/);
+    if (match) {
+      parsedData.schoolYear = `${match[1]}-${match[2]}`;
+    } else {
+      parsedData.schoolYear = raw.replace(/^(?:sy\s+ay|ay\s+sy|sy|ay|a\.y\.|academic\s*year)\s+/i, '').trim();
+    }
+  }
 
   // First sanitize and normalize exam periods
   sanitizeAndCrossCheckExamPeriods(parsedData, targetSchoolYear);

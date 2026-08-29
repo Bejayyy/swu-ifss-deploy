@@ -86,37 +86,17 @@ export default function ModernCalendarView({
           const raw = data?.examPeriods;
           if (raw && !examPeriods) setInternalExamPeriods(normalizeExamPeriods(raw));
 
-          const sem1Start = data?.semesters?.[0]?.start || data?.semester1Start;
-          const semEnd = data?.semesters?.[data.semesters.length - 1]?.end || data?.semester2End;
+          // Always default to today's exact date, month, and year
           const now = new Date();
-          const nowKey = toDateKey(now);
-
-          // If today's date falls within this school year or is the current calendar year, keep today selected
-          const syLabel = String(data?.label || schoolYearLabel || '');
-          const currentYear = now.getFullYear();
-          const isCurrentSY =
-            syLabel.includes(String(currentYear)) ||
-            (sem1Start && semEnd && nowKey >= sem1Start && nowKey <= semEnd) ||
-            !sem1Start;
-
-          if (isCurrentSY) {
-            setSelectedYear(now.getFullYear());
-            setSelectedMonth(now.getMonth());
-            setSelectedDate(now);
-          } else if (sem1Start) {
-            const d = new Date(sem1Start);
-            if (!isNaN(d.getTime())) {
-              setSelectedYear(d.getFullYear());
-              setSelectedMonth(d.getMonth());
-              setSelectedDate(d);
-            }
-          }
+          setSelectedYear(now.getFullYear());
+          setSelectedMonth(now.getMonth());
+          setSelectedDate(now);
         }
       },
       (err) => console.error('Error fetching calendar config in view:', err)
     );
     return () => unsub();
-  }, [schoolYearId, examPeriods, schoolYearLabel]);
+  }, [schoolYearId, examPeriods]);
 
   // Subscribe to real-time events for this school year
   useEffect(() => {

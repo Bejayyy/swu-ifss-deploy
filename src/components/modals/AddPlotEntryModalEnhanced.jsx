@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   ChevronRight,
@@ -911,6 +911,216 @@ export default function AddPlotEntryModalEnhanced({
     return Boolean(otherType && !completedTypes.includes(otherType));
   }, [otherType, completedTypes]);
 
+  // Helper to parse day from entry
+  const parseDayIndex = (d, dateStr, dayLabelStr) => {
+    if (typeof d === 'number' && d >= 0 && d <= 6) return d;
+    const str = String(d || dateStr || dayLabelStr || '').trim().toUpperCase();
+    const idx = SCHEDULE_DAYS.findIndex((dayName) => str.includes(dayName) || dayName.includes(str));
+    return idx >= 0 ? idx : 0;
+  };
+
+  // Compute occupied intervals per day (0-6) for selected room, section, and teacher
+  const occupiedIntervalsByDay = useMemo(() => {
+    const map = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    if (!allSemesterEntries || allSemesterEntries.length === 0) return map;
+
+    const rCodeNorm = selectedRoom?.roomCode ? String(selectedRoom.roomCode).replace(/[\s\-_]/g, '').toUpperCase() : '';
+    const secNorm = selectedSection ? String(selectedSection).trim().toUpperCase() : '';
+    const tName = selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? String(selectedTeacher.name).trim().toLowerCase() : '';
+    const tEmail = selectedTeacher?.email ? String(selectedTeacher.email).trim().toLowerCase() : '';
+
+    allSemesterEntries.forEach((entry) => {
+      if (editingEntryId && (entry.id === editingEntryId || entry.originalId === editingEntryId)) return;
+
+      const eDay = typeof entry.day === 'number' && entry.day >= 0 && entry.day <= 6
+        ? entry.day
+        : parseDayIndex(entry.day, entry.date, entry.dayLabel);
+      if (eDay < 0 || eDay > 6) return;
+
+      const sHour = Number(entry.startHour) || 0;
+      const eHour = Number(entry.endHour) || 0;
+      if (eHour <= sHour) return;
+
+      let isOccupied = false;
+      let reason = '';
+
+      // 1. Room is occupied
+      if (rCodeNorm) {
+        const entryRoomNorm = String(entry.roomCode || entry.room || '').replace(/[\s\-_]/g, '').toUpperCase();
+        if (entryRoomNorm === rCodeNorm) {
+          isOccupied = true;
+          reason = `Room ${selectedRoom.roomCode} Occupied (${entry.courseCode || entry.title || 'Class'})`;
+        }
+      }
+
+      // 2. Section is occupied
+      if (!isOccupied && secNorm) {
+        const entrySec = String(entry.section || entry.sectionName || '').trim().toUpperCase();
+        if (entrySec === secNorm) {
+          isOccupied = true;
+          reason = `Section ${selectedSection} in Class (${entry.courseCode || entry.title || 'Class'})`;
+        }
+      }
+
+      // 3. Teacher is occupied
+      if (!isOccupied && (tName || tEmail)) {
+        const inst = String(entry.instructor || '').trim().toLowerCase();
+        const instEmail = String(entry.instructorEmail || '').trim().toLowerCase();
+        if (
+          (tName && (inst === tName || inst.includes(tName) || tName.includes(inst))) ||
+          (tEmail && instEmail === tEmail)
+        ) {
+          isOccupied = true;
+          reason = `Teacher ${selectedTeacher.name} Busy (${entry.courseCode || entry.title || 'Class'})`;
+        }
+      }
+
+      if (isOccupied) {
+        map[eDay].push({
+          startHour: sHour,
+          endHour: eHour,
+          reason,
+        });
+      }
+    });
+
+    return map;
+  }, [allSemesterEntries, selectedRoom, selectedSection, selectedTeacher, editingEntryId]);
+
+  // Generates start time dropdown options with occupied slots disabled
+  const getStartTimeOptions = useCallback((daysToCheck) => {
+    const days = daysToCheck && daysToCheck.length > 0 ? daysToCheck : [];
+    const totalSlots = (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2;
+
+    return Array.from({ length: totalSlots }, (_, i) => {
+      const h = SCHEDULE_START_HOUR + i * 0.5;
+      const val = hourToTimeInput(h);
+      const label = formatScheduleHour(h);
+
+      if (days.length === 0 || !selectedRoom) {
+        return { value: val, label, disabled: false };
+      }
+
+      let isOccupied = false;
+      for (const d of days) {
+        const intervals = occupiedIntervalsByDay[d] || [];
+        for (const occ of intervals) {
+          if (h >= occ.startHour && h < occ.endHour) {
+            isOccupied = true;
+            break;
+          }
+          if (Math.max(h, occ.startHour) < Math.min(h + 0.5, occ.endHour)) {
+            isOccupied = true;
+            break;
+          }
+        }
+        if (isOccupied) break;
+      }
+
+      return {
+        value: val,
+        label,
+        disabled: isOccupied,
+      };
+    });
+  }, [selectedRoom, occupiedIntervalsByDay]);
+
+  // Generates end time dropdown options with occupied/conflict slots disabled
+  const getEndTimeOptions = useCallback((daysToCheck, currentStartTimeVal) => {
+    const days = daysToCheck && daysToCheck.length > 0 ? daysToCheck : [];
+    const sHour = currentStartTimeVal ? parseTimeToHour(currentStartTimeVal) : SCHEDULE_START_HOUR;
+    const totalSlots = (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2;
+
+    return Array.from({ length: totalSlots }, (_, i) => {
+      const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
+      const val = hourToTimeInput(h);
+      const label = formatScheduleHour(h);
+
+      if (h <= sHour) {
+        return { value: val, label, disabled: true };
+      }
+
+      if (days.length === 0 || !selectedRoom) {
+        return { value: val, label, disabled: false };
+      }
+
+      let hasConflict = false;
+      for (const d of days) {
+        const intervals = occupiedIntervalsByDay[d] || [];
+        for (const occ of intervals) {
+          if (Math.max(sHour, occ.startHour) < Math.min(h, occ.endHour)) {
+            hasConflict = true;
+            break;
+          }
+        }
+        if (hasConflict) break;
+      }
+
+      return {
+        value: val,
+        label,
+        disabled: hasConflict,
+      };
+    });
+  }, [selectedRoom, occupiedIntervalsByDay]);
+
+  // Auto-adjust start & end times when room, days, or occupied intervals change so current selection doesn't sit on an occupied slot
+  useEffect(() => {
+    if (!selectedRoom || !selectedDays || selectedDays.length === 0) return;
+
+    if (timeMode === 'combined') {
+      const startOpts = getStartTimeOptions(selectedDays);
+      const currentStartOpt = startOpts.find((o) => o.value === combinedStartTime);
+      
+      // If current start time is occupied/disabled, switch to first available start time
+      if (!currentStartOpt || currentStartOpt.disabled) {
+        const firstAvailable = startOpts.find((o) => !o.disabled);
+        if (firstAvailable) {
+          setCombinedStartTime(firstAvailable.value);
+          const sH = parseTimeToHour(firstAvailable.value);
+          const endOpts = getEndTimeOptions(selectedDays, firstAvailable.value);
+          const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
+          if (firstValidEnd) {
+            setCombinedEndTime(firstValidEnd.value);
+          }
+        }
+      } else {
+        // If start time is ok, verify end time is not disabled
+        const endOpts = getEndTimeOptions(selectedDays, combinedStartTime);
+        const currentEndOpt = endOpts.find((o) => o.value === combinedEndTime);
+        if (!currentEndOpt || currentEndOpt.disabled) {
+          const sH = parseTimeToHour(combinedStartTime);
+          const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
+          if (firstValidEnd) {
+            setCombinedEndTime(firstValidEnd.value);
+          }
+        }
+      }
+    } else {
+      // Individual mode: check each day
+      selectedDays.forEach((d) => {
+        const dStart = dayTimes[d]?.startTime || combinedStartTime;
+        const startOpts = getStartTimeOptions([d]);
+        const currentStartOpt = startOpts.find((o) => o.value === dStart);
+        if (!currentStartOpt || currentStartOpt.disabled) {
+          const firstAvailable = startOpts.find((o) => !o.disabled);
+          if (firstAvailable) {
+            const sH = parseTimeToHour(firstAvailable.value);
+            const endOpts = getEndTimeOptions([d], firstAvailable.value);
+            const firstValidEnd = endOpts.find((o) => !o.disabled && parseTimeToHour(o.value) > sH);
+            setDayTimes((prev) => ({
+              ...prev,
+              [d]: {
+                startTime: firstAvailable.value,
+                endTime: firstValidEnd ? firstValidEnd.value : hourToTimeInput(sH + 1.5),
+              },
+            }));
+          }
+        }
+      });
+    }
+  }, [selectedRoom, selectedDays, occupiedIntervalsByDay, timeMode, getStartTimeOptions, getEndTimeOptions]);
+
   const hoursStatus = useMemo(() => {
     if (selectedDaySlots.length === 0) {
       return {
@@ -937,14 +1147,14 @@ export default function AddPlotEntryModalEnhanced({
         type: 'exceed',
         message: `⚠️ Overlapping / Exceeding Time: Plotted time (${roundedPlotted} hrs) exceeds the required ${roundedTarget} hrs/week for this course by ${diff} hr(s). Please adjust the duration or verify intentional overlap.`,
         badge: `⚠️ +${diff} hrs Over`,
-        color: 'amber',
+        color: 'red',
       };
     } else {
       return {
         type: 'lack',
         message: `⚠️ Lacking Time: Plotted time (${roundedPlotted} hrs) is lacking/less than the required ${roundedTarget} hrs/week (${diff} hr(s) remaining needed).`,
         badge: `⚠️ -${diff} hrs Lacking`,
-        color: 'rose',
+        color: 'red',
       };
     }
   }, [selectedDaySlots, totalPlottedHours, targetHours, selectedCourse, selectedType]);
@@ -1926,7 +2136,7 @@ export default function AddPlotEntryModalEnhanced({
                                 </span>
                               )}
                               {teacherStatus.hasConflict ? (
-                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300">
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white border border-red-700 shadow-2xs">
                                   ⚠️ Has Conflict
                                 </span>
                               ) : selectedDaySlots.length > 0 ? (
@@ -2309,7 +2519,15 @@ export default function AddPlotEntryModalEnhanced({
 
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-bold text-gray-700">Plotted Total:</span>
-                                <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-[#7A0808] text-white shadow-2xs">
+                                <span
+                                  className={`text-xs font-black px-2.5 py-0.5 rounded-md shadow-2xs ${
+                                    totalPlottedHours === targetHours
+                                      ? 'bg-emerald-600 text-white'
+                                      : totalPlottedHours > 0
+                                      ? 'bg-red-600 text-white'
+                                      : 'bg-[#7A0808] text-white'
+                                  }`}
+                                >
                                   {totalPlottedHours} hrs
                                 </span>
                               </div>
@@ -2425,21 +2643,13 @@ export default function AddPlotEntryModalEnhanced({
                                         const val = e.target.value;
                                         setCombinedStartTime(val);
                                         const sHour = parseTimeToHour(val);
-                                        const eHour = parseTimeToHour(combinedEndTime);
-                                        if (!combinedEndTime || eHour <= sHour) {
-                                          setCombinedEndTime(hourToTimeInput(sHour + 1.5));
+                                        const endOpts = getEndTimeOptions(selectedDays, val);
+                                        const firstValidEnd = endOpts.find((opt) => !opt.disabled && parseTimeToHour(opt.value) > sHour);
+                                        if (!combinedEndTime || parseTimeToHour(combinedEndTime) <= sHour || endOpts.find(o => o.value === combinedEndTime)?.disabled) {
+                                          setCombinedEndTime(firstValidEnd ? firstValidEnd.value : hourToTimeInput(sHour + 1.5));
                                         }
                                       }}
-                                      options={Array.from(
-                                        { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
-                                        (_, i) => {
-                                          const h = SCHEDULE_START_HOUR + i * 0.5;
-                                          return {
-                                            value: hourToTimeInput(h),
-                                            label: formatScheduleHour(h),
-                                          };
-                                        }
-                                      )}
+                                      options={getStartTimeOptions(selectedDays)}
                                       placeholder="Select start time..."
                                     />
                                   </div>
@@ -2452,16 +2662,7 @@ export default function AddPlotEntryModalEnhanced({
                                       size="sm"
                                       value={combinedEndTime || ''}
                                       onChange={(e) => setCombinedEndTime(e.target.value)}
-                                      options={Array.from(
-                                        { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
-                                        (_, i) => {
-                                          const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
-                                          return {
-                                            value: hourToTimeInput(h),
-                                            label: formatScheduleHour(h),
-                                          };
-                                        }
-                                      )}
+                                      options={getEndTimeOptions(selectedDays, combinedStartTime)}
                                       placeholder="Select end time..."
                                     />
                                   </div>
@@ -2491,23 +2692,17 @@ export default function AddPlotEntryModalEnhanced({
                                             onChange={(e) => {
                                               const newStart = e.target.value;
                                               const sH = parseTimeToHour(newStart);
-                                              const eH = parseTimeToHour(dEnd);
-                                              const newEnd = !dEnd || eH <= sH ? hourToTimeInput(sH + 1.5) : dEnd;
+                                              const endOpts = getEndTimeOptions([d], newStart);
+                                              const firstValidEnd = endOpts.find((opt) => !opt.disabled && parseTimeToHour(opt.value) > sH);
+                                              const newEnd = !dEnd || parseTimeToHour(dEnd) <= sH || endOpts.find(o => o.value === dEnd)?.disabled
+                                                ? (firstValidEnd ? firstValidEnd.value : hourToTimeInput(sH + 1.5))
+                                                : dEnd;
                                               setDayTimes((prev) => ({
                                                 ...prev,
                                                 [d]: { startTime: newStart, endTime: newEnd },
                                               }));
                                             }}
-                                            options={Array.from(
-                                              { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
-                                              (_, i) => {
-                                                const h = SCHEDULE_START_HOUR + i * 0.5;
-                                                return {
-                                                  value: hourToTimeInput(h),
-                                                  label: formatScheduleHour(h),
-                                                };
-                                              }
-                                            )}
+                                            options={getStartTimeOptions([d])}
                                             placeholder="Start time..."
                                           />
                                         </div>
@@ -2525,16 +2720,7 @@ export default function AddPlotEntryModalEnhanced({
                                                 [d]: { startTime: dStart, endTime: newEnd },
                                               }));
                                             }}
-                                            options={Array.from(
-                                              { length: (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2 },
-                                              (_, i) => {
-                                                const h = SCHEDULE_START_HOUR + (i + 1) * 0.5;
-                                                return {
-                                                  value: hourToTimeInput(h),
-                                                  label: formatScheduleHour(h),
-                                                };
-                                              }
-                                            )}
+                                            options={getEndTimeOptions([d], dStart)}
                                             placeholder="End time..."
                                           />
                                         </div>
@@ -2551,28 +2737,24 @@ export default function AddPlotEntryModalEnhanced({
 
                             {/* Required Unit Hours Notification Banner */}
                             <div
-                              className={`p-2.5 rounded-xl border flex items-start justify-between gap-2 transition-all ${
+                              className={`p-2.5 rounded-xl border-2 flex items-start justify-between gap-2 transition-all shadow-xs ${
                                 hoursStatus.type === 'match'
                                   ? 'bg-emerald-50/90 border-emerald-300 text-emerald-900'
-                                  : hoursStatus.type === 'exceed'
-                                  ? 'bg-amber-50/90 border-amber-300 text-amber-900'
                                   : hoursStatus.type === 'empty'
                                   ? 'bg-gray-50 border-gray-300 text-gray-700'
-                                  : 'bg-rose-50/90 border-rose-300 text-rose-900'
+                                  : 'bg-red-50/95 border-red-500 text-red-950 font-medium'
                               }`}
                             >
-                              <p className="text-xs font-semibold leading-relaxed">
+                              <p className="text-xs font-bold leading-relaxed">
                                 {hoursStatus.message}
                               </p>
                               <span
                                 className={`text-[10px] font-black px-2 py-0.5 rounded-md flex-shrink-0 ${
                                   hoursStatus.type === 'match'
                                     ? 'bg-emerald-600 text-white'
-                                    : hoursStatus.type === 'exceed'
-                                    ? 'bg-amber-600 text-white'
                                     : hoursStatus.type === 'empty'
                                     ? 'bg-gray-500 text-white'
-                                    : 'bg-rose-600 text-white'
+                                    : 'bg-red-600 text-white'
                                 }`}
                               >
                                 {hoursStatus.badge}

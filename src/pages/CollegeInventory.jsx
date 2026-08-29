@@ -80,6 +80,7 @@ export default function CollegeInventory() {
   const [selectedSectionProgram, setSelectedSectionProgram] = useState(null); // { code, name }
   const [programSectionRows, setProgramSectionRows] = useState([]); // from Firestore
   const [sectionDraftCounts, setSectionDraftCounts] = useState({}); // yearNumber -> count (draft)
+  const [sectionDraftCapacities, setSectionDraftCapacities] = useState({}); // yearNumber -> capacity (draft)
   const [savingSectionYear, setSavingSectionYear] = useState(null); // yearNumber being saved
   const [extraYears, setExtraYears] = useState([]); // additional years beyond 4 added by registrar
 
@@ -279,13 +280,21 @@ export default function CollegeInventory() {
       selectedSectionProgram.code,
       (rows) => {
         setProgramSectionRows(rows);
-        // Sync draft counts from Firestore (don't overwrite user's in-progress edits)
+        // Sync draft counts and capacities from Firestore (don't overwrite user's in-progress edits)
         setSectionDraftCounts((prev) => {
           const next = { ...prev };
           rows.forEach((r) => {
-            // Only set if not already in draft (don't overwrite user edits)
             if (next[r.yearNumber] === undefined) {
               next[r.yearNumber] = r.sectionCount;
+            }
+          });
+          return next;
+        });
+        setSectionDraftCapacities((prev) => {
+          const next = { ...prev };
+          rows.forEach((r) => {
+            if (next[r.yearNumber] === undefined) {
+              next[r.yearNumber] = r.studentsPerSection || r.studentCapacity || '40';
             }
           });
           return next;
@@ -304,17 +313,19 @@ export default function CollegeInventory() {
     );
   }, [selectedSectionProgram]);
 
-  // Save section count for a specific year
+  // Save section count & student capacity for a specific year
   const handleSaveSectionYear = useCallback(async (yearNumber) => {
     if (!selectedSectionProgram || !viewingCollegeCourses) return;
     const count = Number(sectionDraftCounts[yearNumber]) || 0;
+    const capacity = Number(sectionDraftCapacities[yearNumber]) || 40;
     setSavingSectionYear(yearNumber);
     try {
       await upsertProgramYearSections(
         viewingCollegeCourses.code,
         selectedSectionProgram.code,
         yearNumber,
-        count
+        count,
+        capacity
       );
       setNotification({
         type: 'success',
@@ -326,7 +337,7 @@ export default function CollegeInventory() {
     } finally {
       setSavingSectionYear(null);
     }
-  }, [selectedSectionProgram, viewingCollegeCourses, sectionDraftCounts]);
+  }, [selectedSectionProgram, viewingCollegeCourses, sectionDraftCounts, sectionDraftCapacities]);
 
   const handleAddCourse = () => {
     setEditingCourse(null);
@@ -1110,6 +1121,9 @@ export default function CollegeInventory() {
                           : [];
                         const isSaving = savingSectionYear === yearNum;
 
+                        const rawDraftCap = sectionDraftCapacities[yearNum];
+                        const capVal = rawDraftCap !== undefined ? rawDraftCap : (savedRow?.studentsPerSection || savedRow?.studentCapacity !== undefined ? String(savedRow?.studentsPerSection || savedRow?.studentCapacity) : '40');
+
                         return (
                           <div
                             key={yearNum}
@@ -1140,15 +1154,35 @@ export default function CollegeInventory() {
                               />
                             </div>
 
+                            {/* Students per section input */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600">Students/Sec:</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={capVal}
+                                onChange={(e) => {
+                                  const clean = e.target.value.replace(/[^0-9]/g, '');
+                                  setSectionDraftCapacities((prev) => ({
+                                    ...prev,
+                                    [yearNum]: clean,
+                                  }));
+                                }}
+                                className="w-16 text-center text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#7A0808] focus:border-[#7A0808] font-bold"
+                                placeholder="40"
+                              />
+                            </div>
+
                             {/* Section name preview chips */}
                             <div className="flex-1 flex flex-wrap gap-1 min-w-0">
                               {preview.length > 0 ? (
                                 preview.map((name) => (
                                   <span
                                     key={name}
-                                    className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold"
+                                    className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
                                   >
-                                    {name}
+                                    <span>{name}</span>
+                                    <span className="text-[9px] text-[#7A0808]/70 font-normal">({capVal || 40} stds)</span>
                                   </span>
                                 ))
                               ) : (

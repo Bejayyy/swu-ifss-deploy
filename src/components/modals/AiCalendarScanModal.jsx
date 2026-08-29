@@ -25,6 +25,7 @@ import {
   applyAiParsedCalendar,
   findExistingSchoolYearByLabel,
   getSchoolYearDataSummary,
+  buildSchoolYearId,
 } from '../../services/academicCalendarService';
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
 import ConfirmModal from './ConfirmModal';
@@ -138,49 +139,54 @@ export default function AiCalendarScanModal({
     setError('');
 
     try {
-      // Check if target school year already exists and has data
-      const targetLabel = parsedResult.schoolYear || schoolYearLabel;
-      let targetId = schoolYearId;
-      if (!targetId) {
-        const found = await findExistingSchoolYearByLabel(targetLabel);
-        if (found) targetId = found.id;
-      }
+      // 1. Determine target School Year from the parsed result
+      const parsedSyRaw = parsedResult.schoolYear ? String(parsedResult.schoolYear).replace(/^sy\s+/i, '').trim() : '';
+      const targetLabel = parsedSyRaw || schoolYearLabel || '2026-2027';
 
-      if (targetId) {
-        const summary = await getSchoolYearDataSummary(targetId);
+      // 2. Check if a school year document for THIS specific targetLabel exists in Firestore
+      const existing = await findExistingSchoolYearByLabel(targetLabel);
+      const targetId = existing ? existing.id : buildSchoolYearId(targetLabel);
+
+      // 3. Only prompt update modal if THIS specific school year already exists and has data
+      if (existing) {
+        const summary = await getSchoolYearDataSummary(existing.id);
         if (summary.exists && (summary.eventCount > 0 || summary.hasSemesters)) {
-          setExistingSummary({ ...summary, targetId, targetLabel });
+          setExistingSummary({ ...summary, targetId: existing.id, targetLabel });
           setShowOverwriteModal(true);
           return;
         }
       }
 
-      // No existing data conflict -> apply directly with overwrite
-      await executeApply(true, targetId);
+      // 4. If it's a completely new school year (e.g. 2027-2028 when on 2026-2027), apply directly!
+      await executeApply(overwriteExisting, targetId);
     } catch (err) {
       console.error('Error verifying school year:', err);
-      await executeApply(true, schoolYearId);
+      const fallbackTarget = parsedResult.schoolYear ? buildSchoolYearId(parsedResult.schoolYear) : schoolYearId;
+      await executeApply(overwriteExisting, fallbackTarget);
     }
   };
 
-  const executeApply = async (clearExisting = true, targetId = schoolYearId) => {
+  const executeApply = async (clearExisting = true, targetId = null) => {
     if (!parsedResult) return;
     setIsApplying(true);
     setError('');
 
     try {
+      const parsedSyRaw = parsedResult.schoolYear ? String(parsedResult.schoolYear).replace(/^sy\s+/i, '').trim() : '';
+      const targetLabel = parsedSyRaw || schoolYearLabel || '2026-2027';
+      const resolvedTargetId = targetId || (await findExistingSchoolYearByLabel(targetLabel))?.id || buildSchoolYearId(targetLabel);
+
       const filteredEvents = (parsedResult.events || []).filter((_, idx) => selectedEvents[idx]);
       const dataToApply = {
         ...parsedResult,
         events: filteredEvents,
       };
 
-      const res = await applyAiParsedCalendar(targetId, dataToApply, { clearExisting });
+      const res = await applyAiParsedCalendar(resolvedTargetId, dataToApply, { clearExisting });
       setShowOverwriteModal(false);
 
       if (onSuccess) {
-        const actionMsg = clearExisting ? 'overwritten & replaced' : 'merged';
-        onSuccess(`Successfully ${actionMsg} calendar: ${filteredEvents.length} events and semester schedules applied!`);
+        onSuccess(`Successfully applied calendar for SY ${targetLabel}: ${filteredEvents.length} events and semester dates updated!`);
       }
       onClose();
     } catch (err) {
@@ -656,87 +662,92 @@ export default function AiCalendarScanModal({
                     </div>
                   </div>
                 </div>
-
-                {/* Overwrite & Duplicate Prevention Settings Notice */}
-                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle size={16} className="text-amber-700 shrink-0" />
-                    <span className="text-amber-950 font-semibold">
-                      Overwrite existing calendar data for this School Year to prevent duplicate entries
-                    </span>
-                  </div>
-                  <label className="flex items-center gap-1.5 font-bold text-[#7A0808] cursor-pointer shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={overwriteExisting}
-                      onChange={(e) => setOverwriteExisting(e.target.checked)}
-                      className="rounded border-amber-300 text-[#7A0808] focus:ring-[#7A0808]"
-                    />
-                    <span>Overwrite mode</span>
-                  </label>
-                </div>
-
-                {/* Action Buttons: Re-scan / Apply */}
-                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setParsedResult(null);
-                      setFile(null);
-                      setFilePreview(null);
-                      setPastedText('');
-                    }}
-                    className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-bold transition-colors cursor-pointer"
-                    disabled={isApplying}
-                  >
-                    Scan Another Document
-                  </button>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-bold transition-colors cursor-pointer"
-                      disabled={isApplying}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleInitialApply}
-                      disabled={isApplying}
-                      className="px-6 py-2.5 rounded-xl bg-[#7A0808] hover:bg-[#600000] text-white font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
-                    >
-                      {isApplying ? (
-                        <>
-                          <RefreshCw size={15} className="animate-spin" />
-                          <span>Applying to Calendar...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={16} />
-                          <span>Apply to Calendar</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
           </div>
+
+          {/* Fixed Non-Scrollable Footer for Scanned Results */}
+          {parsedResult && (
+            <div className="border-t border-gray-100 bg-white p-4 sm:px-6 flex flex-col gap-3 flex-shrink-0 shadow-lg">
+              {/* Update & Sync Notice Bar */}
+              <div className="p-2.5 bg-red-50/70 border border-[#FFD0D0] rounded-xl flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-[#7A0808] shrink-0" />
+                  <span className="text-gray-900 font-semibold text-[11px] sm:text-xs">
+                    Automatically syncs dates, examination windows, and holidays for this school year
+                  </span>
+                </div>
+                <label className="flex items-center gap-1.5 font-bold text-[#7A0808] cursor-pointer shrink-0 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={overwriteExisting}
+                    onChange={(e) => setOverwriteExisting(e.target.checked)}
+                    className="rounded border-red-300 text-[#7A0808] focus:ring-[#7A0808]"
+                  />
+                  <span>Clean sync mode</span>
+                </label>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setParsedResult(null);
+                    setFile(null);
+                    setFilePreview(null);
+                    setPastedText('');
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-bold transition-colors cursor-pointer text-xs"
+                  disabled={isApplying}
+                >
+                  Scan Another Document
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-bold transition-colors cursor-pointer text-xs"
+                    disabled={isApplying}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleInitialApply}
+                    disabled={isApplying}
+                    className="px-6 py-2.5 rounded-xl bg-[#7A0808] hover:bg-[#600000] text-white font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer text-xs"
+                  >
+                    {isApplying ? (
+                      <>
+                        <RefreshCw size={15} className="animate-spin" />
+                        <span>Applying to Calendar...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>Apply to Calendar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Overwrite Confirmation Modal */}
+      {/* Update Existing School Year Confirmation Modal */}
       {showOverwriteModal && existingSummary && (
         <ConfirmModal
-          title={`Overwrite Existing School Year Data?`}
-          message={`A calendar for School Year "${existingSummary.displayLabel || existingSummary.targetLabel}" already exists with ${existingSummary.eventCount} scheduled event(s) and semester configuration. Overwriting will cleanly replace previous events and update semester & exam periods to prevent duplicate doubled entries.`}
-          confirmText="Yes, Overwrite & Replace"
+          title={`Update Calendar for SY ${existingSummary.displayLabel || existingSummary.targetLabel}?`}
+          message={`A calendar for School Year "${existingSummary.displayLabel || existingSummary.targetLabel}" already exists in the system (${existingSummary.eventCount} scheduled events). Applying this update will refresh its semester dates, examination schedules, and synchronized events without losing manual custom records.`}
+          confirmText="Yes, Update & Sync"
           cancelText="Cancel"
           variant="primary"
           isProcessing={isApplying}
-          onConfirm={() => executeApply(true, existingSummary.targetId)}
+          onConfirm={() => executeApply(overwriteExisting, existingSummary.targetId)}
           onCancel={() => setShowOverwriteModal(false)}
         />
       )}

@@ -131,14 +131,20 @@ export default function CustomSelect({
                     }}
                     className={`w-full text-left px-4 ${isSmall ? 'py-2' : 'py-2.5'} text-xs rounded-xl flex items-center justify-between transition-all ${
                       opt.disabled
-                        ? 'opacity-40 cursor-not-allowed text-slate-400'
+                        ? 'opacity-40 cursor-not-allowed bg-red-50/40 text-red-900 select-none'
                         : isSelected
                         ? 'bg-red-50 text-[#7A0808] font-bold shadow-2xs cursor-pointer'
                         : 'hover:bg-slate-100 text-slate-700 font-medium cursor-pointer'
                     }`}
                   >
-                    <span className="truncate pr-2 font-medium">{opt.label}</span>
-                    {isSelected && <Check size={14} className="text-[#7A0808] shrink-0 ml-2" />}
+                    <span className={`truncate pr-2 font-medium ${opt.disabled ? 'text-red-900/80' : ''}`}>{opt.label}</span>
+                    {opt.disabled ? (
+                      <span className="text-[9px] font-black uppercase text-red-700 bg-red-100 px-1.5 py-0.5 rounded border border-red-200 ml-2 shrink-0">
+                        Occupied
+                      </span>
+                    ) : isSelected ? (
+                      <Check size={14} className="text-[#7A0808] shrink-0 ml-2" />
+                    ) : null}
                   </div>
                 );
               })

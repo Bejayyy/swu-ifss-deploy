@@ -21,12 +21,14 @@ import {
   subscribeSchoolCalendarPdf,
   saveSchoolCalendarPdf,
   deleteSchoolCalendarPdf,
+  findExistingSchoolYearByLabel,
 } from '../services/academicCalendarService';
 import { resolveActiveSchoolYearId } from '../utils/schoolYearResolver';
 import {
   formatExamRange,
   normalizeExamPeriods,
   formatDisplayDate,
+  normalizeSchoolYearLabel,
 } from '../utils/academicCalendarUtils';
 import {
   downloadBulkActivityTemplate,
@@ -589,16 +591,17 @@ export default function SystemSettings() {
 
     setIsSavingSy(true);
     try {
-      const syId = activeSchoolYearId || buildSchoolYearId(syForm.label);
+      const canonical = normalizeSchoolYearLabel(syForm.label);
+      const syId = activeSchoolYearId || buildSchoolYearId(canonical);
       await saveSchoolYearConfig(syId, {
-        label: syForm.label.trim(),
+        label: canonical,
         semesters: cleanedSemesters,
       });
 
       showNotification({
         type: 'success',
         title: 'Configuration Saved',
-        message: `School Year ${syForm.label} and ${cleanedSemesters.length} semester terms saved successfully.`,
+        message: `School Year SY ${canonical} and ${cleanedSemesters.length} semester terms saved successfully.`,
       });
     } catch (err) {
       showNotification({
@@ -615,13 +618,27 @@ export default function SystemSettings() {
   const handleCreateNewSy = async () => {
     if (!newSyLabel.trim()) return;
     try {
-      const syId = buildSchoolYearId(newSyLabel.trim());
+      const canonical = normalizeSchoolYearLabel(newSyLabel.trim());
+      const existing = await findExistingSchoolYearByLabel(canonical);
+      if (existing) {
+        setActiveSchoolYearId(existing.id);
+        setNewSyLabel('');
+        setIsCreatingSy(false);
+        showNotification({
+          type: 'info',
+          title: 'School Year Already Exists',
+          message: `School Year SY ${canonical} is already registered in the system. Switched to it.`,
+        });
+        return;
+      }
+
+      const syId = buildSchoolYearId(canonical);
       const initialSemesters = [
         { id: `sem_1_${Date.now()}`, name: 'Semester 1', start: '', end: '' },
         { id: `sem_2_${Date.now()}`, name: 'Semester 2', start: '', end: '' },
       ];
       await saveSchoolYearConfig(syId, {
-        label: newSyLabel.trim(),
+        label: canonical,
         semesters: initialSemesters,
       });
       setActiveSchoolYearId(syId);
@@ -630,7 +647,7 @@ export default function SystemSettings() {
       showNotification({
         type: 'success',
         title: 'School Year Created',
-        message: `Created and selected SY ${newSyLabel.trim()}.`,
+        message: `Created and selected SY ${canonical}.`,
       });
     } catch (err) {
       showNotification({
@@ -870,7 +887,7 @@ export default function SystemSettings() {
               onChange={(e) => setActiveSchoolYearId(e.target.value)}
               options={schoolYears.map((sy) => ({
                 value: sy.id,
-                label: sy.displayLabel || `SY ${sy.label}`,
+                label: `SY ${normalizeSchoolYearLabel(sy.label || sy.displayLabel || sy.id)}`,
               }))}
               placeholder="Select School Year"
             />

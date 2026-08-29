@@ -5,6 +5,38 @@ export function parseDateOnly(value) {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * Normalizes any school year string input (e.g. "AY 2026-2027", "SY AY 2026-2027", "A.Y. 2026-2027", "2026-2027")
+ * to the clean canonical format "2026-2027".
+ */
+export function normalizeSchoolYearLabel(rawInput) {
+  if (!rawInput) return '2026-2027';
+  const str = String(rawInput).trim();
+  
+  // 1. Try extracting standard 4-digit year pair (e.g. 2026-2027 or 2026/2027 or 2026 - 2027)
+  const matchPair = str.match(/(\d{4})\s*[-/–—]\s*(\d{4})/);
+  if (matchPair) {
+    return `${matchPair[1]}-${matchPair[2]}`;
+  }
+
+  // 2. Try extracting 4-digit and 2-digit year (e.g. 2026-27)
+  const matchShortPair = str.match(/(\d{4})\s*[-/–—]\s*(\d{2})/);
+  if (matchShortPair) {
+    const century = matchShortPair[1].substring(0, 2);
+    return `${matchShortPair[1]}-${century}${matchShortPair[2]}`;
+  }
+
+  // 3. Try single 4-digit year (e.g. 2026 -> 2026-2027)
+  const matchSingle = str.match(/(\d{4})/);
+  if (matchSingle) {
+    const y1 = parseInt(matchSingle[1], 10);
+    return `${y1}-${y1 + 1}`;
+  }
+
+  // Fallback: strip standard prefixes (SY, AY, A.Y., Academic Year) and clean up
+  return str.replace(/^(?:sy\s+ay|ay\s+sy|sy|ay|a\.y\.|academic\s*year)\s+/i, '').replace(/\s+/g, '-').trim();
+}
+
 export function formatDisplayDate(value) {
   if (!value) return 'Month Day, Year';
   const dt = parseDateOnly(value);

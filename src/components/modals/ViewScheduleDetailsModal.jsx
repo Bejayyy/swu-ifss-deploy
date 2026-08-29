@@ -242,28 +242,28 @@ export default function ViewScheduleDetailsModal({
               );
             } else if (roundedDuration > roundedReq) {
               return (
-                <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl flex items-center justify-between gap-2 text-amber-900">
+                <div className="p-3 bg-red-50/95 border-2 border-red-500 rounded-xl flex items-center justify-between gap-2 text-red-950 shadow-xs">
                   <div className="flex items-center gap-2">
-                    <Clock size={15} className="text-amber-600 flex-shrink-0" />
-                    <p className="text-xs font-semibold">
+                    <Clock size={15} className="text-red-600 flex-shrink-0" />
+                    <p className="text-xs font-bold">
                       Overlapping / Exceeding Time: Duration (<strong>{roundedDuration} hrs</strong>) exceeds the required <strong>{roundedReq} hrs/week</strong> by <strong>{diffHours} hr(s)</strong>.
                     </p>
                   </div>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-600 text-white whitespace-nowrap">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-600 text-white whitespace-nowrap">
                     ⚠️ +{diffHours}h Over
                   </span>
                 </div>
               );
             } else {
               return (
-                <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl flex items-center justify-between gap-2 text-rose-900">
+                <div className="p-3 bg-red-50/95 border-2 border-red-500 rounded-xl flex items-center justify-between gap-2 text-red-950 shadow-xs">
                   <div className="flex items-center gap-2">
-                    <Clock size={15} className="text-rose-600 flex-shrink-0" />
-                    <p className="text-xs font-semibold">
+                    <Clock size={15} className="text-red-600 flex-shrink-0" />
+                    <p className="text-xs font-bold">
                       Lacking Time: Duration (<strong>{roundedDuration} hrs</strong>) is lacking <strong>{diffHours} hr(s)</strong> to meet the required <strong>{roundedReq} hrs/week</strong>.
                     </p>
                   </div>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-600 text-white whitespace-nowrap">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-600 text-white whitespace-nowrap">
                     ⚠️ -{diffHours}h Lacking
                   </span>
                 </div>

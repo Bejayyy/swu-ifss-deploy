@@ -197,22 +197,22 @@ service cloud.firestore {
       allow delete: if (isDeveloper() && resource.data.role == 'registrar')
         || (isRegistrar() && isPhinmaedEmail() && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role)));
 
-      // Course schedules subcollection - deans can manage their own, all staff can read
+      // Course schedules subcollection - deans can manage their own, all staff can read, developer can read/delete
       match /course_schedules/{section} {
-        // Allow all staff to read course schedules (they're public schedule info)
-        allow read: if isMainRole() && isPhinmaedEmail();
-        // Only registrar and the dean themselves can write
-        allow create, update, delete: if isPhinmaedEmail() && (
+        // Allow all staff and developer to read course schedules
+        allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+        // Registrar, developer, and the dean themselves can write/delete
+        allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
           isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
-        );
+        ));
 
         match /entries/{entryId} {
-          // Allow all staff to read entries (public schedule information)
-          allow read: if isMainRole() && isPhinmaedEmail();
-          // Only registrar and the dean themselves can write
-          allow create, update, delete: if isPhinmaedEmail() && (
+          // Allow all staff and developer to read entries
+          allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+          // Registrar, developer, and the dean themselves can write/delete
+          allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
             isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
-          );
+          ));
         }
       }
     }
@@ -228,8 +228,8 @@ service cloud.firestore {
     }
 
     match /role_definitions/{roleId} {
-      allow read: if isSignedIn() && isPhinmaedEmail() && (isDeveloper() || isMainRole());
-      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+      allow read: if isSignedIn() && (isDeveloper() || (isPhinmaedEmail() && isMainRole()));
+      allow create, update, delete: if (isDeveloper() || isRegistrar()) && isPhinmaedEmail();
     }
 
     function isDean() {
@@ -259,19 +259,19 @@ service cloud.firestore {
     }
 
     match /schedule_plot_requests/{plotId} {
-      allow read: if isMainRole() && isPhinmaedEmail() && (
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail() && (
         isRegistrar()
         || isPlotRecipientData(resource.data)
-      );
-      allow create, delete: if isRegistrar() && isPhinmaedEmail();
-      allow update: if isRegistrar() && isPhinmaedEmail();
+      ));
+      allow create, delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
+      allow update: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
 
       match /schedule_entries/{entryId} {
-        allow read: if isMainRole() && isPhinmaedEmail() && (
+        allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail() && (
           isRegistrar()
           || isPlotRecipientData(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
-        );
-        allow create, update, delete: if isPhinmaedEmail() && (
+        ));
+        allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
           isRegistrar()
           || isActivePlotRecipient(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
           || (
@@ -279,7 +279,7 @@ service cloud.firestore {
             && isPlotRecipientData(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
             && get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data.activeRecipientUid == null
           )
-        );
+        ));
       }
     }
 
@@ -295,12 +295,12 @@ service cloud.firestore {
     }
 
     match /buildings/{buildingId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow write, delete: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
 
       match /floors/{floorId} {
-        allow read: if isMainRole() && isPhinmaedEmail();
-        allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+        allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+        allow write, delete: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
         // Allow dean to update floor they manage (for updating manager settings) - ONLY REGISTRAR CAN ASSIGN
         allow update: if isDean() && isPhinmaedEmail() 
           && userDocExists()
@@ -308,8 +308,8 @@ service cloud.firestore {
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['managedBy', 'managedByName']);
 
         match /rooms/{roomId} {
-          allow read: if isMainRole() && isPhinmaedEmail();
-          allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+          allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+          allow write, delete: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
           // Allow dean to update room they manage (for updating details) - ONLY REGISTRAR CAN ASSIGN MANAGERS
           allow update: if isDean() && isPhinmaedEmail()
             && userDocExists()
@@ -323,22 +323,22 @@ service cloud.firestore {
     }
 
     match /{path=**}/floors/{floorId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow write: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
     }
 
     match /{path=**}/rooms/{roomId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow write: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
     }
 
     match /approval_workflows/{workflowId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if isRegistrar() && isPhinmaedEmail();
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow write: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
     match /room_reservations/{reservationId} {
-      allow read: if isSignedIn() && isPhinmaedEmail() && (
+      allow read, delete: if isDeveloper() || (isSignedIn() && isPhinmaedEmail() && (
         // Allow anyone authenticated to read APPROVED reservations (they're public schedule info)
         resource.data.status in ['Approved', 'approved']
         || resource.data.status == 'Approved'
@@ -370,10 +370,10 @@ service cloud.firestore {
             || hasRole('student_life')
           )
         )
-      );
+      ));
       allow create: if isMainRole() && isPhinmaedEmail()
         && request.resource.data.createdByUid == request.auth.uid;
-      allow update: if isMainRole() && isPhinmaedEmail() && (
+      allow update: if isDeveloper() || (isMainRole() && isPhinmaedEmail() && (
         isRegistrar()
         || canManageRoomActivityApproval()
         || canManageStudentActivityApproval()
@@ -395,61 +395,61 @@ service cloud.firestore {
           )
         )
         || (resource.data.createdByUid == request.auth.uid)
-      );
-      allow delete: if isPhinmaedEmail() && (
+      ));
+      allow delete: if isDeveloper() || (isPhinmaedEmail() && (
         isRegistrar()
         || (isMainRole() && resource.data.createdByUid == request.auth.uid)
-      );
+      ));
     }
 
-    // Maintenance schedules - GSD can manage, all can read
+    // Maintenance schedules - GSD can manage, all can read, developer can manage/delete
     match /maintenance_schedules/{scheduleId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow create, update, delete: if isPhinmaedEmail() && (
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
         isRegistrar() || hasRole('gsd')
-      );
+      ));
     }
 
-    // Maintenance reports - all can create/read, GSD can update
+    // Maintenance reports - all can create/read, GSD can update, developer can manage/delete
     match /maintenance_reports/{reportId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
       allow create: if isMainRole() && isPhinmaedEmail()
         && request.resource.data.reportedByUid == request.auth.uid;
-      allow update: if isPhinmaedEmail() && (
+      allow update: if isDeveloper() || (isPhinmaedEmail() && (
         isRegistrar() 
         || hasRole('gsd')
         || (isMainRole() && resource.data.reportedByUid == request.auth.uid)
-      );
-      allow delete: if isPhinmaedEmail() && (isRegistrar() || hasRole('gsd'));
+      ));
+      allow delete: if isDeveloper() || (isPhinmaedEmail() && (isRegistrar() || hasRole('gsd')));
     }
 
-    // Notifications - users can read their own, system can create
+    // Notifications - users can read their own, system can create, developer has full access
     match /notifications/{notificationId} {
-      allow read: if isMainRole() && isPhinmaedEmail()
-        && resource.data.recipientUid == request.auth.uid;
-      allow create: if isMainRole() && isPhinmaedEmail();
-      allow update: if isMainRole() && isPhinmaedEmail()
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail()
+        && resource.data.recipientUid == request.auth.uid);
+      allow create: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow update: if isDeveloper() || (isMainRole() && isPhinmaedEmail()
         && resource.data.recipientUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
-      allow delete: if isRegistrar() && isPhinmaedEmail();
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']));
+      allow delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
-    // Colleges inventory - Registrar can manage, all staff can read
+    // Colleges inventory - Registrar & Developer can manage, all staff can read
     match /colleges/{collegeId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      allow create, update, delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
-    // Program Sections - Registrar can manage, all staff (including Deans) can read
+    // Program Sections - Registrar & Developer can manage, all staff (including Deans) can read
     match /program_sections/{sectionId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      allow create, update, delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
-    // Courses - Registrar can manage, Deans can read and assign teachers for their college courses
+    // Courses - Registrar & Developer can manage, Deans can read and assign teachers for their college courses
     match /courses/{courseId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if (isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      allow create, update, delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
       allow update: if isDean() && isPhinmaedEmail() 
         && userDocExists()
         && (
@@ -473,8 +473,9 @@ service cloud.firestore {
         && collection != 'role_definitions';
     }
 
-    // Controlled Schedule Sessions - Registrar-managed workflow
+    // Controlled Schedule Sessions - Registrar-managed workflow, developer read/delete
     match /schedule_control_sessions/{sessionId} {
+      allow read, delete: if isDeveloper();
       // Registrar can manage all sessions
       allow read, write: if isRegistrar() && isPhinmaedEmail();
       
@@ -502,39 +503,37 @@ service cloud.firestore {
     // System Settings collection
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
-      allow write: if (canManageCalendar() || isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+      allow write: if isDeveloper() || ((canManageCalendar() || isRegistrar()) && isPhinmaedEmail());
 
       match /{allSubcollections=**} {
         allow read: if isSignedIn();
-        allow write: if (canManageCalendar() || isRegistrar() || isDeveloper()) && isPhinmaedEmail();
+        allow write: if isDeveloper() || ((canManageCalendar() || isRegistrar()) && isPhinmaedEmail());
       }
     }
 
-    // Simple Schedule Access Control - Registrar grants colleges access
+    // Controlled Schedule Sessions for Deans - plot scheduling workflow
     match /schedule_access_control/{accessId} {
-      // Registrar can manage
+      allow read, delete: if isDeveloper();
       allow read, write: if isRegistrar() && isPhinmaedEmail();
-      
-      // All staff can read to check their access
       allow read: if isMainRole() && isPhinmaedEmail();
     }
 
-    // CollectionGroup rules for schedule entries - allows teachers to query their own schedules across all deans
+    // CollectionGroup rules for schedule entries - allows developer, teachers & staff to query schedules across all deans
     match /{path=**}/entries/{entryId} {
-      // Allow all staff to read entries (matching the specific course_schedules/entries rule)
-      allow read: if isMainRole() && isPhinmaedEmail();
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
     }
 
-    // Notifications Collection - All authenticated staff can read and write notifications
-    match /notifications/{notificationId} {
-      allow read, write: if isMainRole() && isPhinmaedEmail();
+    match /{path=**}/schedule_entries/{entryId} {
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
     }
 
-    // No Class Days Collection - Registrar/Developer can write, all staff can read
+    match /{path=**}/plotEntries/{entryId} {
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+    }
+    // No Class Days Collection - Developer & Registrar have full management, staff can read
     match /no_class_days/{dayId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
-      allow create, update, delete: if isPhinmaedEmail()
-        && (isRegistrar() || isDeveloper());
+      allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow create, update: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
     // Chat Messages Collection - All signed-in authenticated staff can read and write chat messages
@@ -544,6 +543,11 @@ service cloud.firestore {
 
     // Chat Rooms Collection - All signed-in authenticated staff can read and write chat rooms
     match /chat_rooms/{roomId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Notifications Collection - All signed-in authenticated staff can read, write, and manage in-app notifications
+    match /notifications/{notificationId} {
       allow read, write: if isSignedIn();
     }
   }

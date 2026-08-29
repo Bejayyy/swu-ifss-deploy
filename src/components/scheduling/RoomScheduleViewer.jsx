@@ -412,13 +412,7 @@ export default function RoomScheduleViewer({
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                          isTeacherConflict
-                            ? 'bg-amber-100 text-amber-950 border border-amber-300'
-                            : isSectionConflict
-                            ? 'bg-indigo-100 text-indigo-950 border border-indigo-300'
-                            : 'bg-red-100 text-red-950 border border-red-300'
-                        }`}
+                        className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-red-100 text-red-950 border border-red-400 shadow-2xs"
                       >
                         {isTeacherConflict
                           ? '👨‍🏫 Teacher Schedule Conflict'
@@ -437,25 +431,25 @@ export default function RoomScheduleViewer({
                   </div>
 
                   {/* Explicit Explanation of Why it is a Conflict */}
-                  <div className="p-3 rounded-xl bg-gray-50/90 border border-gray-200 text-xs space-y-1.5">
+                  <div className="p-3 rounded-xl bg-red-50/60 border border-red-200 text-xs space-y-1.5">
                     <p className="font-bold text-gray-900 leading-relaxed">
                       {isTeacherConflict ? (
                         <>
-                          <span className="text-amber-900 font-extrabold">Why this is a conflict: </span>
-                          Teacher <span className="font-black underline text-amber-950">{cleanTeacherName || conflict.instructor}</span> is already assigned to teach{' '}
+                          <span className="text-red-900 font-extrabold">Why this is a conflict: </span>
+                          Teacher <span className="font-black underline text-red-950">{cleanTeacherName || conflict.instructor}</span> is already assigned to teach{' '}
                           <span className="font-black text-[#7A0808]">{conflict.course || conflict.title}</span>
                           {conflict.section && <span className="text-gray-700 font-medium"> for Section {conflict.section}</span>} in{' '}
-                          <span className="font-black text-amber-900 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">Room {conflict.roomCode}</span> on{' '}
+                          <span className="font-black text-red-900 bg-red-100 px-1.5 py-0.2 rounded border border-red-300">Room {conflict.roomCode}</span> on{' '}
                           <span className="font-bold">{conflict.conflictDayName}</span> from{' '}
                           <span className="font-black text-red-900">{formatScheduleHour(conflict.start)} to {formatScheduleHour(conflict.end)}</span>.
                         </>
                       ) : isSectionConflict ? (
                         <>
-                          <span className="text-indigo-900 font-extrabold">Why this is a conflict: </span>
-                          Section <span className="font-black underline text-indigo-950">{sectionName || conflict.section}</span> is already scheduled for{' '}
+                          <span className="text-red-900 font-extrabold">Why this is a conflict: </span>
+                          Section <span className="font-black underline text-red-950">{sectionName || conflict.section}</span> is already scheduled for{' '}
                           <span className="font-black text-[#7A0808]">{conflict.course || conflict.title}</span>
                           {conflict.instructor && <span className="text-gray-700 font-medium"> ({conflict.instructor})</span>} in{' '}
-                          <span className="font-black text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">Room {conflict.roomCode}</span> on{' '}
+                          <span className="font-black text-red-900 bg-red-100 px-1.5 py-0.2 rounded border border-red-300">Room {conflict.roomCode}</span> on{' '}
                           <span className="font-bold">{conflict.conflictDayName}</span> from{' '}
                           <span className="font-black text-red-900">{formatScheduleHour(conflict.start)} to {formatScheduleHour(conflict.end)}</span>.
                         </>

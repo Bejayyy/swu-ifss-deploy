@@ -58,6 +58,7 @@ const createEmptyProgram = () => ({
   name: '',
   courses: [createEmptyCourse()],
   sections: { 1: '', 2: '', 3: '', 4: '' },
+  studentCapacities: { 1: '40', 2: '40', 3: '40', 4: '40' },
   extraYears: [],
 });
 
@@ -72,12 +73,23 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           name: p.name || '',
           courses: p.courses?.length ? p.courses : [createEmptyCourse()],
           sections: p.sections || { 1: '', 2: '', 3: '', 4: '' },
+          studentCapacities: p.studentCapacities || { 1: '40', 2: '40', 3: '40', 4: '40' },
           extraYears: p.extraYears || [],
         }))
       : [createEmptyProgram()],
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Helper to detect duplicate subject codes within a courses list
+  const getDuplicateCodes = (courses) => {
+    const counts = {};
+    (courses || []).forEach((c) => {
+      const cd = (c.code || '').trim().toUpperCase();
+      if (cd) counts[cd] = (counts[cd] || 0) + 1;
+    });
+    return new Set(Object.keys(counts).filter((cd) => counts[cd] > 1));
+  };
 
   // Tab state per program index: { 0: 'individual', 1: 'bulk' }
   const [programCourseTabs, setProgramCourseTabs] = useState({ 0: 'individual' });
@@ -116,7 +128,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
 
                 const formattedCrs = {
                   ...crs,
-                  title: toTitleCase(crs.title),
+                  title: crs.title || '',
                   yearLevel: crs.yearLevel || '1st Year',
                   semester: crs.semester || '1st Semester',
                   lecUnits: String(lecU),
@@ -156,11 +168,15 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                 (s) => s.programCode?.toUpperCase() === pCode
               );
               const secCounts = { 1: '', 2: '', 3: '', 4: '', ...(p.sections || {}) };
+              const secCaps = { 1: '40', 2: '40', 3: '40', 4: '40', ...(p.studentCapacities || {}) };
               const extraY = [...(p.extraYears || [])];
 
               matchedSecDocs.forEach((sDoc) => {
                 if (sDoc.yearNumber) {
                   secCounts[sDoc.yearNumber] = sDoc.sectionCount !== undefined ? String(sDoc.sectionCount) : '';
+                  if (sDoc.studentsPerSection || sDoc.studentCapacity) {
+                    secCaps[sDoc.yearNumber] = String(sDoc.studentsPerSection || sDoc.studentCapacity);
+                  }
                   if (sDoc.yearNumber > 4 && !extraY.includes(sDoc.yearNumber)) {
                     extraY.push(sDoc.yearNumber);
                   }
@@ -170,6 +186,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               return {
                 ...p,
                 sections: secCounts,
+                studentCapacities: secCaps,
                 extraYears: extraY.sort((a, b) => a - b),
               };
             });
@@ -206,7 +223,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   const updateProgramField = (pIdx, field, value) => {
     setForm((prev) => {
       const updatedPrgs = [...prev.programs];
-      const val = field === 'name' ? toTitleCase(value) : value.toUpperCase();
+      const val = field === 'name' ? value : value.toUpperCase();
       updatedPrgs[pIdx] = { ...updatedPrgs[pIdx], [field]: val };
       return { ...prev, programs: updatedPrgs };
     });
@@ -218,7 +235,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       const updatedPrgs = [...prev.programs];
       updatedPrgs[pIdx] = {
         ...updatedPrgs[pIdx],
-        courses: [...updatedPrgs[pIdx].courses, createEmptyCourse()],
+        courses: [createEmptyCourse(), ...updatedPrgs[pIdx].courses],
       };
       return { ...prev, programs: updatedPrgs };
     });
@@ -239,7 +256,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       const updatedCourses = [...updatedPrgs[pIdx].courses];
       let val = value;
       if (field === 'code') val = value.toUpperCase();
-      if (field === 'title') val = toTitleCase(value);
+      // Keep title raw during typing so user can press spacebar freely!
+      if (field === 'title') val = value;
       
       const currentCrs = { ...updatedCourses[cIdx], [field]: val };
 
@@ -291,6 +309,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       const prg = updatedPrgs[pIdx];
       const updatedSec = { ...(prg.sections || { 1: '', 2: '', 3: '', 4: '' }), [yearNum]: value };
       updatedPrgs[pIdx] = { ...prg, sections: updatedSec };
+      return { ...prev, programs: updatedPrgs };
+    });
+  };
+
+  const updateProgramSectionCapacity = (pIdx, yearNum, value) => {
+    setForm((prev) => {
+      const updatedPrgs = [...prev.programs];
+      const prg = updatedPrgs[pIdx];
+      const updatedCap = { ...(prg.studentCapacities || { 1: '40', 2: '40', 3: '40', 4: '40' }), [yearNum]: value };
+      updatedPrgs[pIdx] = { ...prg, studentCapacities: updatedCap };
       return { ...prev, programs: updatedPrgs };
     });
   };
@@ -437,13 +465,20 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         setError(`Program Name / Title is required${prgNum}.`);
         return;
       }
+
+      // Check for duplicate course/subject codes within this program
+      const dups = getDuplicateCodes(prg.courses);
+      if (dups.size > 0) {
+        setError(`Duplicate subject code(s) found in ${prg.code.trim().toUpperCase()}: ${Array.from(dups).join(', ')}. Each subject code must be unique.`);
+        return;
+      }
     }
 
     setLoading(true);
     try {
       const cleanPrograms = form.programs.map((p) => ({
         code: p.code.trim().toUpperCase(),
-        name: toTitleCase(p.name),
+        name: toTitleCase(p.name.trim()),
       }));
 
       if (editingCollege) {
@@ -475,7 +510,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
 
             const coursePayload = {
               code: crs.code.trim().toUpperCase(),
-              title: toTitleCase(crs.title),
+              title: toTitleCase(crs.title.trim()),
               yearLevel: crs.yearLevel || '1st Year',
               semester: crs.semester || '1st Semester',
               lecUnits: numLec,
@@ -505,8 +540,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         const allYears = [1, 2, 3, 4, ...(prg.extraYears || [])];
         for (const yearNum of allYears) {
           const count = Number(prg.sections?.[yearNum]) || 0;
+          const capacity = Number(prg.studentCapacities?.[yearNum]) || 40;
           if (count > 0 || editingCollege) {
-            await upsertProgramYearSections(code, prgCode, yearNum, count);
+            await upsertProgramYearSections(code, prgCode, yearNum, count, capacity);
           }
         }
       }
@@ -525,7 +561,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   return (
     <div className="modal-overlay z-[100]" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full relative animate-modal-pop max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full relative animate-modal-pop max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -570,7 +606,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   <input
                     type="text"
                     value={form.name}
-                    onChange={(e) => setForm({ ...form, name: toTitleCase(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    onBlur={(e) => setForm({ ...form, name: toTitleCase(e.target.value.trim()) })}
                     placeholder="e.g., College of Engineering & Tech"
                     className="form-input w-full font-bold"
                     required
@@ -605,6 +642,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
 
               {form.programs.map((program, pIdx) => {
                 const activeCourseTab = programCourseTabs[pIdx] || 'individual';
+                const duplicateCodesInPrg = getDuplicateCodes(program.courses);
 
                 return (
                   <div
@@ -651,6 +689,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                           type="text"
                           value={program.name}
                           onChange={(e) => updateProgramField(pIdx, 'name', e.target.value)}
+                          onBlur={(e) => updateProgramField(pIdx, 'name', toTitleCase(e.target.value.trim()))}
                           placeholder="e.g., BS in Information Technology"
                           className="form-input w-full font-bold"
                           required
@@ -720,179 +759,184 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                           ) : (
                             <div className="space-y-2">
                               {/* Column Header Labels */}
-                              <div className="hidden sm:grid sm:grid-cols-12 gap-2 px-3 py-1.5 bg-gray-100/90 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-gray-600">
+                              <div className="hidden sm:grid sm:grid-cols-12 gap-2 px-3 py-1.5 bg-gray-100/90 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-gray-600 items-center">
                                 <div className="sm:col-span-2">Subject Code <span className="text-red-500">*</span></div>
-                                <div className="sm:col-span-4">Subject Title <span className="text-red-500">*</span></div>
+                                <div className="sm:col-span-3">Subject Title <span className="text-red-500">*</span></div>
                                 <div className="sm:col-span-2">Year Level</div>
                                 <div className="sm:col-span-2">Semester</div>
                                 <div className="sm:col-span-1 text-center" title="Lecture Credit Units">Lec Units</div>
                                 <div className="sm:col-span-1 text-center" title="Laboratory Credit Units">Lab Units</div>
+                                <div className="sm:col-span-1 text-center" title="Total Credit Units">Total Units</div>
                               </div>
 
                               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                {program.courses.map((crs, cIdx) => (
-                                  <div
-                                    key={crs.id || cIdx}
-                                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-gray-50/80 p-2.5 rounded-xl border border-gray-200 items-center hover:border-gray-300 transition-all"
-                                  >
-                                    {/* Code */}
-                                    <div className="sm:col-span-2">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Subject Code *</label>
-                                      <input
-                                        type="text"
-                                        className="form-input bg-white text-xs font-bold uppercase w-full"
-                                        placeholder="e.g. IT101"
-                                        value={crs.code}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'code', e.target.value)}
-                                        required
-                                      />
-                                    </div>
+                                {program.courses.map((crs, cIdx) => {
+                                  const isDuplicate = duplicateCodesInPrg.has((crs.code || '').trim().toUpperCase());
+                                  return (
+                                    <div
+                                      key={crs.id || cIdx}
+                                      className={`grid grid-cols-1 sm:grid-cols-12 gap-2 bg-gray-50/80 p-2.5 rounded-xl border items-center transition-all ${
+                                        isDuplicate ? 'border-red-300 bg-red-50/30' : 'border-gray-200 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      {/* Code */}
+                                      <div className="sm:col-span-2">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Subject Code *</label>
+                                        <input
+                                          type="text"
+                                          className={`form-input bg-white text-xs font-bold uppercase w-full ${isDuplicate ? 'border-red-400 focus:border-red-600' : ''}`}
+                                          placeholder="e.g. IT101"
+                                          value={crs.code}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'code', e.target.value)}
+                                          required
+                                        />
+                                        {isDuplicate && (
+                                          <span className="text-[9px] font-bold text-red-600 block mt-0.5">Duplicate code</span>
+                                        )}
+                                      </div>
 
-                                    {/* Title */}
-                                    <div className="sm:col-span-4">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Subject Title *</label>
-                                      <input
-                                        type="text"
-                                        className="form-input bg-white text-xs font-semibold w-full"
-                                        placeholder="e.g. Programming 1"
-                                        value={crs.title}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'title', e.target.value)}
-                                        required
-                                      />
-                                    </div>
+                                      {/* Title */}
+                                      <div className="sm:col-span-3">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Subject Title *</label>
+                                        <input
+                                          type="text"
+                                          className="form-input bg-white text-xs font-semibold w-full"
+                                          placeholder="e.g. Programming 1"
+                                          value={crs.title}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'title', e.target.value)}
+                                          onBlur={(e) => updateCourseField(pIdx, cIdx, 'title', toTitleCase(e.target.value.trim()))}
+                                          required
+                                        />
+                                      </div>
 
-                                    {/* Year Level */}
-                                    <div className="sm:col-span-2">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Year Level</label>
-                                      <select
-                                        value={crs.yearLevel || '1st Year'}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'yearLevel', e.target.value)}
-                                        className="form-input bg-white text-xs font-semibold py-1.5 px-2 rounded-xl border border-gray-200 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] w-full"
-                                      >
-                                        {YEAR_LEVELS.map((lvl) => (
-                                          <option key={lvl} value={lvl}>{lvl}</option>
-                                        ))}
-                                      </select>
-                                    </div>
+                                      {/* Year Level */}
+                                      <div className="sm:col-span-2">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Year Level</label>
+                                        <select
+                                          value={crs.yearLevel || '1st Year'}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'yearLevel', e.target.value)}
+                                          className="form-input bg-white text-xs font-semibold py-1.5 px-2 rounded-xl border border-gray-200 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] w-full"
+                                        >
+                                          {YEAR_LEVELS.map((lvl) => (
+                                            <option key={lvl} value={lvl}>{lvl}</option>
+                                          ))}
+                                        </select>
+                                      </div>
 
-                                    {/* Semester */}
-                                    <div className="sm:col-span-2">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Semester</label>
-                                      <select
-                                        value={crs.semester || '1st Semester'}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'semester', e.target.value)}
-                                        className="form-input bg-white text-xs font-semibold py-1.5 px-2 rounded-xl border border-gray-200 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] w-full"
-                                      >
-                                        {SEMESTERS.map((sem) => (
-                                          <option key={sem} value={sem}>{sem}</option>
-                                        ))}
-                                      </select>
-                                    </div>
+                                      {/* Semester */}
+                                      <div className="sm:col-span-2">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5">Semester</label>
+                                        <select
+                                          value={crs.semester || '1st Semester'}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'semester', e.target.value)}
+                                          className="form-input bg-white text-xs font-semibold py-1.5 px-2 rounded-xl border border-gray-200 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] w-full"
+                                        >
+                                          {SEMESTERS.map((sem) => (
+                                            <option key={sem} value={sem}>{sem}</option>
+                                          ))}
+                                        </select>
+                                      </div>
 
-                                    {/* Lec Units */}
-                                    <div className="sm:col-span-1">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5 text-center">Lec Units</label>
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        className="form-input bg-white text-xs font-bold text-center w-full px-1"
-                                        placeholder="3"
-                                        value={crs.lecUnits ?? '3'}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'lecUnits', e.target.value)}
-                                        title="Lecture Credit Units"
-                                      />
-                                    </div>
+                                      {/* Lec Units */}
+                                      <div className="sm:col-span-1">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5 text-center">Lec Units</label>
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          className="form-input bg-white text-xs font-bold text-center w-full px-1"
+                                          placeholder="3"
+                                          value={crs.lecUnits ?? '3'}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'lecUnits', e.target.value)}
+                                          title="Lecture Credit Units"
+                                        />
+                                      </div>
 
-                                    {/* Lab Units */}
-                                    <div className="sm:col-span-1">
-                                      <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5 text-center">Lab Units</label>
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        className="form-input bg-white text-xs font-bold text-center w-full px-1"
-                                        placeholder="0"
-                                        value={crs.labUnits ?? '0'}
-                                        onChange={(e) => updateCourseField(pIdx, cIdx, 'labUnits', e.target.value)}
-                                        title="Laboratory Credit Units"
-                                      />
-                                    </div>
+                                      {/* Lab Units */}
+                                      <div className="sm:col-span-1">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5 text-center">Lab Units</label>
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          className="form-input bg-white text-xs font-bold text-center w-full px-1"
+                                          placeholder="0"
+                                          value={crs.labUnits ?? '0'}
+                                          onChange={(e) => updateCourseField(pIdx, cIdx, 'labUnits', e.target.value)}
+                                          title="Laboratory Credit Units"
+                                        />
+                                      </div>
 
-                                    {/* Sub-row: Total Units, Course Type, Conditional Required Contact Hours & Delete button */}
-                                    <div className="sm:col-span-12 flex flex-wrap items-center justify-between pt-2 border-t border-gray-100 gap-2 text-[11px]">
-                                      <div className="flex flex-wrap items-center gap-2.5">
-                                        {/* Academic Credit Units Summary */}
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="font-bold text-gray-500">Total Credit Units:</span>
-                                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-black border border-blue-100 text-xs">
-                                            {crs.units ?? '3'} {Number(crs.units) === 1 ? 'unit' : 'units'}
-                                          </span>
-                                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-100 text-[10px] capitalize">
-                                            {crs.type || 'lecture'}
-                                          </span>
-                                        </div>
+                                      {/* Total Credit Units (Beside Lab Units) */}
+                                      <div className="sm:col-span-1 flex flex-col items-center justify-center">
+                                        <label className="sm:hidden block text-[10px] font-bold text-gray-600 mb-0.5 text-center">Total Units</label>
+                                        <span className="px-1 py-1.5 rounded-lg bg-blue-50 text-blue-900 border border-blue-200 text-xs font-black text-center w-full block shadow-2xs" title="Total Credit Units">
+                                          {crs.units ?? '3'}
+                                        </span>
+                                      </div>
 
-                                        {/* Required Contact Hours: ONLY ask/show Lec Hours if Lec > 0, and ONLY ask/show Lab Hours if Lab > 0 */}
+                                      {/* Sub-row: Single-Line Required Contact Hours & Delete button */}
+                                      <div className="sm:col-span-12 flex flex-wrap items-center justify-between pt-2 border-t border-gray-100 gap-2 text-xs">
+                                        {/* Required Contact Hours: In one clean single line */}
                                         {(Number(crs.lecUnits || 0) > 0 || Number(crs.labUnits || 0) > 0) ? (
-                                          <div className="flex flex-wrap items-center gap-2 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1 rounded-lg">
-                                            <span className="font-black text-amber-950 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                                              <Clock size={11} className="text-amber-700" /> Required Time:
+                                          <div className="flex flex-wrap items-center gap-3 bg-amber-50/90 border border-amber-200/90 px-3 py-1.5 rounded-xl text-xs flex-1">
+                                            <span className="font-black text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                                              <Clock size={13} className="text-amber-700" /> Required Time:
                                             </span>
 
                                             {/* Only ask for Lecture Hours if Lec Units > 0 */}
                                             {Number(crs.lecUnits || 0) > 0 && (
-                                              <div className="flex items-center gap-1">
-                                                <label className="text-[10px] font-bold text-amber-900" title="Required Lecture Hours per Week">Lec Time:</label>
+                                              <div className="flex items-center gap-1.5">
+                                                <label className="text-xs font-bold text-amber-900" title="Required Lecture Hours per Week">Lecture:</label>
                                                 <input
                                                   type="text"
                                                   inputMode="numeric"
                                                   value={crs.lecHours !== undefined ? crs.lecHours : String(Number(crs.lecUnits || 0) * 1)}
                                                   onChange={(e) => updateCourseField(pIdx, cIdx, 'lecHours', e.target.value)}
                                                   placeholder="1"
-                                                  className="w-10 text-center font-bold text-xs py-0.5 px-1 bg-white border border-amber-300 rounded focus:border-[#7A0808]"
+                                                  className="w-12 text-center font-black text-xs py-1 px-1 bg-white border border-amber-300 rounded-lg focus:border-[#7A0808]"
                                                   title="Required Lecture Contact Hours per Week"
                                                 />
-                                                <span className="text-[10px] text-amber-800 font-semibold">hr/wk</span>
                                               </div>
                                             )}
 
                                             {/* Only ask for Lab Hours if Lab Units > 0 */}
                                             {Number(crs.labUnits || 0) > 0 && (
-                                              <div className="flex items-center gap-1">
-                                                <label className="text-[10px] font-bold text-amber-900" title="Required Laboratory Hours per Week">Lab Time:</label>
+                                              <div className="flex items-center gap-1.5">
+                                                <label className="text-xs font-bold text-amber-900" title="Required Laboratory Hours per Week">Laboratory:</label>
                                                 <input
                                                   type="text"
                                                   inputMode="numeric"
                                                   value={crs.labHours !== undefined ? crs.labHours : String(Number(crs.labUnits || 0) * 3)}
                                                   onChange={(e) => updateCourseField(pIdx, cIdx, 'labHours', e.target.value)}
                                                   placeholder="3"
-                                                  className="w-10 text-center font-bold text-xs py-0.5 px-1 bg-white border border-amber-300 rounded focus:border-[#7A0808]"
+                                                  className="w-12 text-center font-black text-xs py-1 px-1 bg-white border border-amber-300 rounded-lg focus:border-[#7A0808]"
                                                   title="Required Laboratory Contact Hours per Week"
                                                 />
-                                                <span className="text-[10px] text-amber-800 font-semibold">hr/wk</span>
                                               </div>
                                             )}
 
                                             {/* Total Weekly Hours Badge */}
-                                            <span className="text-[10px] font-black text-amber-900 ml-0.5">
+                                            <span className="text-xs font-black text-amber-950 ml-auto">
                                               = {(Number(crs.lecUnits || 0) > 0 ? (parseFloat(crs.lecHours ?? (Number(crs.lecUnits) * 1)) || 0) : 0) +
                                                  (Number(crs.labUnits || 0) > 0 ? (parseFloat(crs.labHours ?? (Number(crs.labUnits) * 3)) || 0) : 0)} hrs/wk total
                                             </span>
                                           </div>
-                                        ) : null}
-                                      </div>
+                                        ) : (
+                                          <div className="flex-1" />
+                                        )}
 
-                                      <button
-                                        type="button"
-                                        onClick={() => removeCourseFromProgram(pIdx, cIdx)}
-                                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 font-bold text-xs"
-                                        title="Remove Subject"
-                                      >
-                                        <Trash2 size={13} />
-                                        <span className="sm:hidden">Remove</span>
-                                      </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeCourseFromProgram(pIdx, cIdx)}
+                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 font-bold text-xs shrink-0"
+                                          title="Remove Subject"
+                                        >
+                                          <Trash2 size={13} />
+                                          <span className="sm:hidden">Remove</span>
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -976,7 +1020,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                       <div className="flex items-center justify-between">
                         <label className="form-label font-bold text-gray-800 mb-0 flex items-center gap-1.5 text-xs">
                           <Users size={14} className="text-[#7A0808]" />
-                          <span>Sections Offered in {program.code || `Program #${pIdx + 1}`}</span>
+                          <span>Sections & Target Enrollees in {program.code || `Program #${pIdx + 1}`}</span>
                         </label>
                         <span className="text-[10px] text-gray-400">
                           Auto-generated naming: {program.code || 'CODE'}1-A1, {program.code || 'CODE'}2-B1...
@@ -987,6 +1031,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                         {[1, 2, 3, 4, ...(program.extraYears || [])].map((yearNum) => {
                           const rawVal = program.sections?.[yearNum];
                           const count = rawVal !== undefined && rawVal !== '' ? Number(rawVal) : 0;
+                          const rawCap = program.studentCapacities?.[yearNum] ?? '40';
                           const preview = count > 0 && program.code
                             ? generateSectionNames(program.code.trim().toUpperCase(), yearNum, count)
                             : [];
@@ -1018,15 +1063,33 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                 />
                               </div>
 
+                              {/* Student capacity / Enrollees per section input */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-gray-600 font-semibold">Students / Section:</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={rawCap}
+                                  onChange={(e) => {
+                                    const clean = e.target.value.replace(/[^0-9]/g, '');
+                                    updateProgramSectionCapacity(pIdx, yearNum, clean);
+                                  }}
+                                  className="form-input bg-white w-16 text-center text-xs font-bold py-1 px-2"
+                                  placeholder="40"
+                                  title="Target student capacity per section"
+                                />
+                              </div>
+
                               {/* Section name preview chips */}
                               <div className="flex-1 flex flex-wrap gap-1 min-w-0">
                                 {preview.length > 0 ? (
                                   preview.map((name) => (
                                     <span
                                       key={name}
-                                      className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold"
+                                      className="px-2 py-0.5 rounded-full bg-[#7A0808]/10 text-[#7A0808] border border-[#7A0808]/20 text-[10px] font-bold flex items-center gap-1"
                                     >
-                                      {name}
+                                      <span>{name}</span>
+                                      <span className="text-[9px] text-[#7A0808]/70 font-normal">({rawCap || 40} stds)</span>
                                     </span>
                                   ))
                                 ) : (

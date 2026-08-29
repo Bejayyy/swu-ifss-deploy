@@ -1,18 +1,24 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Users, Shield, Code2 } from 'lucide-react';
+import { Users, Shield, Database } from 'lucide-react';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../../constants/layout';
 import { DEVELOPER_ROUTE_PREFIX } from '../../firebase/constants';
 import systemLogo from '../../assets/logo.png';
 
 const navItems = [
   { label: 'User Management', icon: Users, path: DEVELOPER_ROUTE_PREFIX },
+  { label: 'System Records', icon: Database, path: `${DEVELOPER_ROUTE_PREFIX}/records` },
 ];
 
 export default function DeveloperLeftNav({ isDesktop = true, isOpen = false, onClose = () => {} }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const isActive = (path) => {
+    if (path === DEVELOPER_ROUTE_PREFIX) {
+      return location.pathname === DEVELOPER_ROUTE_PREFIX;
+    }
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
 
   return (
     <>

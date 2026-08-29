@@ -58,12 +58,13 @@ function sectionDocId(programCode, yearNumber) {
  * Save (upsert) section count for a specific program and year.
  * Generates and stores all section names.
  */
-export async function upsertProgramYearSections(collegeCode, programCode, yearNumber, sectionCount) {
+export async function upsertProgramYearSections(collegeCode, programCode, yearNumber, sectionCount, studentsPerSection = 40) {
   if (!programCode || !yearNumber) throw new Error('Program code and year number are required.');
 
   const code = String(programCode).toUpperCase();
   const year = Number(yearNumber);
   const count = Number(sectionCount) || 0;
+  const capacity = Number(studentsPerSection) || 40;
 
   const sections = count > 0 ? generateSectionNames(code, year, count) : [];
 
@@ -77,11 +78,12 @@ export async function upsertProgramYearSections(collegeCode, programCode, yearNu
     yearLabel: getYearLabel(year),
     sectionCount: count,
     sections,
+    studentsPerSection: capacity,
+    studentCapacity: capacity,
     updatedAt: serverTimestamp(),
-    createdAt: serverTimestamp(), // setDoc with merge keeps original createdAt if exists via merge
+    createdAt: serverTimestamp(),
   }, { merge: true });
 
-  // Fix: overwrite createdAt only on first create — above setDoc merge handles it.
   return sections;
 }
 
