@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Plus,
@@ -14,15 +15,24 @@ import {
   Clock,
   Users,
   Building2,
+  Filter,
+  CircleHelp,
 } from 'lucide-react';
 import { addCollege, updateCollege, subscribeColleges } from '../../services/collegeService';
-import { addCourse, updateCourse, subscribeCollegeCourses } from '../../services/courseService';
+import {
+  addCourse,
+  updateCourse,
+  subscribeCollegeCourses,
+  deleteProgramCourses,
+  deleteCollegeCoursesOutsidePrograms,
+} from '../../services/courseService';
 import { notifyServiceCollegeDeans } from '../../services/notificationService';
 import {
   generateSectionNames,
   getYearLabel,
   upsertProgramYearSections,
   getCollegeProgramSections,
+  deleteProgramSections,
 } from '../../services/sectionService';
 import {
   downloadBulkCourseTemplate,
@@ -33,6 +43,12 @@ import CustomSelect from '../ui/CustomSelect';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
+const SERVICE_MODES = {
+  INTERNAL: 'internal',
+  LECTURE: 'lecture',
+  LABORATORY: 'laboratory',
+  BOTH: 'both',
+};
 const COURSE_TYPES = [
   { value: 'lecture', label: 'Lecture Only' },
   { value: 'laboratory', label: 'Laboratory Only' },
@@ -53,9 +69,59 @@ const createEmptyCourse = () => ({
   totalHours: '3',
   type: 'lecture',
   requiresServiceCollege: false,
+  serviceMode: SERVICE_MODES.INTERNAL,
   lecServiceCollege: '',
   labServiceCollege: '',
 });
+
+function inferServiceMode(course = {}) {
+  if (Object.values(SERVICE_MODES).includes(course.serviceMode)) return course.serviceMode;
+  const hasLectureService = Boolean(course.lecServiceCollege);
+  const hasLaboratoryService = Boolean(course.labServiceCollege);
+  if (hasLectureService && hasLaboratoryService) return SERVICE_MODES.BOTH;
+  if (hasLectureService) return SERVICE_MODES.LECTURE;
+  if (hasLaboratoryService) return SERVICE_MODES.LABORATORY;
+  return SERVICE_MODES.INTERNAL;
+}
+
+function ServiceArrangementGuideCloud({ position }) {
+  if (!position) return null;
+  const opensBelow = position.placement === 'below';
+
+  return createPortal(
+    <div
+      role="tooltip"
+      className="pointer-events-none fixed z-[9999] block w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-[#7A0808]/25 bg-white p-4 text-left shadow-2xl"
+      style={{
+        left: position.left,
+        top: position.top,
+        transform: `translate(-100%, ${opensBelow ? '0' : '-100%'})`,
+      }}
+    >
+      <div className={`absolute right-4 h-4 w-4 rotate-45 bg-white ${
+        opensBelow
+          ? '-top-2 border-l border-t border-[#7A0808]/25'
+          : '-bottom-2 border-b border-r border-[#7A0808]/25'
+      }`} />
+      <div className="mb-3 flex items-center gap-2 border-b border-red-100 pb-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-[#7A0808]">
+          <CircleHelp size={15} />
+        </span>
+        <div>
+          <p className="m-0 text-xs font-black text-[#7A0808]">Service Arrangement Guide</p>
+          <p className="m-0 mt-0.5 text-[10px] font-medium text-gray-500">Choose who will handle each class component.</p>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 text-[10px] font-medium leading-[1.45] text-gray-700">
+        <p className="m-0"><strong className="text-gray-900">Lecture only:</strong> Service college handles lecture; your college handles laboratory.</p>
+        <p className="m-0"><strong className="text-gray-900">Laboratory only:</strong> Service college handles laboratory; your college handles lecture.</p>
+        <p className="m-0"><strong className="text-gray-900">Both:</strong> Selected service colleges handle both lecture and laboratory.</p>
+        <p className="m-0"><strong className="text-gray-900">Internal:</strong> Your college handles both components.</p>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 const createEmptyProgram = () => ({
   id: `prg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -87,6 +153,17 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serviceGuidePosition, setServiceGuidePosition] = useState(null);
+
+  const showServiceGuide = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const opensBelow = rect.top < 230;
+    setServiceGuidePosition({
+      left: Math.min(rect.right + 12, window.innerWidth - 16),
+      top: opensBelow ? rect.bottom + 12 : rect.top - 12,
+      placement: opensBelow ? 'below' : 'above',
+    });
+  };
 
   // Helper to detect duplicate subject codes within a courses list
   const getDuplicateCodes = (courses) => {
@@ -113,6 +190,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
 
   // Tab state per program index: { 0: 'individual', 1: 'bulk' }
   const [programCourseTabs, setProgramCourseTabs] = useState({ 0: 'individual' });
+  // Year-level subject filter per program index. Empty means show every year.
+  const [programYearFilters, setProgramYearFilters] = useState({});
 
   // Bulk Upload State per program index
   const [isDragOver, setIsDragOver] = useState({});
@@ -159,8 +238,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   totalHours: String(totalH),
                   type: crs.type || (labU > 0 && lecU > 0 ? 'both' : (labU > 0 ? 'laboratory' : 'lecture')),
                   requiresServiceCollege: Boolean(crs.requiresServiceCollege || crs.lecServiceCollege || crs.labServiceCollege),
-                  lecServiceCollege: crs.lecServiceCollege || '',
-                  labServiceCollege: crs.labServiceCollege || '',
+                  serviceMode: inferServiceMode(crs),
+                  lecServiceCollege: crs.lecServiceCollege || crs.rememberedLecServiceCollege || '',
+                  labServiceCollege: crs.labServiceCollege || crs.rememberedLabServiceCollege || '',
                 };
                 if (
                   updatedPrograms[targetIdx].courses.length === 1 &&
@@ -256,12 +336,15 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   };
 
   // Course Management Helpers per Program
-  const addCourseToProgram = (pIdx) => {
+  const addCourseToProgram = (pIdx, yearLevel = '') => {
     setForm((prev) => {
       const updatedPrgs = [...prev.programs];
       updatedPrgs[pIdx] = {
         ...updatedPrgs[pIdx],
-        courses: [createEmptyCourse(), ...updatedPrgs[pIdx].courses],
+        courses: [
+          { ...createEmptyCourse(), ...(yearLevel ? { yearLevel } : {}) },
+          ...updatedPrgs[pIdx].courses,
+        ],
       };
       return { ...prev, programs: updatedPrgs };
     });
@@ -312,6 +395,17 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         currentCrs.lecHours = String(autoLecH);
         currentCrs.labHours = String(autoLabH);
         currentCrs.totalHours = String(autoLecH + autoLabH);
+
+        // Keep the service arrangement compatible with the available components.
+        const currentMode = inferServiceMode(currentCrs);
+        if (numLec === 0) {
+          if (currentMode === SERVICE_MODES.LECTURE) currentCrs.serviceMode = SERVICE_MODES.INTERNAL;
+          if (currentMode === SERVICE_MODES.BOTH) currentCrs.serviceMode = SERVICE_MODES.LABORATORY;
+        }
+        if (numLab === 0) {
+          if (currentMode === SERVICE_MODES.LABORATORY) currentCrs.serviceMode = SERVICE_MODES.INTERNAL;
+          if (currentMode === SERVICE_MODES.BOTH) currentCrs.serviceMode = SERVICE_MODES.LECTURE;
+        }
       }
 
       if (field === 'lecHours' || field === 'labHours') {
@@ -325,6 +419,21 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       updatedCourses[cIdx] = currentCrs;
       updatedPrgs[pIdx] = { ...updatedPrgs[pIdx], courses: updatedCourses };
       return { ...prev, programs: updatedPrgs };
+    });
+  };
+
+  const updateCourseServiceMode = (pIdx, cIdx, mode) => {
+    setForm((prev) => {
+      const updatedPrograms = [...prev.programs];
+      const updatedCourses = [...updatedPrograms[pIdx].courses];
+      const currentCourse = { ...updatedCourses[cIdx] };
+
+      currentCourse.serviceMode = mode;
+      currentCourse.requiresServiceCollege = mode !== SERVICE_MODES.INTERNAL;
+
+      updatedCourses[cIdx] = currentCourse;
+      updatedPrograms[pIdx] = { ...updatedPrograms[pIdx], courses: updatedCourses };
+      return { ...prev, programs: updatedPrograms };
     });
   };
 
@@ -378,6 +487,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   // Handle Sheet File Upload for Program Courses: AUTOMATICALLY POPULATES COURSES!
   const handleProgramSheetUpload = async (file, pIdx) => {
     if (!file) return;
+    const programFilterKey = form.programs[pIdx]?.id || `program-${pIdx}`;
 
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['xlsx', 'xls', 'csv'].includes(ext)) {
@@ -448,6 +558,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       }));
 
       // Automatically switch to 'individual' tab to view populated subjects
+      setProgramYearFilters((prev) => ({ ...prev, [programFilterKey]: '' }));
       setCourseTabForProgram(pIdx, 'individual');
     } catch (err) {
       console.error('Error parsing program course sheet:', err);
@@ -508,6 +619,23 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         setError(`Duplicate subject code(s) found in ${prg.code.trim().toUpperCase()}: ${Array.from(dups).join(', ')}. Each subject code must be unique.`);
         return;
       }
+
+      for (const course of prg.courses || []) {
+        const courseCode = String(course.code || '').trim();
+        const courseTitle = String(course.title || '').trim();
+        if (!courseCode && !courseTitle) continue;
+        const serviceMode = inferServiceMode(course);
+        const needsLectureCollege = serviceMode === SERVICE_MODES.LECTURE || serviceMode === SERVICE_MODES.BOTH;
+        const needsLaboratoryCollege = serviceMode === SERVICE_MODES.LABORATORY || serviceMode === SERVICE_MODES.BOTH;
+        if (needsLectureCollege && !course.lecServiceCollege) {
+          setError(`Select the lecture service college for ${courseCode || courseTitle}.`);
+          return;
+        }
+        if (needsLaboratoryCollege && !course.labServiceCollege) {
+          setError(`Select the laboratory service college for ${courseCode || courseTitle}.`);
+          return;
+        }
+      }
     }
 
     setLoading(true);
@@ -516,6 +644,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         code: p.code.trim().toUpperCase(),
         name: toTitleCase(p.name.trim()),
       }));
+
+      const previousProgramCodes = new Set(
+        (editingCollege?.programs || [])
+          .map((program) => String(program.code || '').trim().toUpperCase())
+          .filter(Boolean)
+      );
+      const currentProgramCodes = new Set(cleanPrograms.map((program) => program.code));
+      const removedProgramCodes = [...previousProgramCodes].filter(
+        (programCode) => !currentProgramCodes.has(programCode)
+      );
 
       if (editingCollege) {
         await updateCollege(editingCollege.id, {
@@ -531,6 +669,27 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         });
       }
 
+      // A program is represented in multiple top-level collections. Remove its
+      // dependent catalogue and section records so it cannot be rediscovered by
+      // scheduling/access-allocation screens after being removed from a college.
+      for (const removedProgramCode of removedProgramCodes) {
+        await deleteProgramCourses(code, removedProgramCode);
+        await deleteProgramSections(removedProgramCode, code);
+      }
+
+      // Reconcile records left orphaned by older versions that only updated the
+      // college document (for example, the previously removed BSN sections).
+      await deleteCollegeCoursesOutsidePrograms(code, [...currentProgramCodes]);
+      const storedSectionRows = await getCollegeProgramSections(code);
+      const orphanedSectionCodes = new Set(
+        storedSectionRows
+          .map((row) => String(row.programCode || '').trim().toUpperCase())
+          .filter((programCode) => programCode && !currentProgramCodes.has(programCode))
+      );
+      for (const orphanedProgramCode of orphanedSectionCodes) {
+        await deleteProgramSections(orphanedProgramCode, code);
+      }
+
       // Save/Write all courses inside programs to Firestore
       for (const prg of form.programs) {
         const prgCode = prg.code.trim().toUpperCase();
@@ -544,7 +703,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             const labHours = numLab > 0 ? (crs.labHours !== undefined && crs.labHours !== '' ? Number(crs.labHours) : numLab * 3.0) : 0;
             const totalHours = lecHours + labHours;
 
-            const reqSvc = Boolean(crs.lecServiceCollege || crs.labServiceCollege);
+            const selectedServiceMode = inferServiceMode(crs);
+            const activeLectureServiceCollege = (
+              numLec > 0 &&
+              (selectedServiceMode === SERVICE_MODES.LECTURE || selectedServiceMode === SERVICE_MODES.BOTH)
+            ) ? crs.lecServiceCollege : '';
+            const activeLaboratoryServiceCollege = (
+              numLab > 0 &&
+              (selectedServiceMode === SERVICE_MODES.LABORATORY || selectedServiceMode === SERVICE_MODES.BOTH)
+            ) ? crs.labServiceCollege : '';
+            const reqSvc = Boolean(activeLectureServiceCollege || activeLaboratoryServiceCollege);
             const coursePayload = {
               code: crs.code.trim().toUpperCase(),
               title: toTitleCase(crs.title.trim()),
@@ -560,8 +728,10 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               collegeCode: code,
               programCode: prgCode,
               requiresServiceCollege: reqSvc,
-              lecServiceCollege: crs.lecServiceCollege ? String(crs.lecServiceCollege).trim().toUpperCase() : null,
-              labServiceCollege: crs.labServiceCollege ? String(crs.labServiceCollege).trim().toUpperCase() : null,
+              lecServiceCollege: activeLectureServiceCollege ? String(activeLectureServiceCollege).trim().toUpperCase() : null,
+              labServiceCollege: activeLaboratoryServiceCollege ? String(activeLaboratoryServiceCollege).trim().toUpperCase() : null,
+              rememberedLecServiceCollege: crs.lecServiceCollege ? String(crs.lecServiceCollege).trim().toUpperCase() : null,
+              rememberedLabServiceCollege: crs.labServiceCollege ? String(crs.labServiceCollege).trim().toUpperCase() : null,
               serviceStatus: crs.serviceStatus || 'pending',
             };
 
@@ -572,9 +742,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             }
 
             // Send notification to Service College Dean(s)
-            if (crs.lecServiceCollege) {
+            if (activeLectureServiceCollege) {
               notifyServiceCollegeDeans({
-                serviceCollegeCode: crs.lecServiceCollege,
+                serviceCollegeCode: activeLectureServiceCollege,
                 motherCollege: form.name || code,
                 courseCode: coursePayload.code,
                 courseTitle: coursePayload.title,
@@ -582,9 +752,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                 statusType: 'assigned',
               });
             }
-            if (crs.labServiceCollege) {
+            if (activeLaboratoryServiceCollege) {
               notifyServiceCollegeDeans({
-                serviceCollegeCode: crs.labServiceCollege,
+                serviceCollegeCode: activeLaboratoryServiceCollege,
                 motherCollege: form.name || code,
                 courseCode: coursePayload.code,
                 courseTitle: coursePayload.title,
@@ -626,6 +796,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   };
 
   return (
+    <>
     <div className="modal-overlay z-[100]" onClick={onClose}>
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full relative animate-modal-pop max-h-[90vh] flex flex-col overflow-hidden"
@@ -710,6 +881,13 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               {form.programs.map((program, pIdx) => {
                 const activeCourseTab = programCourseTabs[pIdx] || 'individual';
                 const duplicateCodesInPrg = getDuplicateCodes(program.courses);
+                const programFilterKey = program.id || `program-${pIdx}`;
+                const activeYearFilter = programYearFilters[programFilterKey] || '';
+                const visibleCourseEntries = (program.courses || [])
+                  .map((course, courseIndex) => ({ course, courseIndex }))
+                  .filter(({ course }) =>
+                    !activeYearFilter || (course.yearLevel || '1st Year') === activeYearFilter
+                  );
 
                 return (
                   <div
@@ -811,10 +989,39 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                             </div>
                           )}
 
-                          <div className="flex justify-end">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <label
+                                htmlFor={`subject-year-filter-${pIdx}`}
+                                className="text-[11px] font-bold text-gray-600 flex items-center gap-1.5 shrink-0"
+                              >
+                                <Filter size={13} className="text-[#7A0808]" />
+                                Filter:
+                              </label>
+                              <select
+                                id={`subject-year-filter-${pIdx}`}
+                                value={activeYearFilter}
+                                onChange={(event) => setProgramYearFilters((prev) => ({
+                                  ...prev,
+                                  [programFilterKey]: event.target.value,
+                                }))}
+                                className="form-input bg-white text-xs font-bold py-1.5 px-2.5 rounded-lg border border-gray-200 focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] min-w-[150px]"
+                                aria-label={`Filter ${program.code || `Program ${pIdx + 1}`} subjects by year level`}
+                              >
+                                <option value="">All Year Levels</option>
+                                {YEAR_LEVELS.map((level) => (
+                                  <option key={level} value={level}>{level}</option>
+                                ))}
+                              </select>
+                              {activeYearFilter && (
+                                <span className="text-[10px] font-semibold text-gray-500 whitespace-nowrap">
+                                  {visibleCourseEntries.length} shown
+                                </span>
+                              )}
+                            </div>
                             <button
                               type="button"
-                              onClick={() => addCourseToProgram(pIdx)}
+                              onClick={() => addCourseToProgram(pIdx, activeYearFilter)}
                               className="text-xs text-[#7A0808] bg-red-50 hover:bg-red-100 font-bold px-3 py-1.5 rounded-lg border border-red-200 transition-colors flex items-center gap-1"
                             >
                               <Plus size={13} /> Add Subject
@@ -837,8 +1044,46 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                               </div>
 
                               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                {program.courses.map((crs, cIdx) => {
+                                {visibleCourseEntries.length === 0 && (
+                                  <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center">
+                                    <p className="text-[11px] font-bold text-gray-600">
+                                      No subjects found for {activeYearFilter}.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setProgramYearFilters((prev) => ({
+                                        ...prev,
+                                        [programFilterKey]: '',
+                                      }))}
+                                      className="mt-1.5 text-[10px] font-bold text-[#7A0808] hover:underline"
+                                    >
+                                      Show all year levels
+                                    </button>
+                                  </div>
+                                )}
+                                {visibleCourseEntries.map(({ course: crs, courseIndex: cIdx }) => {
                                   const isDuplicate = duplicateCodesInPrg.has((crs.code || '').trim().toUpperCase());
+                                  const hasLecture = Number(crs.lecUnits || 0) > 0;
+                                  const hasLaboratory = Number(crs.labUnits || 0) > 0;
+                                  const serviceMode = inferServiceMode(crs);
+                                  const hasActiveServiceCollege = Boolean(
+                                    ((serviceMode === SERVICE_MODES.LECTURE || serviceMode === SERVICE_MODES.BOTH) && crs.lecServiceCollege) ||
+                                    ((serviceMode === SERVICE_MODES.LABORATORY || serviceMode === SERVICE_MODES.BOTH) && crs.labServiceCollege)
+                                  );
+                                  const serviceModeOptions = [
+                                    { value: SERVICE_MODES.INTERNAL, label: 'Internal / Own College' },
+                                    ...(hasLecture ? [{
+                                      value: SERVICE_MODES.LECTURE,
+                                      label: hasLaboratory ? 'Lecture only' : 'Use Service College',
+                                    }] : []),
+                                    ...(hasLaboratory ? [{
+                                      value: SERVICE_MODES.LABORATORY,
+                                      label: hasLecture ? 'Laboratory only' : 'Use Service College',
+                                    }] : []),
+                                    ...(hasLecture && hasLaboratory
+                                      ? [{ value: SERVICE_MODES.BOTH, label: 'Both Lecture & Laboratory' }]
+                                      : []),
+                                  ];
                                   return (
                                     <div
                                       key={crs.id || cIdx}
@@ -1002,25 +1247,71 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                         </button>
                                       </div>
 
-                                      {/* Sub-row: Service College Assignment (Inter-College Teaching) */}
-                                      <div className="sm:col-span-12 flex flex-wrap items-center gap-3 pt-2 pb-1 px-3 border border-indigo-200/80 rounded-xl text-xs bg-indigo-50/60 mt-1.5 shadow-2xs">
-                                        <div className="flex items-center gap-1.5 text-indigo-950 font-black text-[11px] shrink-0">
-                                          <Building2 size={14} className="text-indigo-750" />
-                                          <span className="uppercase tracking-wider">Service College:</span>
+                                      {/* Sub-row: Conditional Service College Assignment */}
+                                      {(hasLecture || hasLaboratory) && (
+                                      <div className={`sm:col-span-12 p-3 rounded-xl border mt-1.5 transition-colors ${
+                                        serviceMode === SERVICE_MODES.INTERNAL
+                                          ? 'border-gray-200 bg-white'
+                                          : 'border-indigo-200 bg-indigo-50/60'
+                                      }`}>
+                                        <div className="flex flex-col lg:flex-row lg:items-center gap-2.5">
+                                          <div className="flex items-center gap-1.5 text-gray-800 font-black text-[11px] shrink-0">
+                                            <Building2 size={14} className={serviceMode === SERVICE_MODES.INTERNAL ? 'text-gray-500' : 'text-indigo-700'} />
+                                            <span>Teaching arrangement:</span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {serviceModeOptions.map((option) => (
+                                              <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => updateCourseServiceMode(pIdx, cIdx, option.value)}
+                                                className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+                                                  serviceMode === option.value
+                                                    ? 'border-[#7A0808] bg-[#7A0808] text-white shadow-sm'
+                                                    : 'border-gray-200 bg-white text-gray-600 hover:border-[#7A0808] hover:text-[#7A0808]'
+                                                }`}
+                                              >
+                                                {option.label}
+                                              </button>
+                                            ))}
+                                            {hasLecture && hasLaboratory && (
+                                              <div className="inline-flex items-center">
+                                                <button
+                                                  type="button"
+                                                  className="p-1 text-[#7A0808] hover:bg-red-50 rounded-full focus:outline-none focus:ring-2 focus:ring-[#7A0808]/30 transition-colors"
+                                                  aria-label="Explain lecture and laboratory service arrangements"
+                                                  onMouseEnter={showServiceGuide}
+                                                  onMouseLeave={() => setServiceGuidePosition(null)}
+                                                  onFocus={showServiceGuide}
+                                                  onBlur={() => setServiceGuidePosition(null)}
+                                                >
+                                                  <CircleHelp size={16} />
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                          {serviceMode === SERVICE_MODES.INTERNAL && (
+                                            <span className="text-[10px] text-gray-500 lg:ml-auto">
+                                              Handled by {form.name || form.code || 'the owning college'}.
+                                            </span>
+                                          )}
                                         </div>
 
-                                        {/* If Course has Lecture Units or default */}
-                                        {(Number(crs.lecUnits || 0) > 0 || Number(crs.labUnits || 0) === 0) && (
-                                          <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
-                                            <label className="text-[10px] font-extrabold text-indigo-900 shrink-0">
-                                              {Number(crs.labUnits || 0) > 0 ? 'Lecture by:' : 'Taught by:'}
+                                        {serviceMode !== SERVICE_MODES.INTERNAL && (
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 mt-3 pt-3 border-t border-indigo-200/70">
+
+                                        {(serviceMode === SERVICE_MODES.LECTURE || serviceMode === SERVICE_MODES.BOTH) && (
+                                          <div>
+                                            <label className="block text-[10px] font-extrabold text-indigo-900 mb-1">
+                                              {hasLaboratory ? 'Lecture service college' : 'Service college'} <span className="text-red-500">*</span>
                                             </label>
                                             <select
                                               value={crs.lecServiceCollege || ''}
                                               onChange={(e) => updateCourseField(pIdx, cIdx, 'lecServiceCollege', e.target.value)}
-                                              className="form-input bg-white text-xs font-semibold py-1 px-2 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full shadow-2xs"
+                                              className="form-input bg-white text-xs font-semibold py-1.5 px-2.5 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full"
+                                              required
                                             >
-                                              <option value="">{form.name || form.code || 'Own College'} (Default / Internal)</option>
+                                              <option value="">Select a service college...</option>
                                               {allColleges
                                                 .filter((c) => c.code !== form.code && c.name !== form.name)
                                                 .map((c) => (
@@ -1032,18 +1323,18 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           </div>
                                         )}
 
-                                        {/* If Course has Lab Units */}
-                                        {Number(crs.labUnits || 0) > 0 && (
-                                          <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
-                                            <label className="text-[10px] font-extrabold text-indigo-900 shrink-0">
-                                              {Number(crs.lecUnits || 0) > 0 ? 'Lab by:' : 'Taught by:'}
+                                        {(serviceMode === SERVICE_MODES.LABORATORY || serviceMode === SERVICE_MODES.BOTH) && (
+                                          <div>
+                                            <label className="block text-[10px] font-extrabold text-indigo-900 mb-1">
+                                              {hasLecture ? 'Laboratory service college' : 'Service college'} <span className="text-red-500">*</span>
                                             </label>
                                             <select
                                               value={crs.labServiceCollege || ''}
                                               onChange={(e) => updateCourseField(pIdx, cIdx, 'labServiceCollege', e.target.value)}
-                                              className="form-input bg-white text-xs font-semibold py-1 px-2 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full shadow-2xs"
+                                              className="form-input bg-white text-xs font-semibold py-1.5 px-2.5 rounded-lg border border-indigo-300 focus:border-[#7A0808] w-full"
+                                              required
                                             >
-                                              <option value="">{form.name || form.code || 'Own College'} (Default / Internal)</option>
+                                              <option value="">Select a service college...</option>
                                               {allColleges
                                                 .filter((c) => c.code !== form.code && c.name !== form.name)
                                                 .map((c) => (
@@ -1055,12 +1346,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           </div>
                                         )}
 
-                                        {(crs.lecServiceCollege || crs.labServiceCollege) && (
-                                          <span className="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300 shrink-0">
-                                            🏛️ Inter-College Serviced
-                                          </span>
+                                        {hasActiveServiceCollege && (
+                                          <div className="inline-flex w-fit h-fit items-center gap-1.5 justify-self-start lg:self-end rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-bold text-[#7A0808]">
+                                            <Building2 size={13} />
+                                            <span>Inter-College Service Active</span>
+                                          </div>
                                         )}
                                       </div>
+                                      )}
+                                      </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1303,5 +1598,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         </form>
       </div>
     </div>
+    <ServiceArrangementGuideCloud position={serviceGuidePosition} />
+    </>
   );
 }

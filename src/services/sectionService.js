@@ -191,7 +191,7 @@ export async function getCollegeProgramSections(collegeCode) {
  * Delete all section documents for a specific program.
  * Call when a program is removed.
  */
-export async function deleteProgramSections(programCode) {
+export async function deleteProgramSections(programCode, collegeCode = null) {
   if (!programCode) return;
   const code = String(programCode).toUpperCase();
   const q = query(
@@ -199,9 +199,16 @@ export async function deleteProgramSections(programCode) {
     where('programCode', '==', code)
   );
   const snap = await getDocs(q);
-  if (snap.empty) return;
+  const normalizedCollegeCode = collegeCode
+    ? String(collegeCode).trim().toUpperCase()
+    : null;
+  const docsToDelete = normalizedCollegeCode
+    ? snap.docs.filter(
+      (sectionDoc) => String(sectionDoc.data().collegeCode || '').trim().toUpperCase() === normalizedCollegeCode
+    )
+    : snap.docs;
+  if (docsToDelete.length === 0) return;
   const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.delete(d.ref));
+  docsToDelete.forEach((d) => batch.delete(d.ref));
   await batch.commit();
 }
-

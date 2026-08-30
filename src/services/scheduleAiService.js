@@ -116,6 +116,18 @@ export async function analyzeCollegeRoomRequirements(collegeCodes, semester = nu
       }
     });
 
+    // The college inventory is authoritative when it declares programs. Old
+    // course/section documents must not resurrect a program removed there.
+    if (discoveredProgramCodes.size > 0) {
+      allCourses = allCourses.filter((course) => {
+        const programCode = String(course.programCode || '').trim().toUpperCase();
+        return !programCode || discoveredProgramCodes.has(programCode);
+      });
+      allSectionDocs = allSectionDocs.filter((section) =>
+        discoveredProgramCodes.has(String(section.programCode || '').trim().toUpperCase())
+      );
+    }
+
     for (const pCode of discoveredProgramCodes) {
       const alreadyHas = allSectionDocs.some(
         (s) => String(s.programCode || '').trim().toUpperCase() === pCode
@@ -399,4 +411,3 @@ export async function analyzeCollegeRoomRequirements(collegeCodes, semester = nu
     };
   }
 }
-

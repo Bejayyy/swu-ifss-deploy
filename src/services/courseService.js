@@ -1,4 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, onSnapshot, query, where, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
 import { isCollegeMatch } from './scheduleAccessService';
@@ -164,6 +164,8 @@ export async function addCourse(courseData) {
     requiresServiceCollege: Boolean(courseData.requiresServiceCollege),
     lecServiceCollege: courseData.lecServiceCollege ? (courseData.lecServiceCollege).trim().toUpperCase() : null,
     labServiceCollege: courseData.labServiceCollege ? (courseData.labServiceCollege).trim().toUpperCase() : null,
+    rememberedLecServiceCollege: courseData.rememberedLecServiceCollege ? String(courseData.rememberedLecServiceCollege).trim().toUpperCase() : null,
+    rememberedLabServiceCollege: courseData.rememberedLabServiceCollege ? String(courseData.rememberedLabServiceCollege).trim().toUpperCase() : null,
     serviceStatus: courseData.serviceStatus || 'pending',
     assignedTeacherUid: courseData.assignedTeacherUid || null,
     assignedTeacherName: courseData.assignedTeacherName || null,
@@ -213,6 +215,48 @@ export async function updateCourse(courseId, updates) {
 export async function deleteCourse(courseId) {
   const docRef = doc(db, COURSES_COLLECTION, courseId);
   await deleteDoc(docRef);
+}
+
+/** Delete the course catalogue records owned by a removed college program. */
+export async function deleteProgramCourses(collegeCode, programCode) {
+  if (!collegeCode || !programCode) return;
+
+  const normalizedCollegeCode = String(collegeCode).trim().toUpperCase();
+  const normalizedProgramCode = String(programCode).trim().toUpperCase();
+  const snapshot = await getDocs(
+    query(collection(db, COURSES_COLLECTION), where('programCode', '==', normalizedProgramCode))
+  );
+  const docsToDelete = snapshot.docs.filter(
+    (courseDoc) => String(courseDoc.data().collegeCode || '').trim().toUpperCase() === normalizedCollegeCode
+  );
+
+  for (let start = 0; start < docsToDelete.length; start += 500) {
+    const batch = writeBatch(db);
+    docsToDelete.slice(start, start + 500).forEach((courseDoc) => batch.delete(courseDoc.ref));
+    await batch.commit();
+  }
+}
+
+/** Remove orphaned course records whose program is no longer in a college. */
+export async function deleteCollegeCoursesOutsidePrograms(collegeCode, activeProgramCodes = []) {
+  if (!collegeCode) return;
+  const normalizedCollegeCode = String(collegeCode).trim().toUpperCase();
+  const activeCodes = new Set(
+    activeProgramCodes.map((code) => String(code).trim().toUpperCase()).filter(Boolean)
+  );
+  const snapshot = await getDocs(
+    query(collection(db, COURSES_COLLECTION), where('collegeCode', '==', normalizedCollegeCode))
+  );
+  const docsToDelete = snapshot.docs.filter((courseDoc) => {
+    const programCode = String(courseDoc.data().programCode || '').trim().toUpperCase();
+    return programCode && !activeCodes.has(programCode);
+  });
+
+  for (let start = 0; start < docsToDelete.length; start += 500) {
+    const batch = writeBatch(db);
+    docsToDelete.slice(start, start + 500).forEach((courseDoc) => batch.delete(courseDoc.ref));
+    await batch.commit();
+  }
 }
 
 /**
