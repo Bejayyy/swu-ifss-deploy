@@ -27,6 +27,7 @@ const NAV_ICONS = {
   '/course-scheduling': Calendar,
   '/teachers': Users,
   '/college-inventory': BookOpen,
+  '/courses': GraduationCap,
   '/approval-workflow': GitBranch,
   '/approvals': CheckSquare,
   '/maintenance-dashboard': Wrench,
@@ -35,6 +36,7 @@ const NAV_ICONS = {
 const COURSE_ACADEMIC_PATHS = [
   '/course-scheduling',
   '/college-inventory',
+  '/courses',
   '/teachers',
   '/approval-workflow',
 ];
@@ -44,7 +46,11 @@ export default function LeftNav({
   isDesktop = true,
   isOpen = false,
   onClose = () => {},
+  desktopWidth = NAV_WIDTH_PX,
+  onDesktopMouseEnter = () => {},
+  onDesktopMouseLeave = () => {},
 }) {
+  const isCompact = isDesktop && desktopWidth < NAV_WIDTH_PX;
   const navigate = useNavigate();
   const location = useLocation();
   const { navItems, approvalsNavLabel, canManageBuildings } = useRolePermissions();
@@ -155,7 +161,7 @@ export default function LeftNav({
     });
 
     subs.sort((a, b) => {
-      const order = { '/course-scheduling': 1, '/college-inventory': 2, '/teachers': 3, '/approval-workflow': 4 };
+      const order = { '/course-scheduling': 1, '/college-inventory': 2, '/courses': 3, '/teachers': 4, '/approval-workflow': 5 };
       return (order[a.path] || 99) - (order[b.path] || 99);
     });
 
@@ -178,9 +184,13 @@ export default function LeftNav({
 
       <div
         className={`fixed left-0 top-0 bottom-0 flex flex-col bg-white overflow-hidden transition-transform duration-300 ease-out print:hidden ${
+          isCompact ? '[&_.nav-item]:justify-center [&_.nav-label]:hidden [&_.nav-extra]:hidden' : ''
+        } ${
           isDesktop ? 'z-50 translate-x-0' : `z-50 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
         }`}
-        style={{ width: NAV_WIDTH_PX, borderRight: '1px solid #f0f0f0' }}
+        style={{ width: isDesktop ? desktopWidth : NAV_WIDTH_PX, borderRight: '1px solid #f0f0f0', transition: 'width 180ms ease' }}
+        onMouseEnter={isDesktop ? onDesktopMouseEnter : undefined}
+        onMouseLeave={isDesktop ? onDesktopMouseLeave : undefined}
       >
         <header
           className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
@@ -189,12 +199,12 @@ export default function LeftNav({
           {systemLogo ? (
             <img src={systemLogo} alt="SWU-IFSS logo" className="h-14 w-auto object-contain flex-shrink-0" />
           ) : null}
-          <div className="min-w-0">
+          {!isCompact && <div className="min-w-0">
             <p className="font-bold text-xl leading-tight truncate" style={{ color: MAROON }}>SWU-IFSS</p>
             <p className="text-[11px] font-medium leading-tight truncate" style={{ color: TEXT, opacity: 0.75 }}>
               Integrated Facility Scheduling System
             </p>
-          </div>
+          </div>}
         </header>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2">
@@ -225,7 +235,7 @@ export default function LeftNav({
                 >
                   {label}
                 </span>
-                {path === '/approvals' && unviewedCount > 0 && (
+                {!isCompact && path === '/approvals' && unviewedCount > 0 && (
                   <span className="bg-[#F59E0B] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-[6px] flex items-center justify-center flex-shrink-0 shadow-2xs">
                     {unviewedCount}
                   </span>
@@ -244,7 +254,7 @@ export default function LeftNav({
                   isCourseAcademicGroupActive ? 'active' : ''
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className={`flex items-center gap-2.5 min-w-0 ${isCompact ? 'justify-center' : 'flex-1'}`}>
                   <Calendar
                     size={17}
                     className={`nav-icon flex-shrink-0 transition-colors ${
@@ -252,24 +262,24 @@ export default function LeftNav({
                     }`}
                     style={{ color: isCourseAcademicGroupActive ? MAROON : undefined }}
                   />
-                  <span
+                  {!isCompact && <span
                     className={`nav-label flex-1 transition-colors ${
                       isCourseAcademicGroupActive ? '' : 'text-[#2B3235] group-hover:text-[#7A0808]'
                     }`}
                     style={{ color: isCourseAcademicGroupActive ? MAROON : undefined }}
                   >
                     Academic Operations
-                  </span>
+                  </span>}
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
+                {!isCompact && <div className="flex items-center gap-1.5 flex-shrink-0">
                   <span className="text-gray-400 group-hover:text-[#7A0808] transition-transform duration-200">
                     {isCourseAcademicExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </span>
-                </div>
+                </div>}
               </button>
 
               {/* Sub-menu Items Container with Vertical Connecting Left Line and Identical Main Menu Icons */}
-              {isCourseAcademicExpanded && (
+              {isCourseAcademicExpanded && !isCompact && (
                 <div className="ml-5 pl-3 border-l-2 border-gray-200/90 my-1 space-y-1">
                   {courseAcademicSubItems.map(({ label, icon: SubIcon, path }) => {
                     const active = isActive(path);
@@ -340,7 +350,7 @@ export default function LeftNav({
                 >
                   {label}
                 </span>
-                {path === '/approvals' && unviewedCount > 0 && (
+                {!isCompact && path === '/approvals' && unviewedCount > 0 && (
                   <span className="bg-[#F59E0B] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-[6px] flex items-center justify-center flex-shrink-0 shadow-2xs">
                     {unviewedCount}
                   </span>
@@ -380,7 +390,7 @@ export default function LeftNav({
             );
           })()}
 
-          <div className="mt-4 mb-1 px-2">
+          {!isCompact && <div className="mt-4 mb-1 px-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: TEXT, opacity: 0.45 }}>Buildings</span>
               {canManageBuildings() && (
@@ -394,11 +404,27 @@ export default function LeftNav({
                 </button>
               )}
             </div>
-          </div>
+          </div>}
 
           {buildingList.map((building) => {
             const isExpanded = expandedBuildings[building.id];
             const buildingActive = location.pathname.includes(`/building/${building.id}`);
+
+            if (isCompact) {
+              return (
+                <button
+                  key={building.id}
+                  type="button"
+                  title={building.name}
+                  onClick={() => navigate(`/building/${building.id}`)}
+                  className={`mx-auto mb-0.5 flex h-9 w-10 items-center justify-center rounded-lg transition-colors ${
+                    buildingActive ? 'bg-[#FFF0F0] text-[#7A0808]' : 'text-[#2B3235] hover:bg-gray-100 hover:text-[#7A0808]'
+                  }`}
+                >
+                  <Building2 size={17} />
+                </button>
+              );
+            }
 
             return (
               <div key={building.id}>

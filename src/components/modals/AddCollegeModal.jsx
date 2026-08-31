@@ -138,6 +138,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   const [form, setForm] = useState({
     code: editingCollege?.code || '',
     name: editingCollege?.name || '',
+    managesGeneralEducationCourses: Boolean(editingCollege?.managesGeneralEducationCourses),
     programs: editingCollege?.programs?.length
       ? editingCollege.programs.map((p) => ({
           id: p.id || `prg_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
@@ -624,6 +625,10 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         const courseCode = String(course.code || '').trim();
         const courseTitle = String(course.title || '').trim();
         if (!courseCode && !courseTitle) continue;
+        if (!courseCode || !courseTitle) {
+          setError(`Complete both the subject code and subject title for ${courseCode || courseTitle}, or leave both blank to add courses later.`);
+          return;
+        }
         const serviceMode = inferServiceMode(course);
         const needsLectureCollege = serviceMode === SERVICE_MODES.LECTURE || serviceMode === SERVICE_MODES.BOTH;
         const needsLaboratoryCollege = serviceMode === SERVICE_MODES.LABORATORY || serviceMode === SERVICE_MODES.BOTH;
@@ -659,35 +664,16 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         await updateCollege(editingCollege.id, {
           code,
           name,
+          managesGeneralEducationCourses: form.managesGeneralEducationCourses,
           programs: cleanPrograms,
         });
       } else {
         await addCollege({
           code,
           name,
+          managesGeneralEducationCourses: form.managesGeneralEducationCourses,
           programs: cleanPrograms,
         });
-      }
-
-      // A program is represented in multiple top-level collections. Remove its
-      // dependent catalogue and section records so it cannot be rediscovered by
-      // scheduling/access-allocation screens after being removed from a college.
-      for (const removedProgramCode of removedProgramCodes) {
-        await deleteProgramCourses(code, removedProgramCode);
-        await deleteProgramSections(removedProgramCode, code);
-      }
-
-      // Reconcile records left orphaned by older versions that only updated the
-      // college document (for example, the previously removed BSN sections).
-      await deleteCollegeCoursesOutsidePrograms(code, [...currentProgramCodes]);
-      const storedSectionRows = await getCollegeProgramSections(code);
-      const orphanedSectionCodes = new Set(
-        storedSectionRows
-          .map((row) => String(row.programCode || '').trim().toUpperCase())
-          .filter((programCode) => programCode && !currentProgramCodes.has(programCode))
-      );
-      for (const orphanedProgramCode of orphanedSectionCodes) {
-        await deleteProgramSections(orphanedProgramCode, code);
       }
 
       // Save/Write all courses inside programs to Firestore
@@ -764,6 +750,25 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             }
           }
         }
+      }
+
+      // Clean up removed program records only after retained courses have been
+      // migrated to their new program code. Deleting first leaves stale IDs in
+      // the modal and causes Firestore's "No document to update" error.
+      for (const removedProgramCode of removedProgramCodes) {
+        await deleteProgramCourses(code, removedProgramCode);
+        await deleteProgramSections(removedProgramCode, code);
+      }
+
+      await deleteCollegeCoursesOutsidePrograms(code, [...currentProgramCodes]);
+      const storedSectionRows = await getCollegeProgramSections(code);
+      const orphanedSectionCodes = new Set(
+        storedSectionRows
+          .map((row) => String(row.programCode || '').trim().toUpperCase())
+          .filter((programCode) => programCode && !currentProgramCodes.has(programCode))
+      );
+      for (const orphanedProgramCode of orphanedSectionCodes) {
+        await deleteProgramSections(orphanedProgramCode, code);
       }
 
       // Save/Write all sections inside programs to Firestore
@@ -868,6 +873,27 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   />
                 </div>
               </div>
+              <label className={`flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
+                form.managesGeneralEducationCourses
+                  ? 'border-[#7A0808]/30 bg-red-50/60'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={form.managesGeneralEducationCourses}
+                  onChange={(event) => setForm((prev) => ({
+                    ...prev,
+                    managesGeneralEducationCourses: event.target.checked,
+                  }))}
+                  className="mt-0.5 h-4 w-4 accent-[#7A0808]"
+                />
+                <span>
+                  <span className="block text-xs font-black text-gray-800">General Education / Minor Subject Provider</span>
+                  <span className="mt-1 block text-[10px] font-medium leading-relaxed text-gray-500">
+                    Enable when this college centrally manages minor subjects for multiple colleges and programs. It will be highlighted for first scheduling access and centralized course assignment.
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* Section 2: Programs Offered */}
@@ -1100,7 +1126,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           placeholder="e.g. IT101"
                                           value={crs.code}
                                           onChange={(e) => updateCourseField(pIdx, cIdx, 'code', e.target.value)}
-                                          required
+                                          required={Boolean(String(crs.title || '').trim())}
                                         />
                                         {isDuplicate && (
                                           <span className="text-[9px] font-bold text-red-600 block mt-0.5">Duplicate code</span>
@@ -1117,7 +1143,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           value={crs.title}
                                           onChange={(e) => updateCourseField(pIdx, cIdx, 'title', e.target.value)}
                                           onBlur={(e) => updateCourseField(pIdx, cIdx, 'title', toTitleCase(e.target.value.trim()))}
-                                          required
+                                          required={Boolean(String(crs.code || '').trim())}
                                         />
                                       </div>
 

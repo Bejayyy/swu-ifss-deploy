@@ -80,6 +80,8 @@ import {
   subscribeAllApprovalWorkflows,
   deleteApprovalWorkflowRecord,
   batchDeleteApprovalWorkflows,
+  runReferentialIntegrityAudit,
+  cleanIntegrityFinding,
 } from '../../services/developerRecordsService';
 import { formatScheduleHour, SCHEDULE_DAYS } from '../../constants/scheduleGrid';
 
@@ -110,6 +112,8 @@ export default function DeveloperSystemRecords() {
   const [academicCalendars, setAcademicCalendars] = useState([]);
   const [noClassDays, setNoClassDays] = useState([]);
   const [approvalWorkflows, setApprovalWorkflows] = useState([]);
+  const [integrityFindings, setIntegrityFindings] = useState([]);
+  const [integrityScanning, setIntegrityScanning] = useState(false);
 
   // Multi-selection states (Sets of IDs / docPaths / UIDs)
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -128,6 +132,31 @@ export default function DeveloperSystemRecords() {
   const [dayFilter, setDayFilter] = useState('all');
   const [semesterFilter, setSemesterFilter] = useState('all');
   const [modeFilter, setModeFilter] = useState('all');
+
+  const handleRunIntegrityAudit = async () => {
+    setIntegrityScanning(true);
+    setErrorMessage('');
+    try {
+      const findings = await runReferentialIntegrityAudit();
+      setIntegrityFindings(findings);
+      setSuccessMessage(findings.length ? `Audit completed: ${findings.length} issue(s) require review.` : 'Audit completed: no broken references were found.');
+    } catch (error) {
+      setErrorMessage(error.message || 'Data integrity audit failed.');
+    } finally {
+      setIntegrityScanning(false);
+    }
+  };
+
+  const handleCleanIntegrityFinding = async (finding) => {
+    if (!window.confirm(`Clean this finding?\n\n${finding.path}\n${finding.reason}\n\nThis action cannot be undone.`)) return;
+    try {
+      await cleanIntegrityFinding(finding);
+      setIntegrityFindings((prev) => prev.filter((item) => item.id !== finding.id && item.path !== finding.path));
+      setSuccessMessage(`Cleaned ${finding.path}. Run the audit again to verify all relationships.`);
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to clean the selected reference.');
+    }
+  };
   const [priorityFilter, setPriorityFilter] = useState('all');
 
   // Modal inspection states
@@ -753,6 +782,7 @@ export default function DeveloperSystemRecords() {
           { key: 'courses', label: 'Course Catalog', icon: BookOpen, count: courses.length },
           { key: 'calendars', label: 'Academic Calendar', icon: Clock, count: academicCalendars.length + noClassDays.length },
           { key: 'workflows', label: 'Approval Workflows', icon: GitBranch, count: approvalWorkflows.length },
+          { key: 'integrity', label: 'Data Integrity', icon: Shield, count: integrityFindings.length },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -816,6 +846,45 @@ export default function DeveloperSystemRecords() {
       {/* ========================================================================= */}
       {/* 1. ALL USERS TAB                                                         */}
       {/* ========================================================================= */}
+      {activeTab === 'integrity' && (
+        <div className="mt-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xs">
+          <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 text-base font-black text-gray-900"><Shield size={18} className="text-[#7A0808]" /> Referential Data Integrity</h3>
+              <p className="mt-1 max-w-3xl text-xs text-gray-600">Finds documents that still reference deleted users, missing colleges, or removed programs. Review each exact document path before cleaning it.</p>
+            </div>
+            <button type="button" onClick={handleRunIntegrityAudit} disabled={integrityScanning} className="btn-maroon flex items-center justify-center gap-2 px-4 py-2 text-xs disabled:opacity-60">
+              <RefreshCw size={14} className={integrityScanning ? 'animate-spin' : ''} /> {integrityScanning ? 'Scanning Firestore...' : 'Run Full Audit'}
+            </button>
+          </div>
+          {integrityFindings.length === 0 ? (
+            <div className="p-12 text-center">
+              <Database size={34} className="mx-auto mb-3 text-gray-300" />
+              <p className="font-bold text-gray-700">{integrityScanning ? 'Checking document relationships...' : 'Run the audit to inspect connected Firebase data.'}</p>
+              <p className="mt-1 text-xs text-gray-500">No records are deleted automatically.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px] text-left text-xs">
+                <thead className="bg-gray-100 text-[10px] font-black uppercase tracking-wider text-gray-600"><tr><th className="p-3">Severity</th><th className="p-3">Collection</th><th className="p-3">Document path</th><th className="p-3">Broken field/value</th><th className="p-3">Finding</th><th className="p-3 text-right">Action</th></tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {integrityFindings.map((finding) => (
+                    <tr key={finding.id} className="hover:bg-gray-50">
+                      <td className="p-3"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${finding.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>{finding.severity}</span></td>
+                      <td className="p-3 font-bold text-gray-800">{finding.collection}</td>
+                      <td className="p-3 font-mono text-[10px] text-gray-600">{finding.path}</td>
+                      <td className="p-3"><span className="block font-bold text-gray-700">{finding.field || '—'}</span><span className="block max-w-[220px] truncate text-[10px] text-red-700" title={finding.value}>{finding.value || '—'}</span></td>
+                      <td className="p-3 text-gray-700">{finding.reason}</td>
+                      <td className="p-3 text-right">{finding.action === 'none' ? <span className="text-[10px] font-bold text-gray-400">Manual review</span> : <button type="button" onClick={() => handleCleanIntegrityFinding(finding)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 font-bold text-red-700 hover:bg-red-100"><Trash2 size={12} /> {finding.action === 'delete_document' ? 'Delete orphan' : 'Clear reference'}</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'users' && (
         <div className="mt-4 space-y-4">
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-center justify-between">

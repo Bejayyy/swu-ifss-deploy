@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Calendar,
   Plus,
@@ -34,8 +35,10 @@ import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessMo
 import ResetDeanSchedulesModal from '../components/modals/ResetDeanSchedulesModal';
 import CustomSelect from '../components/ui/CustomSelect';
 import { subscribeColleges } from '../services/collegeService';
+import { subscribeToBuildings } from '../services/buildingService';
 import { subscribeCollegeCourses, subscribeServiceCollegeCourses } from '../services/courseService';
 import { notifyServiceCollegeDeans } from '../services/notificationService';
+import { submitScheduleApprovalRequest } from '../services/scheduleApprovalService';
 import { getCollegeProgramSections, generateSectionNames } from '../services/sectionService';
 import { addDays } from '../constants/scheduleGrid';
 import {
@@ -79,6 +82,14 @@ import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
 // Year level options for section metadata
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 
+const getCourseYearLevel = (course = {}) => {
+  const raw = String(course.yearLevel || course.year || course.yearNumber || '').trim();
+  const number = Number.parseInt(raw, 10);
+  if (number >= 1 && number <= YEAR_LEVELS.length) return YEAR_LEVELS[number - 1];
+  const exact = YEAR_LEVELS.find((level) => level.toLowerCase() === raw.toLowerCase());
+  return exact || 'Unspecified Year';
+};
+
 // Modality options for section / class scheduling
 const MODALITY_OPTIONS = [
   { value: 'regular', label: 'Every Week (Classroom)', badge: 'Weekly' },
@@ -109,10 +120,22 @@ function normalizeEmail(email) {
 }
 
 export default function CourseSchedulingNew() {
+  const { state: navigationState } = useLocation();
   const { profile } = useAuth();
   const isRegistrar = profile?.role === ROLES.REGISTRAR;
   const isDean = profile?.role === ROLES.DEAN;
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
+
+  useEffect(() => {
+    const rejectedRequest = navigationState?.rejectedScheduleRequest;
+    if (!rejectedRequest) return;
+    showNotification({
+      type: 'warning',
+      title: `Replot ${rejectedRequest.courseCode || 'course'} schedule`,
+      message: `${rejectedRequest.rejectionReason || 'The previous room schedule was rejected.'} Select the course again, then choose a different room or preferred time and submit the replacement for approval.`,
+      autoCloseMs: 0,
+    });
+  }, [navigationState?.rejectedScheduleRequest, showNotification]);
 
   const {
     schoolYears,
@@ -123,6 +146,7 @@ export default function CourseSchedulingNew() {
 
   const [staffUsers, setStaffUsers] = useState([]);
   const [colleges, setColleges] = useState([]);
+  const [buildingList, setBuildingList] = useState([]);
   const [expandedColleges, setExpandedColleges] = useState({});
   const [selectedDeanUid, setSelectedDeanUid] = useState(null);
   const [selectedProgram, setSelectedProgram] = useState('ALL'); // 'ALL' or specific programCode like 'BSMT', 'BSN'
@@ -139,9 +163,19 @@ export default function CourseSchedulingNew() {
   const [activeServiceAssignment, setActiveServiceAssignment] = useState(null);
   const [curriculumCourses, setCurriculumCourses] = useState([]);
 
+  useEffect(() => subscribeToBuildings(
+    setBuildingList,
+    (error) => console.warn('Course scheduling building listener:', error),
+  ), []);
+
   const currentSectionObj = useMemo(() => {
-    return deanSections.find(s => s.name === selectedSection);
-  }, [deanSections, selectedSection]);
+    const ownSection = deanSections.find(s => s.name === selectedSection);
+    if (ownSection) return ownSection;
+    if (activeServiceAssignment) {
+      return (serviceSectionsMap[activeServiceAssignment.course?.id] || []).find((s) => s.name === selectedSection) || null;
+    }
+    return null;
+  }, [deanSections, selectedSection, activeServiceAssignment, serviceSectionsMap]);
 
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semester, setSemester] = useState('1');
@@ -489,6 +523,9 @@ export default function CourseSchedulingNew() {
 
   // Handle program tab click
   const handleSelectProgram = (progCode) => {
+    // Program cards and their sections belong to the dean's own college.
+    // Never carry a previous cross-college assignment into this context.
+    setActiveServiceAssignment(null);
     setSelectedProgram(progCode);
     const progSections = deanSections.filter((s) => {
       const pCode = String(s.programCode || '').trim().toUpperCase();
@@ -673,6 +710,7 @@ export default function CourseSchedulingNew() {
                     programCode: crs.programCode,
                     yearNumber: yearNum,
                     motherCollege: crs.collegeCode,
+                    hasOjtAlternatingModality: Boolean(m.hasOjtAlternatingModality),
                   });
                 });
               });
@@ -704,6 +742,63 @@ export default function CourseSchedulingNew() {
     });
     return Array.from(map.values());
   }, [serviceCourses]);
+
+  const servicedMotherColleges = useMemo(() => {
+    const map = new Map();
+    (serviceCourses || []).forEach((course) => {
+      const code = String(course.collegeCode || '').trim().toUpperCase();
+      if (!code) return;
+      const college = colleges.find((item) => String(item.code || '').trim().toUpperCase() === code);
+      if (!map.has(code)) map.set(code, { code, name: college?.name || code, courseCount: 0, sectionCount: 0 });
+      const entry = map.get(code);
+      entry.courseCount += 1;
+      entry.sectionCount += (serviceSectionsMap[course.id] || []).length;
+    });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [serviceCourses, serviceSectionsMap, colleges]);
+
+  const selectedSectionCourseChecklist = useMemo(() => {
+    if (!selectedSection || scheduleTab !== 'regular') return [];
+
+    const sourceCourses = activeServiceAssignment?.course ? [activeServiceAssignment.course] : curriculumCourses;
+    const sectionProgram = String(currentSectionObj?.programCode || selectedProgram || '').trim().toUpperCase();
+    const sectionYear = getCourseYearLevel(currentSectionObj || {});
+    const selectedSemesterNumber = Number.parseInt(String(semester), 10) || 1;
+    const normalizeSemester = (course) => {
+      const raw = String(course.semester || course.term || '').toLowerCase();
+      const number = Number.parseInt(raw, 10);
+      if (number) return number;
+      if (raw.includes('second')) return 2;
+      if (raw.includes('summer') || raw.includes('third')) return 3;
+      return 1;
+    };
+
+    return sourceCourses
+      .filter((course) => {
+        if (activeServiceAssignment) return true;
+        const courseProgram = String(course.programCode || course.program || '').trim().toUpperCase();
+        const programMatches = !sectionProgram || sectionProgram === 'ALL' || courseProgram === sectionProgram;
+        return programMatches && getCourseYearLevel(course) === sectionYear && normalizeSemester(course) === selectedSemesterNumber;
+      })
+      .map((course) => {
+        const code = String(course.code || course.courseCode || '').trim();
+        const entries = plotEntries.filter(
+          (entry) => String(entry.courseCode || entry.code || '').trim().toUpperCase() === code.toUpperCase()
+        );
+        const requiredLecture = Number(course.lecHours ?? course.lectureHours ?? course.lecUnits ?? 0);
+        const requiredLaboratory = Number(course.labHours ?? course.laboratoryHours ?? 0) || Number(course.labUnits ?? 0) * 3;
+        const plottedHours = (type) => entries
+          .filter((entry) => String(entry.type || '').toLowerCase().includes(type))
+          .reduce((total, entry) => total + Math.max(0, Number(entry.endHour || 0) - Number(entry.startHour || 0)), 0);
+        const lectureDone = requiredLecture <= 0 || plottedHours('lecture') >= requiredLecture;
+        const laboratoryDone = requiredLaboratory <= 0 || plottedHours('lab') >= requiredLaboratory;
+        const status = lectureDone && laboratoryDone && entries.length > 0
+          ? 'complete'
+          : entries.length > 0 ? 'partial' : 'pending';
+        return { code, title: course.title || course.courseTitle || '', status };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [selectedSection, scheduleTab, activeServiceAssignment, curriculumCourses, currentSectionObj, selectedProgram, semester, plotEntries]);
 
   // Handle Mother College Dean notifying the Service College
   const handleNotifyServiceCollege = async () => {
@@ -991,7 +1086,9 @@ export default function CourseSchedulingNew() {
 
       const entry = {
         ...payload,
-        day: dayIdx >= 0 ? dayIdx : (payload.day ?? 0),
+        // Regular schedules may submit several independently selected weekdays.
+        // Only exam entries derive their day from the modal's calendar date.
+        day: scheduleTab === 'exam' && dayIdx >= 0 ? dayIdx : (payload.day ?? 0),
         semester: Number(semester),
         schoolYearId: activeSchoolYearId || null,
         schoolYear: selectedSchoolYear?.label || selectedSchoolYear?.displayLabel || activeSchoolYearId || null,
@@ -1006,11 +1103,17 @@ export default function CourseSchedulingNew() {
         plottedBy: profile?.uid || null,
         plottedByEmail: normalizeEmail(profile?.email),
       };
+      const requiresRoomApproval = Boolean(payload.usedNonBudgetedRoom);
+      const requesterUid = profile?.uid || targetDeanUid;
+      const roomManagerUid = payload.roomManagerUid || null;
+      const isOtherDeanManagedRoom = Boolean(roomManagerUid && String(roomManagerUid) !== String(requesterUid));
+      const approvalTarget = isOtherDeanManagedRoom ? 'room_manager' : 'registrar';
 
       // Target sections to receive this plotted block
       const targetSections = (entry.isCombinedSection && Array.isArray(entry.combinedSections) && entry.combinedSections.length > 0)
         ? Array.from(new Set([selectedSection, ...entry.combinedSections]))
         : [selectedSection];
+      const entryPaths = [];
 
       if (entryModal?.mode === 'edit' && entryModal.id) {
         for (const sec of targetSections) {
@@ -1021,6 +1124,7 @@ export default function CourseSchedulingNew() {
             combinedSections: targetSections,
           };
           await updatePlotEntryForSection(targetDeanUid, sec, entryModal.id, secEntry);
+          entryPaths.push(`users/${targetDeanUid}/course_schedules/${sec}/entries/${entryModal.id}`);
         }
       } else {
         const sharedEntryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -1033,13 +1137,14 @@ export default function CourseSchedulingNew() {
             combinedSections: targetSections,
           };
           await addPlotEntryForSection(targetDeanUid, sec, secEntry, sharedEntryId);
+          entryPaths.push(`users/${targetDeanUid}/course_schedules/${sec}/entries/${sharedEntryId}`);
         }
 
         // Auto-mirror reciprocal entry for partner section if provided
         if (payload.reciprocalEntry && payload.partnerSection) {
           const recip = {
             ...payload.reciprocalEntry,
-            day: dayIdx >= 0 ? dayIdx : (payload.reciprocalEntry.day ?? 0),
+            day: scheduleTab === 'exam' && dayIdx >= 0 ? dayIdx : (payload.reciprocalEntry.day ?? 0),
             semester: Number(semester),
             schoolYearId: activeSchoolYearId || null,
             schoolYear: selectedSchoolYear?.label || selectedSchoolYear?.displayLabel || activeSchoolYearId || null,
@@ -1054,16 +1159,58 @@ export default function CourseSchedulingNew() {
             plottedBy: profile?.uid || null,
             plottedByEmail: normalizeEmail(profile?.email),
           };
-          await addPlotEntryForSection(targetDeanUid, payload.partnerSection, recip);
+          const reciprocalId = await addPlotEntryForSection(targetDeanUid, payload.partnerSection, {
+            ...recip,
+            approvalStatus: requiresRoomApproval ? 'pending' : 'approved',
+            approved: !requiresRoomApproval,
+          });
+          entryPaths.push(`users/${targetDeanUid}/course_schedules/${payload.partnerSection}/entries/${reciprocalId}`);
         }
+      }
+
+      if (requiresRoomApproval) {
+        await submitScheduleApprovalRequest({
+          approvalSubmissionId: payload.approvalSubmissionId,
+          entryPaths,
+          deanUid: profile?.uid || targetDeanUid,
+          deanEmail: normalizeEmail(profile?.email),
+          deanName: profile?.displayName || profile?.name || selectedDean?.name || '',
+          targetDeanUid,
+          courseCode: payload.courseCode || payload.title || '',
+          courseTitle: payload.title || '',
+          sections: targetSections,
+          day: entry.day,
+          startHour: payload.startHour,
+          endHour: payload.endHour,
+          teacher: payload.instructor || 'TBA',
+          roomCode: payload.roomCode,
+          roomId: payload.roomId || payload.roomCode,
+          buildingId: payload.buildingId || null,
+          buildingName: payload.buildingName || '',
+          floorId: payload.floorId || null,
+          floor: payload.floor || null,
+          nonBudgetedReason: payload.nonBudgetedRoomReason || null,
+          usedNonBudgetedRoom: true,
+          approvalTarget,
+          approverUid: isOtherDeanManagedRoom ? roomManagerUid : null,
+          approverName: isOtherDeanManagedRoom ? (payload.roomManagerName || 'Room Manager') : 'Registrar',
+          approverDepartment: isOtherDeanManagedRoom ? (payload.roomManagerDepartment || '') : '',
+          approverRole: isOtherDeanManagedRoom ? 'dean' : 'registrar',
+          schoolYearId: activeSchoolYearId || null,
+          semester: Number(semester),
+        });
       }
 
       showNotification({
         type: 'success',
-        title: entryModal?.mode === 'edit' ? 'Schedule Updated!' : 'Schedule Block Added!',
-        message: targetSections.length > 1
-          ? `${payload.courseCode || payload.title || 'Course'} schedule has been plotted and merged across ${targetSections.join(' & ')}.`
-          : `${payload.courseCode || payload.title || 'Course'} schedule has been successfully ${entryModal?.mode === 'edit' ? 'updated' : 'plotted'} for ${selectedSection}.`,
+        title: requiresRoomApproval ? 'Schedule Submitted for Approval' : (entryModal?.mode === 'edit' ? 'Schedule Updated' : 'Schedule Saved'),
+        message: requiresRoomApproval
+          ? (targetSections.length > 1
+            ? `${payload.courseCode || payload.title || 'Course'} is pending ${isOtherDeanManagedRoom ? 'room manager' : 'Registrar'} approval and reserves the selected time for ${targetSections.join(' & ')}.`
+            : `${payload.courseCode || payload.title || 'Course'} is pending ${isOtherDeanManagedRoom ? 'room manager' : 'Registrar'} approval because a non-assigned room was selected.`)
+          : (targetSections.length > 1
+            ? `${payload.courseCode || payload.title || 'Course'} was approved immediately and saved for ${targetSections.join(' & ')} using an allocated room.`
+            : `${payload.courseCode || payload.title || 'Course'} was saved immediately using the Registrar-allocated room.`),
       });
     } catch (err) {
       console.error('handleSaveEntry error:', err);
@@ -1093,10 +1240,11 @@ export default function CourseSchedulingNew() {
     if (!confirmed) return;
     
     try {
-      const targetDeanUid = activeServiceAssignment?.motherDeanUid || selectedDeanUid || profile?.uid;
+      const targetDeanUid = block.sourceDeanUid || block.rawEntry?._sourceDeanUid || activeServiceAssignment?.motherDeanUid || selectedDeanUid || profile?.uid;
+      const sourceSection = block.sourceSection || block.rawEntry?._sourceSection || selectedSection;
       const deleteSections = (block.isCombinedSection && Array.isArray(block.combinedSections) && block.combinedSections.length > 0)
-        ? Array.from(new Set([selectedSection, ...block.combinedSections]))
-        : [selectedSection];
+        ? Array.from(new Set([sourceSection, ...block.combinedSections]))
+        : [sourceSection];
 
       for (const sec of deleteSections) {
         await deletePlotEntryForSection(targetDeanUid, sec, block.id);
@@ -1122,6 +1270,7 @@ export default function CourseSchedulingNew() {
   };
 
   const handleSelectDean = (deanUid) => {
+    setActiveServiceAssignment(null);
     setSelectedDeanUid(deanUid);
     setSelectedProgram('ALL');
     setSelectedSection(null); // Reset section when changing dean
@@ -1179,15 +1328,30 @@ export default function CourseSchedulingNew() {
       selectedDean?.college ||
       selectedDean?.department ||
       (isDean ? (profile?.college || profile?.department) : '');
-    return getAssignedRoomsForCollege(scheduleAccess, code);
-  }, [scheduleAccess, activeCollegeObj, selectedDean, isDean, profile]);
+    const grantedRooms = getAssignedRoomsForCollege(scheduleAccess, code);
+    const targetDeanUid = isDean ? profile?.uid : selectedDeanUid;
+    const targetDeanName = String(selectedDean?.name || profile?.displayName || profile?.name || '').trim().toLowerCase();
+    const managedRooms = (buildingList || []).flatMap((building) =>
+      (building.floorData || []).flatMap((floor) =>
+        (floor.rooms || [])
+          .filter((room) => {
+            const managerUid = room.managedBy || floor.managedBy || '';
+            const managerName = String(room.managedByName || floor.managedByName || '').trim().toLowerCase();
+            return (Boolean(targetDeanUid) && String(managerUid) === String(targetDeanUid))
+              || (Boolean(targetDeanName) && managerName === targetDeanName);
+          })
+          .map((room) => room.roomCode || room.name || room.id)
+      )
+    );
+    return Array.from(new Set([...grantedRooms, ...managedRooms].filter(Boolean)));
+  }, [scheduleAccess, activeCollegeObj, selectedDean, selectedDeanUid, isDean, profile, buildingList]);
 
   const subtitle = isRegistrar
     ? 'View course schedules plotted by college deans'
     : 'Plot course schedules for your college sections';
 
   return (
-    <Layout title="Course Scheduling" subtitle={subtitle}>
+    <Layout title="Course Scheduling" subtitle={subtitle} compactNavOnDesktop>
       {error && (
         <div className="mb-4 p-3 border border-red-200 bg-red-50 text-sm font-semibold text-red-700 rounded-lg">
           {error}
@@ -1407,7 +1571,7 @@ export default function CourseSchedulingNew() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-5">
         {/* Left Sidebar */}
         <div className="space-y-4">
           {/* Registrar View: Colleges & Deans Selection Card */}
@@ -1626,9 +1790,13 @@ export default function CourseSchedulingNew() {
                                   key={section.name}
                                   role="button"
                                   tabIndex={0}
-                                  onClick={() => setSelectedSection(section.name)}
+                                  onClick={() => {
+                                    setActiveServiceAssignment(null);
+                                    setSelectedSection(section.name);
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' || e.key === ' ') {
+                                      setActiveServiceAssignment(null);
                                       setSelectedSection(section.name);
                                     }
                                   }}
@@ -1685,18 +1853,68 @@ export default function CourseSchedulingNew() {
                 Courses from other colleges assigned to your faculty to teach:
               </p>
 
-              <div className="space-y-2 pt-1">
-                {groupedServiceCourses.map((grp) => {
-                  const isExp = Boolean(expandedServiceCourses[grp.courseCode]);
+              <div className="hidden">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#7A0808]">
+                  Colleges requiring your schedules ({servicedMotherColleges.length})
+                </p>
+                {servicedMotherColleges.map((college) => (
+                  <div key={college.code} className="flex items-center justify-between gap-2 rounded-lg bg-red-50/70 px-2.5 py-2">
+                    <div className="min-w-0">
+                      <span className="block truncate text-[11px] font-black text-gray-800">{college.name}</span>
+                      <span className="text-[9px] font-bold text-gray-500">{college.code}</span>
+                    </div>
+                    <span className="shrink-0 text-[9px] font-black text-[#7A0808]">
+                      {college.courseCount} course{college.courseCount !== 1 ? 's' : ''} · {college.sectionCount} section{college.sectionCount !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3 pt-1">
+                {servicedMotherColleges.map((college) => (
+                  <section key={college.code} className="rounded-xl border border-indigo-200 bg-white/80 p-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2 border-b border-indigo-100 pb-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-black text-indigo-950">{college.name}</p>
+                        <p className="text-[9px] font-bold text-gray-500">{college.code}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-black text-indigo-800">
+                        {college.courseCount} course{college.courseCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                {[...YEAR_LEVELS, 'Unspecified Year'].map((yearLevel) => {
+                  const hasCoursesForYear = serviceCourses.some(
+                    (course) =>
+                      String(course.collegeCode || '').trim().toUpperCase() === college.code &&
+                      getCourseYearLevel(course) === yearLevel
+                  );
+                  if (!hasCoursesForYear) return null;
                   return (
-                    <div key={grp.courseCode} className="bg-white rounded-xl border border-indigo-100 overflow-hidden shadow-2xs">
+                    <div key={`${college.code}:${yearLevel}`} className="rounded-lg bg-indigo-50/60 p-2">
+                      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-900">
+                        <GraduationCap size={12} />
+                        {yearLevel}
+                      </div>
+                      <div className="space-y-2">
+                {groupedServiceCourses.map((grp) => {
+                  const coursesForCollege = grp.courses.filter(
+                    (course) =>
+                      String(course.collegeCode || '').trim().toUpperCase() === college.code &&
+                      getCourseYearLevel(course) === yearLevel
+                  );
+                  if (coursesForCollege.length === 0) return null;
+                  const expansionKey = `${college.code}:${grp.courseCode}`;
+                  const isExp = Boolean(expandedServiceCourses[expansionKey]);
+                  return (
+                    <div key={expansionKey} className="bg-white rounded-xl border border-indigo-100 overflow-hidden shadow-2xs">
                       {/* Header: Course Code & Title */}
                       <button
                         type="button"
                         onClick={() =>
                           setExpandedServiceCourses((prev) => ({
                             ...prev,
-                            [grp.courseCode]: !prev[grp.courseCode],
+                            [expansionKey]: !prev[expansionKey],
                           }))
                         }
                         className="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-indigo-50/50 transition-colors cursor-pointer"
@@ -1719,11 +1937,17 @@ export default function CourseSchedulingNew() {
                       {/* Child: Mother College & Sections */}
                       {isExp && (
                         <div className="px-3 pb-3 pt-1 border-t border-indigo-50 space-y-2 bg-indigo-50/30">
-                          {grp.courses.map((crs) => {
+                          {coursesForCollege.map((crs) => {
                             const motherCol = crs.collegeCode || 'Mother College';
-                            const secList = serviceSectionsMap[crs.id] || [];
-                            const isLec = (crs.lecServiceCollege || '').toUpperCase() === (activeCollegeCode || '').toUpperCase();
-                            const compLabel = isLec ? 'Lecture' : 'Laboratory';
+                            const courseYearNumber = YEAR_LEVELS.indexOf(getCourseYearLevel(crs)) + 1;
+                            const allCourseSections = serviceSectionsMap[crs.id] || [];
+                            const secList = courseYearNumber > 0
+                              ? allCourseSections.filter((sec) => Number(sec.yearNumber) === courseYearNumber)
+                              : allCourseSections;
+                            const providerCode = String(activeCollegeObj?.code || activeCollegeCode || '').toUpperCase();
+                            const handlesLecture = String(crs.lecServiceCollege || '').toUpperCase() === providerCode;
+                            const handlesLaboratory = String(crs.labServiceCollege || '').toUpperCase() === providerCode;
+                            const compLabel = handlesLecture && handlesLaboratory ? 'Lecture & Laboratory' : (handlesLecture ? 'Lecture' : 'Laboratory');
 
                             return (
                               <div key={crs.id} className="space-y-1.5 pl-1 border-l-2 border-indigo-300">
@@ -1758,9 +1982,6 @@ export default function CourseSchedulingNew() {
                                                  motherCol.toUpperCase().includes(String(u.college || u.department || '').toUpperCase()))
                                             );
 
-                                            if (motherDean) {
-                                              setSelectedDeanUid(motherDean.uid);
-                                            }
                                             setSelectedSection(sec.name);
                                             setActiveServiceAssignment({
                                               course: crs,
@@ -1789,13 +2010,20 @@ export default function CourseSchedulingNew() {
                     </div>
                   );
                 })}
+                      </div>
+                    </div>
+                  );
+                })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </div>
           )}
         </div>
 
         {/* Main Content Area */}
-        <div>
+        <div className="min-w-0">
           {selectedDean ? (
             <div className="space-y-4">
               {/* Service College Mode Active Alert Banner */}
@@ -1886,7 +2114,9 @@ export default function CourseSchedulingNew() {
                             <CustomSelect
                               value={currentSectionObj?.modality || 'regular'}
                               onChange={(e) => handleUpdateSectionModality(e.target.value)}
-                              options={MODALITY_OPTIONS}
+                              options={currentSectionObj?.hasOjtAlternatingModality
+                                ? MODALITY_OPTIONS
+                                : MODALITY_OPTIONS.filter((option) => option.value === 'regular')}
                             />
                           </div>
                         ) : (
@@ -1988,7 +2218,7 @@ export default function CourseSchedulingNew() {
               )}
 
               {/* Cycle View Filter Switcher (When Regular Schedule Tab is active) */}
-              {scheduleTab === 'regular' && selectedSection && (
+              {scheduleTab === 'regular' && selectedSection && currentSectionObj?.hasOjtAlternatingModality && (
                 <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white border border-gray-100 rounded-2xl shadow-2xs">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -2078,6 +2308,15 @@ export default function CourseSchedulingNew() {
                   blocks={gridBlocks}
                   readOnly={!isDean || profile?.uid !== selectedDeanUid}
                   canPlot={canPlot}
+                  hideSectionNameInBlocks
+                  addScheduleDisabledReason={
+                    !isDean
+                      ? 'Only a dean can add course schedules.'
+                      : profile?.uid !== selectedDeanUid && !activeServiceAssignment
+                        ? 'You can only add schedules for sections assigned to your dean account.'
+                      : accessStatus.message || 'Scheduling access has not been granted for this college yet.'
+                  }
+                  courseChecklist={selectedSectionCourseChecklist}
                   onAddBlock={() => {
                     const firstOpenIdx = dayStatuses.findIndex((d) => !d.disabled);
                     const defaultIdx = firstOpenIdx >= 0 ? firstOpenIdx : 0;
@@ -2144,6 +2383,7 @@ export default function CourseSchedulingNew() {
           deanCollege={activeCollegeObj?.code || selectedDean?.college || selectedDean?.department}
           collegeCode={activeCollegeObj?.code || selectedDean?.college}
           deanUid={selectedDeanUid}
+          deanName={selectedDean?.name || profile?.displayName || profile?.name || ''}
           programCode={currentSectionObj?.programCode || (selectedProgram !== 'ALL' ? selectedProgram : null)}
           programName={availablePrograms.find((p) => p.code === (currentSectionObj?.programCode || selectedProgram))?.name || ''}
           sections={displayedDeanSections}
@@ -2151,6 +2391,7 @@ export default function CourseSchedulingNew() {
           semester={semester}
           schoolYearId={activeSchoolYearId}
           sectionYearLevel={currentSectionObj?.yearLevel || '1st Year'}
+          allowOjtRotation={Boolean(currentSectionObj?.hasOjtAlternatingModality)}
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
           isServiceCollegeMode={entryModal.isServiceCollegeMode || Boolean(activeServiceAssignment)}
           serviceComponent={entryModal.serviceComponent || activeServiceAssignment?.component || null}

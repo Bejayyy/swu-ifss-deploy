@@ -80,6 +80,10 @@ service cloud.firestore {
         || (isSignedIn() && userDocExists() && userDoc().data.role == 'gsd');
     }
 
+    function canManageAssignedRooms() {
+      return hasPermission('rooms.manage.assigned');
+    }
+
     function canManageRoomActivityApproval() {
       return hasPermission('approval.manage.room_activity');
     }
@@ -213,6 +217,19 @@ service cloud.firestore {
           allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
             isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
           ));
+          // The recorded room-owning dean may only decide a pending schedule
+          // that explicitly targets their immutable UID.
+          allow update: if isDean()
+            && isPhinmaedEmail()
+            && resource.data.approvalStatus == 'pending'
+            && resource.data.roomManagerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'approvalStatus', 'approved', 'reviewedAt', 'reviewedBy', 'reviewedByName'
+            ]);
+          allow delete: if isDean()
+            && isPhinmaedEmail()
+            && resource.data.approvalStatus == 'pending'
+            && resource.data.roomManagerUid == request.auth.uid;
         }
       }
     }
@@ -310,6 +327,17 @@ service cloud.firestore {
         match /rooms/{roomId} {
           allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
           allow write, delete: if isDeveloper() || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
+          // A delegated room manager may add and manage rooms only on a floor
+          // currently assigned to their immutable user UID.
+          allow create: if isPhinmaedEmail()
+            && canManageAssignedRooms()
+            && get(/databases/$(database)/documents/buildings/$(buildingId)/floors/$(floorId)).data.managedBy == request.auth.uid;
+          allow update, delete: if isPhinmaedEmail()
+            && canManageAssignedRooms()
+            && (
+              resource.data.managedBy == request.auth.uid
+              || get(/databases/$(database)/documents/buildings/$(buildingId)/floors/$(floorId)).data.managedBy == request.auth.uid
+            );
           // Allow dean to update room they manage (for updating details) - ONLY REGISTRAR CAN ASSIGN MANAGERS
           allow update: if isDean() && isPhinmaedEmail()
             && userDocExists()
@@ -320,6 +348,19 @@ service cloud.firestore {
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['managedBy', 'managedByName']);
         }
       }
+    }
+
+    // Room/equipment CMS values used by the add/edit room forms.
+    match /roomTypes/{typeId} {
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow create, update, delete: if isDeveloper()
+        || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
+    }
+
+    match /equipments/{equipmentId} {
+      allow read: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
+      allow create, update, delete: if isDeveloper()
+        || ((isRegistrar() || canManageBuildings()) && isPhinmaedEmail());
     }
 
     match /{path=**}/floors/{floorId} {
@@ -544,6 +585,35 @@ service cloud.firestore {
     // Chat Rooms Collection - All signed-in authenticated staff can read and write chat rooms
     match /chat_rooms/{roomId} {
       allow read, write: if isSignedIn();
+    }
+
+    // Dean-submitted course schedules awaiting Registrar review.
+    // Pending entries remain in course_schedules so all conflict checks reserve their time.
+    match /schedule_approval_requests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.deanUid == request.auth.uid;
+      allow update: if isDeveloper()
+        || (isRegistrar() && isPhinmaedEmail())
+        || (
+          isSignedIn()
+          && isPhinmaedEmail()
+          && resource.data.status == 'pending'
+          && resource.data.deanUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'entryPaths', 'scheduleSlots', 'updatedAt'
+          ])
+        )
+        || (
+          isSignedIn()
+          && isPhinmaedEmail()
+          && resource.data.status == 'pending'
+          && resource.data.approverUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'updatedAt', 'reviewedAt', 'reviewedBy', 'reviewedByName',
+            'rejectionReason'
+          ])
+        );
+      allow delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
     }
 
     // Notifications Collection - All signed-in authenticated staff can read, write, and manage in-app notifications

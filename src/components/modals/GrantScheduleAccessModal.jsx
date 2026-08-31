@@ -186,13 +186,13 @@ export default function GrantScheduleAccessModal({
 
   // Filtered Colleges (Tab 1)
   const filteredColleges = useMemo(() => {
-    if (!collegeSearch.trim()) return colleges;
     const q = collegeSearch.toLowerCase();
     return colleges.filter(
       (c) =>
+        !collegeSearch.trim() ||
         (c.name && c.name.toLowerCase().includes(q)) ||
         (c.code && c.code.toLowerCase().includes(q))
-    );
+    ).sort((a, b) => Number(Boolean(b.managesGeneralEducationCourses)) - Number(Boolean(a.managesGeneralEducationCourses)) || String(a.name).localeCompare(String(b.name)));
   }, [colleges, collegeSearch]);
 
   const isAllCollegesSelected =
@@ -741,6 +741,9 @@ export default function GrantScheduleAccessModal({
                                         className="rounded border-gray-300 text-[#7A0808] focus:ring-[#7A0808] cursor-pointer flex-shrink-0"
                                       />
                                       <span className="truncate">{college.name}</span>
+                                      {college.managesGeneralEducationCourses && (
+                                        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-800">Recommended First</span>
+                                      )}
                                     </div>
                                     <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 uppercase flex-shrink-0 border border-gray-200">
                                       {college.code}

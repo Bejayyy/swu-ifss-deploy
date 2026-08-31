@@ -17,6 +17,8 @@ import DatePicker from '../components/ui/DatePicker';
 import CustomSelect from '../components/ui/CustomSelect';
 import { formatCollegeName } from '../constants/colleges';
 import { deleteRoomReservation } from '../services/reservationService';
+import { decideScheduleApproval, subscribeScheduleApprovalRequests } from '../services/scheduleApprovalService';
+import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
 
 function formatReadableDate(dateInput) {
   if (!dateInput) return '—';
@@ -83,13 +85,14 @@ export default function ApprovalManagement() {
         for (const f of b.floorData || []) {
           for (const r of f.rooms || []) {
             const rId = String(r.id || '').toLowerCase();
+            const rDocId = String(r.docId || '').toLowerCase();
             const rCode = String(r.roomCode || r.code || r.name || '').toLowerCase();
             const rNumber = String(r.number || '').toLowerCase();
             const targetStr = String(rawRoomId || '').toLowerCase();
             const vStr = venueClean.toLowerCase();
 
             if (
-              (targetStr && (rId === targetStr || rCode === targetStr)) ||
+              (targetStr && (rId === targetStr || rDocId === targetStr || rCode === targetStr)) ||
               (vStr && (vStr.includes(rCode) || vStr.includes(rNumber) || rCode.includes(vStr)))
             ) {
               targetRoom = r;
@@ -150,16 +153,148 @@ export default function ApprovalManagement() {
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [showSection, setShowSection] = useState(initialSection);
   const [selectedRequestIds, setSelectedRequestIds] = useState([]);
+  const [scheduleRequests, setScheduleRequests] = useState([]);
+  const [scheduleRequestView, setScheduleRequestView] = useState('approvals');
+  const [scheduleRequestSearch, setScheduleRequestSearch] = useState('');
+  const [scheduleRequestStatus, setScheduleRequestStatus] = useState('all');
+  const [scheduleRequestPage, setScheduleRequestPage] = useState(1);
+  const [scheduleRequestsPerPage, setScheduleRequestsPerPage] = useState(5);
+  const [scheduleRejection, setScheduleRejection] = useState({ request: null, reason: '', error: '' });
+
+  useEffect(() => {
+    if (!profile?.uid) return undefined;
+    return subscribeScheduleApprovalRequests(setScheduleRequests, (error) => console.warn('Schedule approval listener:', error));
+  }, [profile?.uid]);
+
+  const managedScheduleRequests = useMemo(() => scheduleRequests.filter((request) => (
+    (
+      (request.approverUid && String(request.approverUid) === String(profile?.uid))
+      || (
+        String(role || '').toLowerCase() === 'dean'
+        && request.approvalTarget === 'room_manager'
+        && String(request.approverName || '').trim().toLowerCase() === String(profile?.displayName || profile?.name || '').trim().toLowerCase()
+      )
+      || (!request.approverUid && isRegistrar)
+    )
+  )), [scheduleRequests, profile?.uid, profile?.displayName, profile?.name, role, isRegistrar]);
+
+  const actionableScheduleRequests = useMemo(() => managedScheduleRequests.filter(
+    (request) => request.status === 'pending'
+  ), [managedScheduleRequests]);
+
+  const myScheduleRequests = useMemo(() => scheduleRequests.filter((request) => (
+    String(request.deanUid || '') === String(profile?.uid || '')
+  )), [scheduleRequests, profile?.uid]);
+
+  const deanManagesRooms = useMemo(() => {
+    if (String(role || '').toLowerCase() !== 'dean') return false;
+    const profileUid = String(profile?.uid || '');
+    const profileName = String(profile?.displayName || profile?.name || '').trim().toLowerCase();
+    return buildingList.some((building) => (building.floorData || []).some((floor) => {
+      const floorManagerUid = String(floor.managedBy || '');
+      const floorManagerName = String(floor.managedByName || '').trim().toLowerCase();
+      const managesFloor = (profileUid && floorManagerUid === profileUid)
+        || (profileName && floorManagerName === profileName);
+      if (managesFloor) return true;
+      return (floor.rooms || []).some((room) => {
+        const roomManagerUid = String(room.managedBy || '');
+        const roomManagerName = String(room.managedByName || '').trim().toLowerCase();
+        return (profileUid && roomManagerUid === profileUid)
+          || (profileName && roomManagerName === profileName);
+      });
+    }));
+  }, [buildingList, role, profile?.uid, profile?.displayName, profile?.name]);
+
+  const canViewManagedScheduleApprovals = isRegistrar || deanManagesRooms || managedScheduleRequests.length > 0;
+
+  // Course-schedule requests use their own view and filters so the table remains
+  // stable while the lower reservation section switches tabs.
+  const showingActionableScheduleRequests = scheduleRequestView === 'approvals';
+  const baseScheduleRequests = showingActionableScheduleRequests ? managedScheduleRequests : myScheduleRequests;
+  const visibleScheduleRequests = useMemo(() => {
+    const query = scheduleRequestSearch.trim().toLowerCase();
+    return baseScheduleRequests.filter((request) => {
+      const statusMatches = scheduleRequestStatus === 'all'
+        || String(request.status || 'pending').toLowerCase() === scheduleRequestStatus;
+      const searchMatches = !query || [
+        request.courseCode,
+        request.courseTitle,
+        request.deanName,
+        request.teacher,
+        request.roomCode,
+        request.buildingName,
+        request.approverName,
+        request.approverDepartment,
+        ...(request.sections || [request.section]),
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+      return statusMatches && searchMatches;
+    });
+  }, [baseScheduleRequests, scheduleRequestSearch, scheduleRequestStatus]);
+  const scheduleRequestTotalPages = Math.max(1, Math.ceil(visibleScheduleRequests.length / scheduleRequestsPerPage));
+  const paginatedScheduleRequests = useMemo(() => {
+    const start = (scheduleRequestPage - 1) * scheduleRequestsPerPage;
+    return visibleScheduleRequests.slice(start, start + scheduleRequestsPerPage);
+  }, [visibleScheduleRequests, scheduleRequestPage, scheduleRequestsPerPage]);
+
+  useEffect(() => {
+    setScheduleRequestPage(1);
+  }, [scheduleRequestView, scheduleRequestSearch, scheduleRequestStatus, scheduleRequestsPerPage]);
+
+  useEffect(() => {
+    setScheduleRequestPage((page) => Math.min(page, scheduleRequestTotalPages));
+  }, [scheduleRequestTotalPages]);
+
+  const hasEffectiveApprovalPermission = hasApprovalPermission || actionableScheduleRequests.length > 0;
+
+  useEffect(() => {
+    // Users without managed-room approvals should land directly on their own
+    // course requests; the pending tab is hidden for them.
+    if (!canViewManagedScheduleApprovals && myScheduleRequests.length > 0) {
+      setScheduleRequestView('mine');
+    }
+  }, [canViewManagedScheduleApprovals, myScheduleRequests.length]);
+
+  const handleScheduleDecision = async (request, decision, rejectionReason = '') => {
+    const confirmed = await showConfirm({
+      title: `${decision === 'approved' ? 'Approve' : 'Reject'} schedule request?`,
+      message: `${request.courseCode || 'This course'} includes ${(request.scheduleSlots?.length || 1)} schedule block(s) for room ${request.roomCode || ''}.`,
+      confirmText: decision === 'approved' ? 'Approve Request' : 'Reject Request',
+      cancelText: 'Cancel',
+      variant: decision === 'approved' ? 'primary' : 'danger',
+    });
+    if (!confirmed) return;
+    setIsLoading(true);
+    setLoadingMessage(`${decision === 'approved' ? 'Approving' : 'Rejecting'} schedule...`);
+    try {
+      await decideScheduleApproval(request, decision, profile, rejectionReason);
+      showNotification({ type: 'success', title: `Schedule ${decision}`, message: `${request.courseCode} was ${decision}.` });
+    } catch (error) {
+      showNotification({ type: 'error', title: 'Decision failed', message: error.message || 'Could not update the schedule request.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const submitScheduleRejection = async () => {
+    const reason = scheduleRejection.reason.trim();
+    if (!reason) {
+      setScheduleRejection((current) => ({ ...current, error: 'Please explain why this schedule is being rejected.' }));
+      return;
+    }
+    const request = scheduleRejection.request;
+    setScheduleRejection({ request: null, reason: '', error: '' });
+    await handleScheduleDecision(request, 'rejected', reason);
+  };
 
   useEffect(() => {
     setSelectedRequestIds([]);
   }, [showSection, tab, filter, dateFrom, dateTo, searchQuery]);
 
   useEffect(() => {
-    if (!hasApprovalPermission && showSection !== 'my-requests') {
+    if (!hasEffectiveApprovalPermission && showSection !== 'my-requests') {
       setShowSection('my-requests');
     }
-  }, [hasApprovalPermission, showSection]);
+  }, [hasEffectiveApprovalPermission, showSection]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -386,7 +521,7 @@ export default function ApprovalManagement() {
     }
   };
 
-  const subtitle = (hasApprovalPermission && showSection === 'approvals')
+  const subtitle = (hasEffectiveApprovalPermission && showSection === 'approvals')
     ? 'Requests requiring your role signature'
     : 'Track your submitted room reservation requests';
 
@@ -395,10 +530,88 @@ export default function ApprovalManagement() {
       <div className="mb-6">
         <ProgressStatCards items={stats} />
       </div>
-
+      {(canViewManagedScheduleApprovals || myScheduleRequests.length > 0) && (
+        <div className="mb-6 rounded-3xl border border-amber-300 bg-amber-50/70 p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-black text-amber-950">{showingActionableScheduleRequests ? (deanManagesRooms ? 'Managed Room Schedule Requests' : 'Course Schedule Approval Records') : 'My Course Schedule Requests'}</h2>
+              <p className="text-xs text-amber-800">Pending requests reserve their selected time; completed decisions remain here for tracking.</p>
+            </div>
+            <span className="rounded-full bg-amber-600 px-3 py-1 text-xs font-black text-white">{visibleScheduleRequests.length} of {baseScheduleRequests.length}</span>
+          </div>
+          <div className="mb-3 grid items-center gap-2 lg:grid-cols-[auto_minmax(280px,1fr)_170px]">
+            <div className="inline-flex w-fit rounded-xl border border-[#D9A3A3] bg-white p-1">
+              {canViewManagedScheduleApprovals && (
+                <button type="button" onClick={() => { setScheduleRequestView('approvals'); setScheduleRequestStatus('all'); }} className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition-colors ${scheduleRequestView === 'approvals' ? 'bg-[#7A0808] text-white' : 'text-[#7A0808] hover:bg-[#FFF0F0]'}`}>{deanManagesRooms ? 'Managed Room Requests' : 'Approval Records'} ({managedScheduleRequests.length})</button>
+              )}
+              <button type="button" onClick={() => { setScheduleRequestView('mine'); setScheduleRequestStatus('all'); }} className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition-colors ${scheduleRequestView === 'mine' ? 'bg-[#7A0808] text-white' : 'text-[#7A0808] hover:bg-[#FFF0F0]'}`}>My Course Requests ({myScheduleRequests.length})</button>
+            </div>
+              <div className="relative min-w-0">
+                <input value={scheduleRequestSearch} onChange={(event) => setScheduleRequestSearch(event.target.value)} placeholder="Search course, section, room, dean, or department..." className="w-full rounded-lg border border-[#D9A3A3] bg-white px-3 py-2 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-[#7A0808]" />
+              </div>
+              <select value={scheduleRequestStatus} onChange={(event) => setScheduleRequestStatus(event.target.value)} className="w-full rounded-lg border border-[#D9A3A3] bg-white px-3 py-2 text-[11px] font-bold text-[#7A0808] outline-none focus:border-[#7A0808]">
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-[#E7BABA] bg-white">
+            <table className="w-full min-w-[980px] border-collapse text-left text-xs">
+              <thead className="bg-[#FFF5F5] text-[10px] uppercase tracking-wide text-[#7A0808]">
+                <tr><th className="px-4 py-3">Course / Section</th>{showingActionableScheduleRequests && <th className="px-4 py-3">Requested by</th>}<th className="px-4 py-3">Days & Times</th><th className="px-4 py-3">Room / Approval</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-[#F0DADA]">
+                {paginatedScheduleRequests.map((request) => {
+                  const slots = request.scheduleSlots?.length ? request.scheduleSlots : [{ day: request.day, startHour: request.startHour, endHour: request.endHour }];
+                  return (
+                    <tr key={request.id} className="align-top hover:bg-[#FFF9F9]">
+                      <td className="px-4 py-3"><p className="font-black text-gray-950">{request.courseCode}</p><p className="text-gray-600">{(request.sections || [request.section]).filter(Boolean).join(', ')}</p><p className="mt-1 text-[10px] text-gray-500">Teacher: {request.teacher || 'TBA'}</p></td>
+                      {showingActionableScheduleRequests && <td className="px-4 py-3 font-semibold text-gray-700">{request.deanName || 'Dean'}</td>}
+                      <td className="px-4 py-3"><div className="space-y-1">{slots.map((slot, index) => <p key={`${slot.day}-${slot.startHour}-${index}`} className="whitespace-nowrap text-gray-700"><b>{SCHEDULE_DAYS?.[slot.day] || `Day ${Number(slot.day) + 1}`}:</b>{' '}{formatReadableTimeRange(`${Math.floor(slot.startHour)}:${slot.startHour % 1 ? '30' : '00'}`, `${Math.floor(slot.endHour)}:${slot.endHour % 1 ? '30' : '00'}`)}</p>)}</div></td>
+                      <td className="px-4 py-3"><p className="font-black text-[#7A0808]">{request.roomCode}</p><p className="text-[10px] text-gray-600">{request.buildingName}</p><p className="mt-1 text-[10px] font-bold text-[#7A0808]">{request.approverName || 'Registrar'}{request.approverDepartment ? ` - ${request.approverDepartment}` : ''}</p></td>
+                      <td className="max-w-[260px] px-4 py-3 text-gray-700">
+                        {request.rejectionReason ? <div className="rounded-lg border border-[#D9A3A3] bg-[#FFF0F0] p-2 text-[#7A0808]"><b>Rejected:</b> {request.rejectionReason}</div> : (request.nonBudgetedReason || 'No reason provided')}
+                      </td>
+                      <td className="px-4 py-3"><div className="flex justify-end gap-1.5">
+                        <button type="button" onClick={() => handleNavigateToRoom(request)} className="rounded-lg border border-[#D9A3A3] px-2.5 py-1.5 text-[10px] font-black text-[#7A0808] hover:bg-[#FFF0F0]">View Schedule</button>
+                        {showingActionableScheduleRequests && request.status === 'pending' ? <><button type="button" onClick={() => setScheduleRejection({ request, reason: '', error: '' })} className="rounded-lg border border-[#D9A3A3] px-2.5 py-1.5 text-[10px] font-black text-[#7A0808] hover:bg-[#FFF0F0]">Reject</button><button type="button" onClick={() => handleScheduleDecision(request, 'approved')} className="rounded-lg bg-[#7A0808] px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-[#600000]">Approve</button></> : <><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${request.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : request.status === 'rejected' ? 'bg-[#FFF0F0] text-[#7A0808]' : 'bg-amber-100 text-amber-800'}`}>{String(request.status || 'pending').toUpperCase()}</span>{!showingActionableScheduleRequests && request.status === 'rejected' && <button type="button" onClick={() => navigate('/course-scheduling', { state: { rejectedScheduleRequest: request } })} className="rounded-lg bg-[#7A0808] px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-[#600000]">Plot Replacement</button>}</>}
+                      </div></td>
+                    </tr>
+                  );
+                })}
+                {paginatedScheduleRequests.length === 0 && (
+                  <tr><td colSpan={showingActionableScheduleRequests ? 6 : 5} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">No course schedule requests match the selected filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E7BABA] bg-[#FFF9F9] px-4 py-3">
+              <p className="text-[11px] font-semibold text-gray-600">
+                Showing {visibleScheduleRequests.length === 0 ? 0 : ((scheduleRequestPage - 1) * scheduleRequestsPerPage) + 1}–{Math.min(scheduleRequestPage * scheduleRequestsPerPage, visibleScheduleRequests.length)} of {visibleScheduleRequests.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-bold text-[#7A0808]" htmlFor="schedule-requests-per-page">Rows</label>
+                <select
+                  id="schedule-requests-per-page"
+                  value={scheduleRequestsPerPage}
+                  onChange={(event) => setScheduleRequestsPerPage(Number(event.target.value))}
+                  className="rounded-lg border border-[#D9A3A3] bg-white px-2 py-1.5 text-[11px] font-bold text-[#7A0808] outline-none focus:border-[#7A0808]"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                </select>
+                <button type="button" aria-label="Previous schedule requests page" onClick={() => setScheduleRequestPage((page) => Math.max(1, page - 1))} disabled={scheduleRequestPage === 1} className="rounded-lg border border-[#D9A3A3] p-1.5 text-[#7A0808] hover:bg-[#FFF0F0] disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={15} /></button>
+                <span className="min-w-[70px] text-center text-[11px] font-black text-[#7A0808]">Page {scheduleRequestPage} of {scheduleRequestTotalPages}</span>
+                <button type="button" aria-label="Next schedule requests page" onClick={() => setScheduleRequestPage((page) => Math.min(scheduleRequestTotalPages, page + 1))} disabled={scheduleRequestPage === scheduleRequestTotalPages} className="rounded-lg border border-[#D9A3A3] p-1.5 text-[#7A0808] hover:bg-[#FFF0F0] disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={15} /></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Section Toggle & Create Request Button Bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        {hasApprovalPermission ? (
+        {hasEffectiveApprovalPermission ? (
           <div className="inline-flex p-1 bg-white rounded-2xl border border-gray-200 shadow-2xs gap-1 items-center">
             <button
               type="button"
@@ -798,6 +1011,21 @@ export default function ApprovalManagement() {
         )}
       </div>
 
+      {scheduleRejection.request && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="schedule-rejection-title">
+          <div className="w-full max-w-lg rounded-2xl border border-[#D9A3A3] bg-white p-5 shadow-2xl">
+            <h3 id="schedule-rejection-title" className="text-lg font-black text-[#7A0808]">Reject course schedule?</h3>
+            <p className="mt-1 text-xs text-gray-600">Explain what the requester must change before plotting a replacement for {scheduleRejection.request.courseCode} in room {scheduleRejection.request.roomCode}.</p>
+            <label htmlFor="schedule-rejection-reason" className="mt-4 block text-xs font-black text-[#7A0808]">Reason for rejection</label>
+            <textarea id="schedule-rejection-reason" rows={4} autoFocus value={scheduleRejection.reason} onChange={(event) => setScheduleRejection((current) => ({ ...current, reason: event.target.value, error: '' }))} placeholder="Example: The room is reserved for laboratory maintenance during the selected time. Please choose another room or schedule." className="mt-1 w-full resize-none rounded-xl border border-[#D9A3A3] px-3 py-2 text-sm outline-none focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808]" />
+            {scheduleRejection.error && <p className="mt-1 text-xs font-bold text-[#7A0808]">{scheduleRejection.error}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setScheduleRejection({ request: null, reason: '', error: '' })} className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={submitScheduleRejection} className="rounded-lg bg-[#7A0808] px-4 py-2 text-xs font-black text-white hover:bg-[#600000]">Continue to Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
       <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
       {reservationModals}

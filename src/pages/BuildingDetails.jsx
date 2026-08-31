@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddRoomModal from '../components/modals/AddRoomModal';
@@ -20,7 +21,8 @@ const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', 
 export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { buildingList, buildingsLoading, updateBuilding, deleteBuilding, currentUser } = useApp();
+  const { buildingList, buildingsLoading, updateBuilding, deleteBuilding } = useApp();
+  const { profile } = useAuth();
   const { canManageBuildings, canManageAssignedRooms, isDean, canEditRoom, canSubmitReservation, isRegistrar } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
   const canManageBuilding = Boolean(canManageBuildings() || canManageAssignedRooms() || isDean || isRegistrar);
@@ -68,6 +70,16 @@ export default function BuildingDetails() {
 
   const floorEntry = building.floorData.find((f) => f.floor === activeFloor) || { rooms: [], floorId: null };
   const floorData = floorEntry;
+  const profileUid = profile?.uid || profile?.id;
+  const canAddRoomToFloor = Boolean(
+    isRegistrar
+    || canManageBuildings()
+    || (
+      canManageAssignedRooms()
+      && floorEntry.managedBy
+      && String(floorEntry.managedBy) === String(profileUid)
+    )
+  );
   const allRooms = building.floorData.flatMap((f) => f.rooms);
   const availableNow = allRooms.filter((r) => r.status === 'Available').length;
 
@@ -205,7 +217,7 @@ export default function BuildingDetails() {
             {floorData.rooms.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">
                 No rooms on this floor yet.
-                {canManageBuilding && <button type="button" onClick={() => setShowAddRoom(true)} className="block mx-auto mt-3 btn-maroon text-xs">
+                {canAddRoomToFloor && <button type="button" onClick={() => setShowAddRoom(true)} className="block mx-auto mt-3 btn-maroon text-xs">
                   Add Room
                 </button>}
               </div>
@@ -364,7 +376,7 @@ export default function BuildingDetails() {
               </div>
             )}
 
-            {canManageBuilding && (
+            {canAddRoomToFloor && (
               <button
                 type="button"
                 onClick={() => setShowAddRoom(true)}
@@ -414,7 +426,7 @@ export default function BuildingDetails() {
 
       {modals}
 
-      {canManageBuilding && showAddRoom && floorEntry.floorId && (
+      {canAddRoomToFloor && showAddRoom && floorEntry.floorId && (
         <AddRoomModal
           buildingId={building.id}
           buildingPrefix={building.prefix || building.code}

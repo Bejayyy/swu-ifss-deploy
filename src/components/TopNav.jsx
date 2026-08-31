@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle, CheckCheck, MessageSquare, MessageCircle, LogOut, Wrench, CheckCircle,
@@ -19,7 +20,7 @@ import {
 import chatIcon from '../assets/chat-icon.png';
 import navBgTexture from '../assets/login-bg.jpg';
 
-export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav = () => {} }) {
+export default function TopNav({ title, subtitle, isDesktop = true, desktopLeftOffset = NAV_WIDTH_PX, onToggleNav = () => {} }) {
   const navigate = useNavigate();
   const { profile, logout } = useAuth();
   const { requests } = useApp();
@@ -32,8 +33,36 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [maintenanceReports, setMaintenanceReports] = useState([]);
   const [dbNotifications, setDbNotifications] = useState([]);
-  const [hasSeenBell, setHasSeenBell] = useState(false);
+  const [bellSeenNotifIds, setBellSeenNotifIds] = useState([]);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [notificationRedirect, setNotificationRedirect] = useState(null);
+  const [openingNotificationId, setOpeningNotificationId] = useState(null);
+  const redirectTimerRef = useRef(null);
+  const openingNotificationIdsRef = useRef(new Set());
+
+  useEffect(() => () => {
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+  }, []);
+
+  const redirectFromNotification = (path, notification) => {
+    const destination = path.startsWith('/course-scheduling')
+      ? 'Course Scheduling'
+      : path.startsWith('/approvals')
+        ? 'Approval Management'
+        : path.startsWith('/maintenance')
+          ? 'Maintenance Dashboard'
+          : path.includes('/request/')
+            ? 'Request Details'
+            : 'the requested page';
+    setNotificationRedirect({ destination, title: notification?.title || 'Opening notification' });
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    redirectTimerRef.current = setTimeout(() => {
+      setNotificationRedirect(null);
+      openingNotificationIdsRef.current.clear();
+      setOpeningNotificationId(null);
+      navigate(path);
+    }, 700);
+  };
 
   const currentUserObj = useMemo(() => {
     return {
@@ -65,6 +94,15 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
       return [];
     }
   });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`seen_bell_notifs_${profile?.uid || 'guest'}`);
+      setBellSeenNotifIds(saved ? JSON.parse(saved) : []);
+    } catch {
+      setBellSeenNotifIds([]);
+    }
+  }, [profile?.uid]);
 
   const markNotifIdAsRead = (id) => {
     if (!id) return;
@@ -297,13 +335,22 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     return notifItems.filter((n) => n.unread).length;
   }, [notifItems]);
 
-  const prevCountRef = React.useRef(unreadCount);
-  useEffect(() => {
-    if (unreadCount > prevCountRef.current) {
-      setHasSeenBell(false);
-    }
-    prevCountRef.current = unreadCount;
-  }, [unreadCount]);
+  const unseenBellCount = useMemo(() => notifItems.filter(
+    (notification) => notification.unread && !bellSeenNotifIds.includes(notification.id)
+  ).length, [notifItems, bellSeenNotifIds]);
+
+  const markBellNotificationsAsSeen = () => {
+    const unreadIds = notifItems.filter((notification) => notification.unread).map((notification) => notification.id);
+    setBellSeenNotifIds((current) => {
+      const next = Array.from(new Set([...current, ...unreadIds]));
+      try {
+        localStorage.setItem(`seen_bell_notifs_${profile?.uid || 'guest'}`, JSON.stringify(next));
+      } catch (error) {
+        console.warn('Could not persist seen notification badge state:', error);
+      }
+      return next;
+    });
+  };
 
   const handleSignOut = async () => {
     closeAll();
@@ -312,16 +359,22 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   };
 
   const handleViewRequest = async (notification) => {
+    const notificationKey = String(notification?.id || notification?.rawItem?.id || `${notification?.title}-${notification?.submittedAt}`);
+    if (openingNotificationIdsRef.current.has(notificationKey)) return;
+    openingNotificationIdsRef.current.add(notificationKey);
+    setOpeningNotificationId(notificationKey);
     setShowNotif(false);
     
-    if (notification.id) {
+    // A notification can change from unread to read only once. Reopening an
+    // already-read item may navigate again, but it must not affect the count.
+    if (notification.unread && notification.id) {
       markNotifIdAsRead(notification.id);
     }
 
     // Mark as read in Firestore if it's a db notification
-    if (notification.isDbNotif && notification.rawItem?.id) {
+    if (notification.unread && notification.isDbNotif && notification.rawItem?.id) {
       await markNotificationAsRead(notification.rawItem.id);
-    } else if (notification.isDbNotif && notification.id) {
+    } else if (notification.unread && notification.isDbNotif && notification.id) {
       await markNotificationAsRead(notification.id);
     }
 
@@ -332,22 +385,22 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     const targetLink = notification.link || raw.link;
 
     if (targetLink && !targetLink.includes('undefined')) {
-      navigate(targetLink);
+      redirectFromNotification(targetLink, notification);
       return;
     }
 
     if (resId && resId !== 'undefined') {
       const path = resType === 'academic' ? `/academic-request/${resId}` : `/request/${resId}`;
-      navigate(path);
+      redirectFromNotification(path, notification);
       return;
     }
 
     if (nType === 'access_granted' || nType === 'course_scheduling') {
-      navigate('/course-scheduling');
+      redirectFromNotification('/course-scheduling', notification);
     } else if (nType === 'maintenance') {
-      navigate('/maintenance-dashboard');
+      redirectFromNotification('/maintenance-dashboard', notification);
     } else {
-      navigate('/approvals');
+      redirectFromNotification('/approvals', notification);
     }
   };
 
@@ -376,7 +429,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     <div
       className="fixed top-0 right-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-6 print:hidden shadow-md overflow-hidden"
       style={{
-        left: isDesktop ? NAV_WIDTH_PX : 0,
+        left: isDesktop ? desktopLeftOffset : 0,
         height: TOP_NAV_HEIGHT_PX,
         background: '#7A0808',
       }}
@@ -462,7 +515,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           onClick={() => {
             const nextShow = !showNotif;
             setShowNotif(nextShow);
-            setHasSeenBell(true);
+            if (nextShow) markBellNotificationsAsSeen();
             setShowProfile(false);
             setShowProfileModal(false);
             setShowSettingsModal(false);
@@ -474,14 +527,14 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
           <Bell
             size={20}
             className={`text-white transition-transform duration-300 drop-shadow-xs ${
-              unreadCount > 0 && !hasSeenBell ? 'animate-bell-ring' : 'group-hover-bell-ring'
+              unseenBellCount > 0 ? 'animate-bell-ring' : 'group-hover-bell-ring'
             }`}
           />
 
           {/* Real-Time Notification Count Badge */}
-          {unreadCount > 0 && (
+          {unseenBellCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 flex items-center justify-center rounded-full text-[10px] font-black shadow-md bg-[#F59E0B] text-white border-2 border-[#7A0808] animate-in zoom-in duration-200">
-              {unreadCount}
+              {unseenBellCount}
             </span>
           )}
         </button>
@@ -732,7 +785,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                   return (
                     <div 
                       key={n.id} 
-                      className={`p-4 transition-all ${isMaintenanceInfo ? 'cursor-default' : 'cursor-pointer'} rounded-2xl border ${
+                      className={`p-4 transition-all ${isMaintenanceInfo ? 'cursor-default' : openingNotificationId === String(n.id || n.rawItem?.id || `${n.title}-${n.submittedAt}`) ? 'cursor-wait opacity-70 pointer-events-none' : 'cursor-pointer'} rounded-2xl border ${
                         isUnread
                           ? isMaintenance
                             ? (isUrgent ? 'bg-red-50/90 hover:bg-red-100/90 border-red-300 shadow-sm' : isMaintenanceAcknowledged || isMaintenanceResolved ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-emerald-300 shadow-sm' : 'bg-orange-50/90 hover:bg-orange-100/90 border-orange-300 shadow-sm')
@@ -830,6 +883,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
                             {!isMaintenanceInfo && (
                               <button 
                                 type="button" 
+                                disabled={openingNotificationId === String(n.id || n.rawItem?.id || `${n.title}-${n.submittedAt}`)}
                                 className={`text-xs py-1.5 px-3 font-bold rounded-xl transition-all ${
                                   isUnread ? 'bg-[#7A0808] text-white hover:bg-[#600000] shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
@@ -1011,6 +1065,20 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             </div>
           </div>
         </div>
+      )}
+
+      {notificationRedirect && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-live="polite">
+          <div className="w-full max-w-sm rounded-2xl border border-[#D9A3A3] bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#FFF0F0]">
+              <div className="h-7 w-7 animate-spin rounded-full border-4 border-[#E7BABA] border-t-[#7A0808]" />
+            </div>
+            <h3 className="mt-4 text-lg font-black text-[#7A0808]">Redirecting…</h3>
+            <p className="mt-1 text-sm font-bold text-gray-800">{notificationRedirect.title}</p>
+            <p className="mt-1 text-xs text-gray-600">Opening {notificationRedirect.destination}. Please wait.</p>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

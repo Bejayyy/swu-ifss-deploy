@@ -8,6 +8,7 @@ import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddBuildingModal from '../components/modals/AddBuildingModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
+import AddRoomModal from '../components/modals/AddRoomModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditFloorModal from '../components/modals/EditFloorModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
@@ -38,6 +39,7 @@ export default function BuildingManagement() {
   const [selectedFloor, setSelectedFloor] = useState('all');
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
+  const [showAddRoom, setShowAddRoom] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
   const [deletingBuilding, setDeletingBuilding] = useState(null);
   const [isDeletingBuilding, setIsDeletingBuilding] = useState(false);
@@ -136,6 +138,22 @@ export default function BuildingManagement() {
 
   const building = selectedBuilding;
   const floorData = building?.floorData || [];
+  const selectedFloorEntry = selectedFloor === 'all'
+    ? null
+    : floorData.find((floor) => floor.floor === selectedFloor);
+  const profileUid = profile?.uid || profile?.id;
+  const canAddRoomToSelectedFloor = Boolean(
+    selectedFloorEntry?.floorId
+    && (
+      isRegistrar
+      || canManageBuildings()
+      || (
+        canManageAssignedRooms()
+        && selectedFloorEntry.managedBy
+        && String(selectedFloorEntry.managedBy) === String(profileUid)
+      )
+    )
+  );
   const totalFloorsCount = floorData.length;
   const totalFloorPages = Math.max(1, Math.ceil(totalFloorsCount / floorItemsPerPage));
   const floorStartIndex = totalFloorsCount === 0 ? 0 : (floorCurrentPage - 1) * floorItemsPerPage + 1;
@@ -446,6 +464,20 @@ export default function BuildingManagement() {
                   <h3 className="font-bold text-sm text-[#2B3235] flex items-center gap-2">
                     <Layers size={16} className="text-[#7A0808]" /> Floors Overview
                   </h3>
+                  <div className="flex items-center gap-2">
+                    {(isRegistrar || canManageBuildings() || canManageAssignedRooms()) && selectedFloor === 'all' && (
+                      <span className="text-[10px] font-semibold text-gray-500">Select a floor to add a room</span>
+                    )}
+                    {canAddRoomToSelectedFloor && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddRoom(true)}
+                        className="btn-maroon flex items-center gap-1.5 px-3 py-2 text-xs font-bold"
+                      >
+                        <Plus size={14} /> Add Room to {selectedFloorEntry.label || `Floor ${selectedFloorEntry.floor}`}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Multi-Selection Bulk Edit Action Bar */}
@@ -523,7 +555,7 @@ export default function BuildingManagement() {
                                 </td>
                               )}
                               <td className="p-3 font-bold text-[#2B3235]">{rm.id || rm.name}</td>
-                              <td className="p-3 font-semibold text-gray-700">{rm.type || 'Classroom'}</td>
+                              <td className="p-3 font-semibold text-gray-700">{rm.type || 'Lecture'}</td>
                               <td className="p-3 font-bold text-gray-800">{rm.capacity || '—'} pax</td>
                               <td className="p-3">
                                 {rm.equipment && rm.equipment.length > 0 ? (
@@ -675,6 +707,17 @@ export default function BuildingManagement() {
           buildingId={building.id}
           existingFloors={building.floorData || []}
           onClose={() => setShowAddFloor(false)}
+        />
+      )}
+      {showAddRoom && building && selectedFloorEntry?.floorId && (
+        <AddRoomModal
+          buildingId={building.id}
+          buildingPrefix={building.prefix || building.code}
+          floorId={selectedFloorEntry.floorId}
+          floor={selectedFloorEntry.floor}
+          floorManagedBy={selectedFloorEntry.managedBy}
+          existingRoomsCount={selectedFloorEntry.rooms?.length || 0}
+          onClose={() => setShowAddRoom(false)}
         />
       )}
       {showEditBuilding && building && (

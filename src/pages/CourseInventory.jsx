@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { BookOpen, Plus, Pencil, Trash2, Clock, Users, Building2 } from 'lucide-react';
+import { BookOpen, Plus, Pencil, Trash2, Clock, Users, Building2, Upload, CheckSquare } from 'lucide-react';
 import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
@@ -7,7 +7,7 @@ import ConfirmModal from '../components/modals/ConfirmModal';
 import AddCourseModal from '../components/modals/AddCourseModal';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
-import { subscribeCollegeCourses, subscribeAllCourses, deleteCourse } from '../services/courseService';
+import { subscribeCollegeCourses, subscribeAllCourses, deleteCourse, batchDeleteCourses } from '../services/courseService';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 
@@ -23,6 +23,13 @@ export default function CourseInventory() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [notification, setNotification] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [collegeFilter, setCollegeFilter] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
+  const [semesterFilter, setSemesterFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState('latest');
+  const [selectedCourseIds, setSelectedCourseIds] = useState(new Set());
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -68,6 +75,87 @@ export default function CourseInventory() {
     });
     return groups;
   }, [courses]);
+
+  const filteredCourses = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    const matches = courses.filter((course) =>
+      (!query || [course.code, course.title, course.collegeCode, course.programCode]
+        .some((value) => String(value || '').toLowerCase().includes(query))) &&
+      (!collegeFilter || course.collegeCode === collegeFilter) &&
+      (!programFilter || course.programCode === programFilter) &&
+      (!yearFilter || course.yearLevel === yearFilter) &&
+      (!semesterFilter || course.semester === semesterFilter)
+    );
+    const timestamp = (course) => {
+      const value = course.createdAt || course.updatedAt;
+      if (value?.toMillis) return value.toMillis();
+      if (value?.seconds) return value.seconds * 1000;
+      const parsed = new Date(value || 0).getTime();
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    return [...matches].sort((a, b) => {
+      if (sortOrder === 'latest') return timestamp(b) - timestamp(a);
+      if (sortOrder === 'oldest') return timestamp(a) - timestamp(b);
+      if (sortOrder === 'code') return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true });
+      if (sortOrder === 'title') return String(a.title || '').localeCompare(String(b.title || ''));
+      return 0;
+    });
+  }, [courses, searchTerm, collegeFilter, programFilter, yearFilter, semesterFilter, sortOrder]);
+
+  useEffect(() => {
+    const existingIds = new Set(courses.map((course) => course.id));
+    setSelectedCourseIds((previous) => new Set([...previous].filter((id) => existingIds.has(id))));
+  }, [courses]);
+
+  const allFilteredSelected = filteredCourses.length > 0 && filteredCourses.every((course) => selectedCourseIds.has(course.id));
+  const toggleAllFiltered = () => {
+    setSelectedCourseIds((previous) => {
+      const next = new Set(previous);
+      if (allFilteredSelected) filteredCourses.forEach((course) => next.delete(course.id));
+      else filteredCourses.forEach((course) => next.add(course.id));
+      return next;
+    });
+  };
+
+  const toggleCourseSelection = (courseId) => {
+    setSelectedCourseIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(courseId)) next.delete(courseId); else next.add(courseId);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = () => {
+    const selected = courses.filter((course) => selectedCourseIds.has(course.id));
+    if (!selected.length) return;
+    setConfirmDialog({
+      title: 'Delete Selected Courses',
+      message: `Delete ${selected.length} selected course assignment(s)? This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIsLoading(true);
+        setLoadingMessage(`Deleting ${selected.length} courses...`);
+        try {
+          const count = await batchDeleteCourses(selected.map((course) => course.id));
+          setSelectedCourseIds(new Set());
+          setNotification({ type: 'success', title: 'Courses Deleted', message: `${count} course assignment(s) were removed.` });
+        } catch (error) {
+          setNotification({ type: 'error', title: 'Batch Delete Failed', message: error.message || 'Some courses could not be deleted.' });
+        } finally {
+          setIsLoading(false);
+        }
+      },
+      onCancel: () => setConfirmDialog(null),
+    });
+  };
+
+  const filterOptions = useMemo(() => ({
+    colleges: [...new Set(courses.map((course) => course.collegeCode).filter(Boolean))].sort(),
+    programs: [...new Set(courses
+      .filter((course) => !collegeFilter || course.collegeCode === collegeFilter)
+      .map((course) => course.programCode).filter(Boolean))].sort(),
+    semesters: [...new Set(courses.map((course) => course.semester).filter(Boolean))].sort(),
+  }), [courses, collegeFilter]);
 
   const handleAdd = () => {
     setEditingCourse(null);
@@ -176,9 +264,41 @@ export default function CourseInventory() {
           onClick={handleAdd}
           className="btn-maroon flex items-center gap-2"
         >
-          <Plus size={16} /> Add Course
+          {isRegistrar ? <Upload size={16} /> : <Plus size={16} />}
+          {isRegistrar ? 'Upload Course Spreadsheet' : 'Add Course'}
         </button>
       </div>
+
+      {isRegistrar && (
+        <div className="mb-5 grid grid-cols-1 gap-2 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6">
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search code or title..." className="form-input text-xs" />
+          <select value={collegeFilter} onChange={(e) => { setCollegeFilter(e.target.value); setProgramFilter(''); }} className="form-input text-xs">
+            <option value="">All Colleges</option>{filterOptions.colleges.map((value) => <option key={value}>{value}</option>)}
+          </select>
+          <select value={programFilter} onChange={(e) => setProgramFilter(e.target.value)} className="form-input text-xs">
+            <option value="">All Programs</option>{filterOptions.programs.map((value) => <option key={value}>{value}</option>)}
+          </select>
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="form-input text-xs">
+            <option value="">All Year Levels</option>{YEAR_LEVELS.map((value) => <option key={value}>{value}</option>)}
+          </select>
+          <select value={semesterFilter} onChange={(e) => setSemesterFilter(e.target.value)} className="form-input text-xs">
+            <option value="">All Semesters</option>{filterOptions.semesters.map((value) => <option key={value}>{value}</option>)}
+          </select>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="form-input text-xs font-bold">
+            <option value="latest">Latest Added</option><option value="oldest">Oldest Added</option><option value="code">Course Code A–Z</option><option value="title">Course Title A–Z</option>
+          </select>
+        </div>
+      )}
+
+      {isRegistrar && selectedCourseIds.size > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-xs font-black text-[#7A0808]"><CheckSquare size={16} /> {selectedCourseIds.size} course assignment(s) selected</div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setSelectedCourseIds(new Set())} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-600">Clear Selection</button>
+            <button type="button" onClick={handleBatchDelete} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white hover:bg-red-800"><Trash2 size={14} /> Delete Selected</button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white rounded-2xl p-12 text-center">
@@ -196,6 +316,51 @@ export default function CourseInventory() {
           >
             <Plus size={16} /> Add Course
           </button>
+        </div>
+      ) : isRegistrar ? (
+        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-xs">
+              <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-wider text-gray-600">
+                <tr>
+                  <th className="w-12 px-4 py-3 text-center"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} aria-label="Select all filtered courses" className="h-4 w-4 accent-[#7A0808]" /></th>
+                  <th className="px-4 py-3">Course Code</th><th className="px-4 py-3">Course Title</th>
+                  <th className="px-4 py-3">College</th><th className="px-4 py-3">Program</th>
+                  <th className="px-4 py-3">Year Level</th><th className="px-4 py-3">Semester</th>
+                  <th className="px-4 py-3">Credit Units</th><th className="px-4 py-3">Contact Hours</th>
+                  <th className="px-4 py-3">Course Type</th><th className="px-4 py-3">Handled By</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredCourses.map((course) => {
+                  const lecUnits = Number(course.lecUnits || 0);
+                  const labUnits = Number(course.labUnits || 0);
+                  return (
+                    <tr key={course.id} className="hover:bg-gray-50/70">
+                      <td className="px-4 py-3 text-center"><input type="checkbox" checked={selectedCourseIds.has(course.id)} onChange={() => toggleCourseSelection(course.id)} aria-label={`Select ${course.code}`} className="h-4 w-4 accent-[#7A0808]" /></td>
+                      <td className="px-4 py-3 font-black text-[#7A0808]">{course.code}</td>
+                      <td className="px-4 py-3 font-bold text-gray-800">{course.title}</td>
+                      <td className="px-4 py-3 font-semibold">{course.collegeCode || '—'}</td>
+                      <td className="px-4 py-3"><span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-800">{course.programCode || '—'}</span></td>
+                      <td className="px-4 py-3">{course.yearLevel}</td><td className="px-4 py-3">{course.semester}</td>
+                      <td className="px-4 py-3"><b>{Number(course.units || lecUnits + labUnits)} units</b><span className="block text-[10px] text-gray-500">Lec: {lecUnits} · Lab: {labUnits}</span></td>
+                      <td className="px-4 py-3"><b>{Number(course.totalHours || 0)} hrs/wk</b><span className="block text-[10px] text-gray-500">Lec: {course.lecHours || 0}h · Lab: {course.labHours || 0}h</span></td>
+                      <td className="px-4 py-3 font-bold capitalize">{course.type || (lecUnits && labUnits ? 'both' : labUnits ? 'laboratory' : 'lecture')}</td>
+                      <td className="px-4 py-3 text-[10px] leading-relaxed">
+                        {course.lecServiceCollege && <span className="block font-bold text-[#7A0808]">Lecture: {course.lecServiceCollege}</span>}
+                        {course.labServiceCollege && <span className="block font-bold text-[#7A0808]">Laboratory: {course.labServiceCollege}</span>}
+                        {!course.lecServiceCollege && !course.labServiceCollege && <span className="text-gray-500">Internal: {course.collegeCode}</span>}
+                      </td>
+                      <td className="px-4 py-3"><div className="flex justify-center gap-1"><button type="button" onClick={() => handleEdit(course)} className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-[#7A0808]" title="Edit"><Pencil size={14}/></button><button type="button" onClick={() => handleDelete(course)} className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={14}/></button></div></td>
+                    </tr>
+                  );
+                })}
+                {filteredCourses.length === 0 && <tr><td colSpan={12} className="px-4 py-12 text-center text-gray-400">No courses match the selected filters.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-gray-100 px-4 py-3 text-xs font-semibold text-gray-500">Showing {filteredCourses.length} of {courses.length} course assignment(s)</div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -353,9 +518,10 @@ export default function CourseInventory() {
             setShowAddModal(false);
             setEditingCourse(null);
           }}
-          collegeCode={myCollege}
-          collegeName={profile?.department || profile?.college || 'College'}
+          collegeCode={editingCourse?.collegeCode || myCollege || ''}
+          collegeName={editingCourse?.collegeCode || profile?.department || profile?.college || (isRegistrar ? 'Central Course Inventory' : 'College')}
           existingCourses={courses}
+          centralized={isRegistrar && !editingCourse}
           editingCourse={editingCourse}
           onSaveSuccess={(msg) => {
             setNotification({

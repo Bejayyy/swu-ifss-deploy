@@ -25,12 +25,12 @@ export function subscribeUserNotifications(user, onData, onError) {
     return () => {};
   }
 
-  const userKeys = [
+  const userKeys = new Set([
     user.uid,
     user.id,
     user.email,
     user.email?.toLowerCase(),
-  ].filter(Boolean);
+  ].filter(Boolean).map((key) => String(key).trim().toLowerCase()));
 
   const ref = collection(db, NOTIFICATIONS_COLLECTION);
 
@@ -40,9 +40,11 @@ export function subscribeUserNotifications(user, onData, onError) {
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((item) => {
-          const itemUserId = String(item.userId || item.recipientId || '').toLowerCase();
-          const isTarget = userKeys.some((k) => String(k).toLowerCase() === itemUserId) || !item.userId;
-          return isTarget;
+          const recipientKeys = [item.userId, item.recipientId, item.userEmail, item.recipientEmail, item.recipientUid]
+            .filter(Boolean)
+            .map((key) => String(key).trim().toLowerCase());
+          const isExplicitBroadcast = item.broadcast === true || item.audience === 'all' || item.scope === 'global';
+          return isExplicitBroadcast || recipientKeys.some((key) => userKeys.has(key));
         })
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);

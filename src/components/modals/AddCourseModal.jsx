@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Plus,
@@ -39,9 +39,51 @@ export default function AddCourseModal({
   editingCourse = null,
   programs = [],
   defaultProgramCode = '',
+  centralized = false,
 }) {
-  const [activeTab, setActiveTab] = useState('individual'); // 'individual' | 'bulk'
+  const [activeTab, setActiveTab] = useState(centralized ? 'bulk' : 'individual'); // 'individual' | 'bulk'
   const [allColleges, setAllColleges] = useState([]);
+
+  const resolveCollegeCode = (value, programHint = '') => {
+    const normalized = String(value || '').trim().toLowerCase();
+    const normalizedProgram = String(programHint || '').trim().toLowerCase();
+    if (!normalized && !normalizedProgram) return '';
+    const exact = allColleges.find((college) =>
+      String(college.code || '').trim().toLowerCase() === normalized ||
+      String(college.name || '').trim().toLowerCase() === normalized ||
+      (normalizedProgram && (
+        String(college.code || '').trim().toLowerCase() === normalizedProgram ||
+        college.programs?.some((program) => String(program.code || '').trim().toLowerCase() === normalizedProgram)
+      ))
+    );
+    if (exact) return String(exact.code || exact.name || '').trim().toUpperCase();
+    const canonicalize = (input) => String(input || '').toLowerCase()
+      .replace(/\binformation\s+(?:and\s+)?technology\b/g, 'it')
+      .replace(/\barts?\s+(?:and|&)\s+sciences?\b/g, 'arts science')
+      .replace(/\b(rehabilitative|rehabilitation|rehab)\b/g, 'rehabilitation')
+      .replace(/\bsciences\b/g, 'science')
+      .replace(/\b(college|school|department|of|the|and)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const wanted = canonicalize(normalized);
+    const scored = allColleges.map((college) => {
+      const candidates = [college.code, college.name, ...(college.aliases || [])].map(canonicalize).filter(Boolean);
+      const score = candidates.reduce((best, candidate) => {
+        if (candidate === wanted) return Math.max(best, 100);
+        if (wanted.length >= 4 && candidate.length >= 4 && (candidate.includes(wanted) || wanted.includes(candidate))) return Math.max(best, 90);
+        const wantedTokens = new Set(wanted.split(' ').filter(Boolean));
+        const candidateTokens = new Set(candidate.split(' ').filter(Boolean));
+        const overlap = [...wantedTokens].filter((token) => candidateTokens.has(token)).length;
+        const ratio = overlap / Math.max(wantedTokens.size, candidateTokens.size, 1);
+        return Math.max(best, ratio >= 0.75 ? ratio * 80 : 0);
+      }, 0);
+      return { college, score };
+    }).sort((a, b) => b.score - a.score);
+    const best = scored[0];
+    const runnerUp = scored[1];
+    const isConfident = best?.score >= 75 && (!runnerUp || best.score - runnerUp.score >= 15);
+    return isConfident ? String(best.college.code || best.college.name || '').trim().toUpperCase() : '';
+  };
 
   useEffect(() => {
     const unsub = subscribeColleges((data) => {
@@ -138,7 +180,7 @@ export default function AddCourseModal({
         programCode: defaultProgramCode,
       }));
     }
-  }, [editingCourse, defaultProgramCode, programs]);
+  }, [editingCourse, defaultProgramCode]);
 
   // Bulk Upload State
   const [isDragOver, setIsDragOver] = useState(false);
@@ -147,6 +189,74 @@ export default function AddCourseModal({
   const [isParsing, setIsParsing] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [importedProgress, setImportedProgress] = useState(0);
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewStatus, setPreviewStatus] = useState('all');
+  const [previewCollege, setPreviewCollege] = useState('');
+  const [previewProgram, setPreviewProgram] = useState('');
+  const [previewYear, setPreviewYear] = useState('');
+  const [previewSemester, setPreviewSemester] = useState('');
+  const [previewSort, setPreviewSort] = useState('row');
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageSize, setPreviewPageSize] = useState(25);
+  const [mappingSource, setMappingSource] = useState('');
+  const [parseProgress, setParseProgress] = useState({ stage: 'reading', percent: 0, message: 'Preparing spreadsheet' });
+
+  useEffect(() => {
+    if (!isBulkImporting) return undefined;
+    const blockKeyboardClose = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('keydown', blockKeyboardClose, true);
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => {
+      window.removeEventListener('keydown', blockKeyboardClose, true);
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+    };
+  }, [isBulkImporting]);
+
+  const previewFilterOptions = useMemo(() => ({
+    colleges: [...new Set(parsedRows.map((row) => row.resolvedCollegeName || row.collegeName || row.collegeCode).filter(Boolean))].sort(),
+    programs: [...new Set(parsedRows
+      .filter((row) => !previewCollege || (row.resolvedCollegeName || row.collegeName || row.collegeCode) === previewCollege)
+      .map((row) => row.programCode).filter(Boolean))].sort(),
+    years: [...new Set(parsedRows.map((row) => row.yearLevel).filter(Boolean))].sort(),
+    semesters: [...new Set(parsedRows.map((row) => row.semester).filter(Boolean))].sort(),
+  }), [parsedRows, previewCollege]);
+
+  const filteredPreviewRows = useMemo(() => {
+    const query = previewSearch.trim().toLowerCase();
+    const rows = parsedRows.filter((row) =>
+      (!query || [row.code, row.title, row.collegeCode, row.collegeName, row.resolvedCollegeName, row.programCode]
+        .some((value) => String(value || '').toLowerCase().includes(query))) &&
+      (previewStatus === 'all' || (previewStatus === 'valid' ? row.isValid : !row.isValid)) &&
+      (!previewCollege || (row.resolvedCollegeName || row.collegeName || row.collegeCode) === previewCollege) &&
+      (!previewProgram || row.programCode === previewProgram) &&
+      (!previewYear || row.yearLevel === previewYear) &&
+      (!previewSemester || row.semester === previewSemester)
+    );
+    if (previewSort === 'row') return rows;
+    const descending = previewSort.endsWith('-desc');
+    const field = previewSort.replace('-desc', '');
+    const fieldMap = { code: 'code', title: 'title', college: 'collegeCode', program: 'programCode', year: 'yearLevel', semester: 'semester' };
+    return [...rows].sort((a, b) => {
+      const result = String(a[fieldMap[field]] || a.collegeName || '').localeCompare(String(b[fieldMap[field]] || b.collegeName || ''), undefined, { numeric: true });
+      return descending ? -result : result;
+    });
+  }, [parsedRows, previewSearch, previewStatus, previewCollege, previewProgram, previewYear, previewSemester, previewSort]);
+
+  const previewPageCount = Math.max(1, Math.ceil(filteredPreviewRows.length / previewPageSize));
+  const visiblePreviewRows = filteredPreviewRows.slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize);
+
+  useEffect(() => {
+    setPreviewPage(1);
+  }, [previewSearch, previewStatus, previewCollege, previewProgram, previewYear, previewSemester, previewSort, previewPageSize]);
 
   const updateParsedRow = (id, field, value) => {
     setParsedRows((prev) =>
@@ -300,9 +410,50 @@ export default function AddCourseModal({
 
     setIsParsing(true);
     setParseError('');
+    setParseProgress({ stage: 'reading', percent: 3, message: 'Preparing spreadsheet' });
     try {
-      const result = await parseBulkCourseSpreadsheet(file, existingCourses);
-      setParsedRows(result.rows);
+      const result = await parseBulkCourseSpreadsheet(file, existingCourses, setParseProgress);
+      if (!result.rows?.length && result.errors?.length) {
+        setParsedRows([]);
+        setMappingSource(result.mappingSource || '');
+        setParseError(result.errors.join(' '));
+        return;
+      }
+      const resolvedRows = result.rows.map((row) => {
+        const targetCollegeCode = row.collegeName || row.programCode
+          ? resolveCollegeCode(row.collegeName, row.programCode)
+          : collegeCode;
+        const lectureServiceCode = row.lecServiceCollegeName ? resolveCollegeCode(row.lecServiceCollegeName) : '';
+        const laboratoryServiceCode = row.labServiceCollegeName ? resolveCollegeCode(row.labServiceCollegeName) : '';
+        const errors = [...(row.errors || [])];
+        if (centralized && !targetCollegeCode) errors.push(`Owning college "${row.collegeName || 'blank'}" was not found`);
+        if (row.lecServiceCollegeName && !lectureServiceCode) errors.push(`Lecture service college "${row.lecServiceCollegeName}" was not found`);
+        if (row.labServiceCollegeName && !laboratoryServiceCode) errors.push(`Laboratory service college "${row.labServiceCollegeName}" was not found`);
+        const targetCollege = allColleges.find((college) => String(college.code || '').toUpperCase() === targetCollegeCode);
+        const lectureServiceCollege = allColleges.find((college) => String(college.code || '').toUpperCase() === lectureServiceCode);
+        const laboratoryServiceCollege = allColleges.find((college) => String(college.code || '').toUpperCase() === laboratoryServiceCode);
+        if (centralized && row.programCode && targetCollege?.programs?.length && !targetCollege.programs.some(
+          (program) => String(program.code || '').toUpperCase() === String(row.programCode).toUpperCase()
+        )) {
+          errors.push(`Program "${row.programCode}" is not registered under ${targetCollegeCode}`);
+        }
+        return {
+          ...row,
+          collegeCode: targetCollegeCode,
+          resolvedCollegeName: targetCollege?.name || row.collegeName || targetCollegeCode,
+          lecServiceCollege: lectureServiceCode,
+          labServiceCollege: laboratoryServiceCode,
+          resolvedLecServiceCollegeName: lectureServiceCollege?.name || '',
+          resolvedLabServiceCollegeName: laboratoryServiceCollege?.name || '',
+          errors: [...new Set(errors)],
+          isValid: errors.length === 0,
+        };
+      });
+      setParseProgress({ stage: 'validation', percent: 94, message: 'Validating colleges, programs, and service assignments' });
+      setParsedRows(resolvedRows);
+      setMappingSource(result.mappingSource || 'Smart header matching');
+      setPreviewPage(1);
+      setParseProgress({ stage: 'complete', percent: 100, message: 'Spreadsheet preview is ready' });
     } catch (err) {
       console.error('Error parsing bulk course spreadsheet:', err);
       setParseError(err.message || 'Failed to parse file. Ensure it follows the template format.');
@@ -354,7 +505,8 @@ export default function AddCourseModal({
         const lbHours = r.labHours !== undefined ? Number(r.labHours) : lbUnits * 3.0;
         const tHours = r.totalHours !== undefined ? Number(r.totalHours) : (lHours + lbHours);
 
-        await addCourse({
+        const targetCollegeCode = r.collegeCode || collegeCode;
+        const payload = {
           code: r.code.trim().toUpperCase(),
           title: toTitleCase(r.title),
           programCode: r.programCode || defaultProgramCode || '',
@@ -367,8 +519,22 @@ export default function AddCourseModal({
           labHours: lbHours,
           totalHours: tHours,
           type: r.type,
-          collegeCode,
-        });
+          collegeCode: targetCollegeCode,
+          requiresServiceCollege: Boolean(r.lecServiceCollege || r.labServiceCollege),
+          lecServiceCollege: r.lecServiceCollege || null,
+          labServiceCollege: r.labServiceCollege || null,
+          rememberedLecServiceCollege: r.lecServiceCollege || null,
+          rememberedLabServiceCollege: r.labServiceCollege || null,
+        };
+        const existing = existingCourses.find((course) =>
+          String(course.code || '').toUpperCase() === payload.code &&
+          String(course.programCode || '').toUpperCase() === String(payload.programCode || '').toUpperCase() &&
+          String(course.collegeCode || '').toUpperCase() === String(payload.collegeCode || '').toUpperCase() &&
+          String(course.yearLevel || '') === String(payload.yearLevel || '') &&
+          String(course.semester || '') === String(payload.semester || '')
+        );
+        if (existing?.id) await updateCourse(existing.id, payload);
+        else await addCourse(payload);
         successCount++;
         setImportedProgress(Math.round(((i + 1) / validRows.length) * 100));
       } catch (err) {
@@ -387,9 +553,13 @@ export default function AddCourseModal({
   const invalidCount = parsedRows.filter((r) => !r.isValid).length;
 
   return (
-    <div className="modal-overlay z-[100]" onClick={onClose}>
+    <div className="modal-overlay z-[100]" onClick={isBulkImporting ? undefined : onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full relative animate-modal-pop max-h-[90vh] flex flex-col overflow-hidden"
+        className={`bg-white rounded-2xl shadow-2xl relative animate-modal-pop flex flex-col overflow-hidden ${
+          centralized
+            ? 'w-[96vw] max-w-[1500px] max-h-[94vh]'
+            : 'w-full max-w-3xl max-h-[90vh]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header & Tab Navigation Bar */}
@@ -411,6 +581,7 @@ export default function AddCourseModal({
             <button
               type="button"
               onClick={onClose}
+              disabled={isBulkImporting}
               className="p-1 hover:bg-gray-200/60 rounded-lg transition-colors text-gray-400 hover:text-gray-700 cursor-pointer"
             >
               <X size={18} />
@@ -420,7 +591,7 @@ export default function AddCourseModal({
           {/* Nav Tabs */}
           {!editingCourse && (
             <div className="flex items-center gap-2 border-b border-gray-200 -mb-3">
-              <button
+              {!centralized && <button
                 type="button"
                 onClick={() => setActiveTab('individual')}
                 className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${
@@ -430,7 +601,7 @@ export default function AddCourseModal({
                 }`}
               >
                 Individual Course
-              </button>
+              </button>}
               <button
                 type="button"
                 onClick={() => setActiveTab('bulk')}
@@ -875,9 +1046,44 @@ export default function AddCourseModal({
 
               {/* Parsing Loader */}
               {isParsing && (
-                <div className="p-8 text-center bg-gray-50 rounded-2xl border border-gray-100">
-                  <RefreshCw size={24} className="animate-spin text-[#7A0808] mx-auto mb-2" />
-                  <p className="font-bold text-xs text-gray-700">Reading and validating course spreadsheet...</p>
+                <div className="p-6 bg-gray-50 rounded-2xl border border-gray-200">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <RefreshCw size={22} className="animate-spin text-[#7A0808] shrink-0" />
+                      <div>
+                        <p className="font-bold text-sm text-gray-800">{parseProgress.message}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-500">Please keep this window open while the spreadsheet is prepared.</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-black text-[#7A0808]">{parseProgress.percent}%</span>
+                  </div>
+                  <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#7A0808] to-[#B91C1C] transition-[width] duration-500 ease-out"
+                      style={{ width: `${parseProgress.percent}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
+                    {[
+                      ['Reading file', 8],
+                      ['Finding headers', 35],
+                      ['Mapping columns', 48],
+                      ['Processing rows', 65],
+                      ['Combining components', 82],
+                      ['Validating data', 94],
+                    ].map(([label, threshold]) => {
+                      const done = parseProgress.percent > threshold;
+                      const active = parseProgress.percent >= threshold && !done;
+                      return (
+                        <div key={label} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold ${
+                          done ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : active ? 'border-red-200 bg-red-50 text-[#7A0808]' : 'border-gray-200 bg-white text-gray-400'
+                        }`}>
+                          {done ? <CheckCircle2 size={13} /> : active ? <RefreshCw size={13} className="animate-spin" /> : <span className="h-3 w-3 rounded-full border border-current" />}
+                          {label}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -889,6 +1095,11 @@ export default function AddCourseModal({
                       <span className="font-bold text-xs text-gray-800">
                         Spreadsheet Preview ({parsedRows.length} total)
                       </span>
+                      {mappingSource && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[10px]">
+                          {mappingSource}
+                        </span>
+                      )}
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">
                         {validCount} Valid
                       </span>
@@ -900,20 +1111,55 @@ export default function AddCourseModal({
                     </div>
                     <button
                       type="button"
-                      onClick={() => setParsedRows([])}
+                      onClick={() => { setParsedRows([]); setPreviewPage(1); }}
                       className="text-xs text-gray-400 hover:text-red-600 font-bold"
                     >
                       Clear File
                     </button>
                   </div>
 
-                  <div className="border border-gray-200 rounded-xl overflow-x-auto overflow-y-auto max-h-72 shadow-2xs">
-                    <table className="w-full text-left text-xs min-w-[980px]">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3">
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+                      <input
+                        value={previewSearch}
+                        onChange={(e) => setPreviewSearch(e.target.value)}
+                        placeholder="Search code, title..."
+                        className="form-input text-[11px] xl:col-span-2"
+                      />
+                      <select value={previewStatus} onChange={(e) => setPreviewStatus(e.target.value)} className="form-input text-[11px]">
+                        <option value="all">All Statuses</option><option value="invalid">Invalid Only</option><option value="valid">Valid Only</option>
+                      </select>
+                      <select value={previewCollege} onChange={(e) => { setPreviewCollege(e.target.value); setPreviewProgram(''); }} className="form-input text-[11px]">
+                        <option value="">All Colleges</option>{previewFilterOptions.colleges.map((value) => <option key={value}>{value}</option>)}
+                      </select>
+                      <select value={previewProgram} onChange={(e) => setPreviewProgram(e.target.value)} className="form-input text-[11px]">
+                        <option value="">All Programs</option>{previewFilterOptions.programs.map((value) => <option key={value}>{value}</option>)}
+                      </select>
+                      <select value={previewYear} onChange={(e) => setPreviewYear(e.target.value)} className="form-input text-[11px]">
+                        <option value="">All Years</option>{previewFilterOptions.years.map((value) => <option key={value}>{value}</option>)}
+                      </select>
+                      <select value={previewSemester} onChange={(e) => setPreviewSemester(e.target.value)} className="form-input text-[11px]">
+                        <option value="">All Semesters</option>{previewFilterOptions.semesters.map((value) => <option key={value}>{value}</option>)}
+                      </select>
+                      <select value={previewSort} onChange={(e) => setPreviewSort(e.target.value)} className="form-input text-[11px]">
+                        <option value="row">Original Order</option><option value="code">Code A–Z</option><option value="code-desc">Code Z–A</option><option value="title">Title A–Z</option><option value="college">College A–Z</option><option value="program">Program A–Z</option><option value="year">Year Level</option><option value="semester">Semester</option>
+                      </select>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-gray-500">
+                      <span>Showing {filteredPreviewRows.length} of {parsedRows.length} rows</span>
+                      <button type="button" onClick={() => { setPreviewSearch(''); setPreviewStatus('all'); setPreviewCollege(''); setPreviewProgram(''); setPreviewYear(''); setPreviewSemester(''); setPreviewSort('row'); }} className="font-bold text-[#7A0808] hover:underline">Clear Filters</button>
+                    </div>
+                  </div>
+
+                  <div className={`border border-gray-200 rounded-xl overflow-auto shadow-2xs ${centralized ? 'max-h-[55vh]' : 'max-h-72'}`}>
+                    <table className={`w-full text-left text-xs ${centralized ? 'min-w-[1420px]' : 'min-w-[1320px]'}`}>
                       <thead className="bg-gray-100 text-gray-600 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10">
                         <tr>
                           <th className="p-2.5 w-10 text-center">#</th>
                           <th className="p-2.5 min-w-[100px]">Code</th>
                           <th className="p-2.5 min-w-[180px]">Title</th>
+                          {centralized && <th className="p-2.5 min-w-[150px]">Owning College</th>}
+                          <th className="p-2.5 min-w-[100px]">Program</th>
                           <th className="p-2.5 min-w-[110px]">Year Level</th>
                           <th className="p-2.5 min-w-[120px]">Semester</th>
                           <th className="p-2.5 w-14 text-center">Lec U</th>
@@ -922,14 +1168,15 @@ export default function AddCourseModal({
                           <th className="p-2.5 w-16 text-center">Lec Hr</th>
                           <th className="p-2.5 w-16 text-center">Lab Hr</th>
                           <th className="p-2.5 min-w-[110px]">Type</th>
-                          <th className="p-2.5 min-w-[110px]">Status</th>
+                          <th className="p-2.5 min-w-[180px]">Component Service</th>
+                          <th className="p-2.5 min-w-[260px]">Status / Required Corrections</th>
                           <th className="p-2.5 w-10 text-center"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 font-medium">
-                        {parsedRows.map((row, idx) => (
+                        {visiblePreviewRows.map((row, idx) => (
                           <tr key={row.id} className={!row.isValid ? 'bg-red-50/40' : 'hover:bg-gray-50'}>
-                            <td className="p-2.5 text-center font-bold text-gray-400">{idx + 1}</td>
+                            <td className="p-2.5 text-center font-bold text-gray-400">{(previewPage - 1) * previewPageSize + idx + 1}</td>
                             <td className="p-2">
                               <input
                                 type="text"
@@ -946,6 +1193,10 @@ export default function AddCourseModal({
                                 onChange={(e) => updateParsedRow(row.id, 'title', e.target.value)}
                               />
                             </td>
+                            {centralized && (
+                              <td className="p-2 font-bold text-[#7A0808]">{row.resolvedCollegeName || row.collegeName || 'Unresolved'}</td>
+                            )}
+                            <td className="p-2 font-bold text-gray-700">{row.programCode || '—'}</td>
                             <td className="p-2 min-w-[115px]">
                               <CustomSelect
                                 size="sm"
@@ -1018,6 +1269,16 @@ export default function AddCourseModal({
                                 placeholder="Course Type"
                               />
                             </td>
+                            <td className="p-2 text-[10px] leading-relaxed">
+                              {row.lecServiceCollege && <span className="block font-bold text-[#7A0808]" title={`Sheet: ${row.lecServiceCollegeName || '—'} → Resolved: ${row.resolvedLecServiceCollegeName || row.lecServiceCollege}`}>Lec: {row.resolvedLecServiceCollegeName || row.lecServiceCollege}</span>}
+                              {row.labServiceCollege && <span className="block font-bold text-[#7A0808]" title={`Sheet: ${row.labServiceCollegeName || '—'} → Resolved: ${row.resolvedLabServiceCollegeName || row.labServiceCollege}`}>Lab: {row.resolvedLabServiceCollegeName || row.labServiceCollege}</span>}
+                              {(row.lecServiceCollegeName || row.labServiceCollegeName) && (
+                                <span className="mt-0.5 block max-w-[220px] truncate text-[9px] font-medium text-gray-400" title={`Original sheet value: ${row.lecServiceCollegeName || row.labServiceCollegeName}`}>
+                                  Sheet: {row.lecServiceCollegeName || row.labServiceCollegeName}
+                                </span>
+                              )}
+                              {!row.lecServiceCollege && !row.labServiceCollege && <span className="text-gray-400">Internal</span>}
+                            </td>
                             <td className="p-2">
                               {row.isValid ? (
                                 <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
@@ -1048,37 +1309,60 @@ export default function AddCourseModal({
                     </table>
                   </div>
 
-                  {/* Bulk Import Action Footer */}
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium">
-                      {validCount > 0
-                        ? `Ready to add ${validCount} course(s)`
-                        : 'Fix validation errors above before importing'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleBulkImport}
-                      disabled={validCount === 0 || isBulkImporting}
-                      className="btn-maroon font-bold text-xs px-5 py-2.5 flex items-center gap-2 shadow-md disabled:opacity-50"
-                    >
-                      {isBulkImporting ? (
-                        <>
-                          <RefreshCw size={14} className="animate-spin" />
-                          <span>Importing ({importedProgress}/{validCount})...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus size={16} />
-                          <span>Import {validCount} Courses</span>
-                        </>
-                      )}
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px]">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <span>Rows per page</span>
+                      <select value={previewPageSize} onChange={(e) => setPreviewPageSize(Number(e.target.value))} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-bold">
+                        {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                      </select>
+                    </div>
+                    <div className="font-semibold text-gray-600">
+                      Page {Math.min(previewPage, previewPageCount)} of {previewPageCount} · {filteredPreviewRows.length} filtered row(s)
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button type="button" disabled={previewPage <= 1} onClick={() => setPreviewPage(1)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-bold text-[#7A0808] disabled:opacity-40">First</button>
+                      <button type="button" disabled={previewPage <= 1} onClick={() => setPreviewPage((page) => Math.max(1, page - 1))} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-bold text-[#7A0808] disabled:opacity-40">Previous</button>
+                      <button type="button" disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-bold text-[#7A0808] disabled:opacity-40">Next</button>
+                      <button type="button" disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage(previewPageCount)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-bold text-[#7A0808] disabled:opacity-40">Last</button>
+                    </div>
                   </div>
+
                 </div>
               )}
             </div>
           )}
         </div>
+
+        {activeTab === 'bulk' && parsedRows.length > 0 && !isParsing && (
+          <div className="flex flex-shrink-0 items-center justify-between border-t border-gray-200 bg-white px-6 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)]">
+            <span className="text-xs font-medium text-gray-500">
+              {validCount > 0 ? `Ready to add ${validCount} course(s)` : 'Fix validation errors above before importing'}
+            </span>
+            <button type="button" onClick={handleBulkImport} disabled={validCount === 0 || isBulkImporting} className="btn-maroon flex items-center gap-2 px-5 py-2.5 text-xs font-bold shadow-md disabled:opacity-50">
+              <Plus size={16} /><span>Import {validCount} Courses</span>
+            </button>
+          </div>
+        )}
+
+        {isBulkImporting && (
+          <div className="absolute inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-6 backdrop-blur-[2px]" onClick={(event) => event.stopPropagation()}>
+            <div className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-6 text-center shadow-2xl">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-[#7A0808]">
+                <RefreshCw size={26} className="animate-spin" />
+              </div>
+              <h4 className="mt-4 text-lg font-black text-gray-900">Importing Courses</h4>
+              <p className="mt-1 text-xs font-medium text-gray-500">Saving validated course records and service-college assignments. Please do not close or refresh this page.</p>
+              <div className="mt-5 h-3 overflow-hidden rounded-full bg-gray-200">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#7A0808] to-red-600 transition-[width] duration-300" style={{ width: `${importedProgress}%` }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs font-bold">
+                <span className="text-gray-500">{Math.min(validCount, Math.round((importedProgress / 100) * validCount))} of {validCount} courses</span>
+                <span className="text-[#7A0808]">{importedProgress}%</span>
+              </div>
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">Actions are temporarily disabled until the import finishes.</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

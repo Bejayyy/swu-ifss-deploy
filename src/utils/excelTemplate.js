@@ -60,6 +60,85 @@ export const normalizeSemester = (rawSem) => {
   return '1st Semester';
 };
 
+const COURSE_IMPORT_FIELDS = new Set([
+  'code', 'title', 'college', 'program', 'year', 'sem', 'lecUnits', 'labUnits',
+  'totalUnits', 'lecHours', 'labHours', 'type', 'serviceCollege',
+  'lecServiceCollege', 'labServiceCollege',
+]);
+
+const getDeterministicCourseColumnMap = (headers = []) => {
+  const colMap = {};
+  headers.forEach((rawHeader, cIdx) => {
+    const colHeader = String(rawHeader || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (/^(course |subject )?code\b/.test(colHeader) || colHeader === 'code') colMap.code = cIdx;
+    else if (colHeader.includes('subject description') || colHeader.includes('course title') || colHeader.includes('subject title') || colHeader === 'title') colMap.title = cIdx;
+    else if (colHeader.includes('lecture service') || colHeader.includes('lec service')) colMap.lecServiceCollege = cIdx;
+    else if (colHeader.includes('laboratory service') || colHeader.includes('lab service')) colMap.labServiceCollege = cIdx;
+    else if (colHeader === 'service college' || colHeader.includes('servicing college')) colMap.serviceCollege = cIdx;
+    else if (colHeader === 'department' || colHeader.includes('owning college') || colHeader.includes('target college') || colHeader.includes('mother college')) colMap.college = cIdx;
+    else if (colHeader === 'program' || colHeader.includes('degree program')) colMap.program = cIdx;
+    else if (colHeader.includes('year level')) colMap.year = cIdx;
+    else if (colHeader.includes('semester') || colHeader === 'term') colMap.sem = cIdx;
+    else if (colHeader.includes('lec') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.lecHours ??= cIdx;
+    else if (colHeader.includes('lab') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.labHours ??= cIdx;
+    else if (colHeader.includes('lec') && colHeader.includes('unit')) colMap.lecUnits = cIdx;
+    else if (colHeader.includes('lab') && colHeader.includes('unit')) colMap.labUnits = cIdx;
+    else if ((colHeader.includes('total') && colHeader.includes('unit')) || colHeader === 'units' || colHeader === 'units *') colMap.totalUnits = cIdx;
+    else if (colHeader.includes('type')) colMap.type = cIdx;
+  });
+  return colMap;
+};
+
+const findCourseHeaderRow = (rows = []) => {
+  let best = { index: -1, map: {}, score: 0 };
+  rows.slice(0, 75).forEach((row, index) => {
+    const map = getDeterministicCourseColumnMap(row);
+    const mappedCount = Object.keys(map).length;
+    const requiredCount = Number(map.code !== undefined) + Number(map.title !== undefined);
+    const score = (requiredCount * 20) + mappedCount;
+    if (score > best.score) best = { index, map, score };
+  });
+  return best.score >= 2 ? best : { index: -1, map: {}, score: 0 };
+};
+
+const mergeCourseColumnMaps = (aiMap = {}, exactMap = {}) => {
+  const merged = { ...exactMap };
+  const usedIndexes = new Set(Object.values(exactMap));
+  Object.entries(aiMap).forEach(([field, index]) => {
+    if (merged[field] !== undefined || usedIndexes.has(index)) return;
+    merged[field] = index;
+    usedIndexes.add(index);
+  });
+  return merged;
+};
+
+const getAiCourseColumnMap = async (headers, sampleRows) => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+  if (!apiKey) return null;
+  const compactSamples = sampleRows.slice(0, 5).map((row) => headers.map((_, index) => String(row[index] ?? '').slice(0, 120)));
+  const prompt = `Map spreadsheet columns to the course-import schema. Return JSON only: canonical field names mapped to zero-based column indexes. Use null when absent and never move values between rows. Fields: code, title, college, program, year, sem, lecUnits, labUnits, totalUnits, lecHours, labHours, type, serviceCollege, lecServiceCollege, labServiceCollege. DEPARTMENT means owning college; SUBJECT DESCRIPTION means title; TERM means semester; SERVICE COLLEGE means teaching provider.\nHeaders: ${JSON.stringify(headers)}\nSample rows: ${JSON.stringify(compactSamples)}`;
+  for (const model of ['gemini-3.6-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0 } }),
+      });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('') || '';
+      const parsed = JSON.parse(rawText.replace(/^```json\s*|\s*```$/g, '').trim());
+      const validMap = {};
+      Object.entries(parsed || {}).forEach(([field, index]) => {
+        if (COURSE_IMPORT_FIELDS.has(field) && Number.isInteger(index) && index >= 0 && index < headers.length) validMap[field] = index;
+      });
+      if (validMap.code !== undefined && validMap.title !== undefined) return validMap;
+    } catch {
+      // Try the next model, then fall back to local header aliases.
+    }
+  }
+  return null;
+};
+
 /**
  * Generates an Excel template file (.xlsx) for bulk importing users.
  */
@@ -258,6 +337,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   const headers = [
     'Course Code *',
     'Course Title *',
+    'Owning College / Department',
     'Degree Program (Optional)',
     'Year Level *',
     'Semester *',
@@ -267,12 +347,15 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
     'Lec Hours/Wk (Default: Lec x 1)',
     'Lab Hours/Wk (Default: Lab x 3)',
     'Course Type *',
+    'Lecture Service College (Optional)',
+    'Laboratory Service College (Optional)',
   ];
 
   const sampleRows = [
     [
       'IT101',
       'Programming 1',
+      'College of IT',
       'BSIT',
       '1st Year',
       '1st Semester',
@@ -282,6 +365,8 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       2,
       3,
       'both',
+      '',
+      'College of Engineering',
     ],
   ];
 
@@ -291,8 +376,11 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   worksheet['!cols'] = [
     { wch: 16 },
     { wch: 32 },
+    { wch: 34 },
     { wch: 24 },
     { wch: 16 },
+    { wch: 34 },
+    { wch: 36 },
     { wch: 18 },
     { wch: 20 },
     { wch: 22 },
@@ -328,7 +416,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
 
   worksheet['!dataValidation'] = [
     {
-      sqref: 'D2:D1000',
+      sqref: 'E2:E1000',
       type: 'list',
       formula1: "'Reference Options'!$A$2:$A$6",
       showErrorMessage: true,
@@ -336,7 +424,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       error: 'Please select a valid Year Level from the dropdown list.',
     },
     {
-      sqref: 'E2:E1000',
+      sqref: 'F2:F1000',
       type: 'list',
       formula1: "'Reference Options'!$B$2:$B$4",
       showErrorMessage: true,
@@ -344,7 +432,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       error: 'Please select a valid Semester from the dropdown list.',
     },
     {
-      sqref: 'K2:K1000',
+      sqref: 'L2:L1000',
       type: 'list',
       formula1: "'Reference Options'!$C$2:$C$4",
       showErrorMessage: true,
@@ -361,12 +449,14 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
  * Parses and validates an uploaded Excel/CSV file containing courses/subjects.
  * Automatically excludes sample rows and applies smart normalization for Title, Year Level, Semester, and Type.
  */
-export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
+export function parseBulkCourseSpreadsheet(file, existingCourses = [], onProgress = () => {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    onProgress({ stage: 'reading', percent: 8, message: 'Reading the uploaded spreadsheet' });
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        onProgress({ stage: 'workbook', percent: 20, message: 'Opening workbook and locating course data' });
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
 
@@ -382,54 +472,58 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
           return resolve({ rows: [], errors: ['The uploaded file is empty.'] });
         }
 
-        // Locate header row
-        let headerIndex = -1;
-        let colMap = {};
-        for (let i = 0; i < rawRows.length; i++) {
-          const rowStrings = rawRows[i].map((c) => String(c).toLowerCase());
-          const rowCombined = rowStrings.join(' ');
-          if (rowCombined.includes('course code') || rowCombined.includes('course title') || rowCombined.includes('units') || rowCombined.includes('subject')) {
-            headerIndex = i;
-            rowStrings.forEach((colHeader, cIdx) => {
-              if (colHeader.includes('code')) colMap.code = cIdx;
-              else if (colHeader.includes('title') || colHeader.includes('name') || colHeader.includes('desc')) colMap.title = cIdx;
-              else if (colHeader.includes('program') || colHeader.includes('deg')) colMap.program = cIdx;
-              else if (colHeader.includes('year')) colMap.year = cIdx;
-              else if (colHeader.includes('sem')) colMap.sem = cIdx;
-              else if (colHeader.includes('lec') && (colHeader.includes('unit') || colHeader.includes('u')) && !colHeader.includes('hour') && !colHeader.includes('hr') && !colHeader.includes('time')) colMap.lecUnits = cIdx;
-              else if (colHeader.includes('lab') && (colHeader.includes('unit') || colHeader.includes('u')) && !colHeader.includes('hour') && !colHeader.includes('hr') && !colHeader.includes('time')) colMap.labUnits = cIdx;
-              else if ((colHeader.includes('total') && colHeader.includes('unit')) || colHeader === 'units' || colHeader === 'units *') colMap.totalUnits = cIdx;
-              else if (colHeader.includes('lec') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.lecHours = cIdx;
-              else if (colHeader.includes('lab') && (colHeader.includes('hour') || colHeader.includes('hr') || colHeader.includes('time'))) colMap.labHours = cIdx;
-              else if (colHeader.includes('type')) colMap.type = cIdx;
-            });
-            break;
-          }
-        }
+        onProgress({ stage: 'headers', percent: 35, message: 'Finding the header row and recognizing columns' });
+        // Score candidate rows instead of assuming headers are on row 1 or in a fixed order.
+        const headerMatch = findCourseHeaderRow(rawRows);
+        const headerIndex = headerMatch.index;
+        let colMap = headerMatch.map;
 
         const dataRows = headerIndex !== -1 ? rawRows.slice(headerIndex + 1) : rawRows;
+        let mappingSource = 'Smart header matching';
+        if (headerIndex !== -1) {
+          onProgress({ stage: 'mapping', percent: 48, message: 'Aligning spreadsheet columns with AI' });
+          const samples = dataRows.filter((row) => row?.some((cell) => String(cell).trim())).slice(0, 5);
+          const aiMap = await getAiCourseColumnMap(rawRows[headerIndex], samples);
+          if (aiMap) {
+            // Exact aliases stay authoritative. AI fills only unmapped, non-conflicting columns.
+            colMap = mergeCourseColumnMaps(aiMap, colMap);
+            mappingSource = 'AI-assisted header matching';
+          }
+        }
+        onProgress({ stage: 'rows', percent: 65, message: 'Reading and normalizing course rows' });
+        if (colMap.code === undefined || colMap.title === undefined) {
+          return resolve({
+            rows: [],
+            errors: ['Could not identify the course code and course title columns. Add recognizable headers or enable AI mapping.'],
+            mappingSource,
+            columnMap: colMap,
+          });
+        }
         const parsedRows = [];
-        const seenCodes = new Set();
 
         dataRows.forEach((row, rowIdx) => {
           if (!row || row.length === 0 || row.every((cell) => String(cell).trim() === '')) {
             return;
           }
 
-          const rawCode = String(colMap.code !== undefined ? row[colMap.code] : row[0] || '').trim().toUpperCase();
-          const rawTitle = toTitleCase(String(colMap.title !== undefined ? row[colMap.title] : row[1] || ''));
+          const rawCode = String(row[colMap.code] || '').trim().toUpperCase();
+          const rawTitle = toTitleCase(String(row[colMap.title] || ''));
           const rawProgram = String(colMap.program !== undefined ? row[colMap.program] : '').trim().toUpperCase();
-          const rawYear = String(colMap.year !== undefined ? row[colMap.year] : (row[2] || '')).trim();
-          const rawSem = String(colMap.sem !== undefined ? row[colMap.sem] : (row[3] || '')).trim();
+          const rawYear = String(colMap.year !== undefined ? row[colMap.year] : '').trim();
+          const rawSem = String(colMap.sem !== undefined ? row[colMap.sem] : '').trim();
+          const rawCollege = String(colMap.college !== undefined ? row[colMap.college] : '').trim();
+          const rawServiceCollege = String(colMap.serviceCollege !== undefined ? row[colMap.serviceCollege] : '').trim();
+          const rawLecServiceCollege = String(colMap.lecServiceCollege !== undefined ? row[colMap.lecServiceCollege] : '').trim();
+          const rawLabServiceCollege = String(colMap.labServiceCollege !== undefined ? row[colMap.labServiceCollege] : '').trim();
 
           const rawLecU = colMap.lecUnits !== undefined ? Number(row[colMap.lecUnits]) : null;
           const rawLabU = colMap.labUnits !== undefined ? Number(row[colMap.labUnits]) : null;
-          const rawTotalU = colMap.totalUnits !== undefined ? Number(row[colMap.totalUnits]) : Number(row[4]);
+          const rawTotalU = colMap.totalUnits !== undefined ? Number(row[colMap.totalUnits]) : NaN;
 
           const rawLecH = colMap.lecHours !== undefined ? Number(row[colMap.lecHours]) : null;
           const rawLabH = colMap.labHours !== undefined ? Number(row[colMap.labHours]) : null;
 
-          const rawType = String(colMap.type !== undefined ? row[colMap.type] : (row[5] || '')).trim();
+          const rawType = String(colMap.type !== undefined ? row[colMap.type] : '').trim();
 
           // Auto-exclude sample row ("IT101", "Programming 1")
           if (rawCode === 'IT101' && rawTitle.toLowerCase() === 'programming 1') {
@@ -440,12 +534,8 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
 
           if (!rawCode) {
             rowErrors.push('Course code is required');
-          } else if (seenCodes.has(rawCode)) {
-            rowErrors.push(`Duplicate course code "${rawCode}" in file`);
-          } else if (existingCourses.some((c) => (c.code || '').toUpperCase() === rawCode)) {
+          } else if (!rawCollege && existingCourses.some((c) => (c.code || '').toUpperCase() === rawCode)) {
             rowErrors.push(`Course code "${rawCode}" already exists in college`);
-          } else {
-            seenCodes.add(rawCode);
           }
 
           if (!rawTitle) {
@@ -474,12 +564,21 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
           let lecHours = rawLecH !== null && !isNaN(rawLecH) ? rawLecH : (lecUnits * 1.0);
           let labHours = rawLabH !== null && !isNaN(rawLabH) ? rawLabH : (labUnits * 3.0);
           let totalHours = lecHours + labHours;
+          const isExternalService = rawServiceCollege && rawCollege
+            ? rawServiceCollege.toLowerCase() !== rawCollege.toLowerCase()
+            : Boolean(rawServiceCollege);
+          const lecServiceCollegeName = rawLecServiceCollege || (isExternalService && lecUnits > 0 ? rawServiceCollege : '');
+          const labServiceCollegeName = rawLabServiceCollege || (isExternalService && labUnits > 0 ? rawServiceCollege : '');
 
           parsedRows.push({
             id: `bulk_crs_${Date.now()}_${rowIdx}_${Math.random().toString(36).substring(2, 6)}`,
             code: rawCode,
             title: rawTitle,
             programCode: rawProgram,
+            collegeName: rawCollege,
+            serviceCollegeName: rawServiceCollege,
+            lecServiceCollegeName,
+            labServiceCollegeName,
             yearLevel,
             semester,
             lecUnits,
@@ -494,7 +593,45 @@ export function parseBulkCourseSpreadsheet(file, existingCourses = []) {
           });
         });
 
-        resolve({ rows: parsedRows });
+        onProgress({ stage: 'components', percent: 82, message: 'Combining lecture and laboratory components' });
+        // Merge split lecture/laboratory rows only when they represent the same
+        // subject assignment. Repeated subjects for different programs remain separate.
+        const mergedRows = new Map();
+        parsedRows.forEach((row) => {
+          const mergeKey = [row.collegeName, row.programCode, row.code, row.title, row.yearLevel, row.semester]
+            .map((value) => String(value || '').trim().toUpperCase())
+            .join('|');
+          const existing = mergedRows.get(mergeKey);
+          if (!existing) {
+            mergedRows.set(mergeKey, { ...row });
+            return;
+          }
+          const existingIsComplete = Number(existing.lecUnits) > 0 && Number(existing.labUnits) > 0;
+          const rowIsComplete = Number(row.lecUnits) > 0 && Number(row.labUnits) > 0;
+          if (rowIsComplete && !existingIsComplete) {
+            existing.lecUnits = Number(row.lecUnits) || 0;
+            existing.labUnits = Number(row.labUnits) || 0;
+            existing.lecHours = Number(row.lecHours) || 0;
+            existing.labHours = Number(row.labHours) || 0;
+          } else if (!existingIsComplete) {
+            existing.lecUnits = Math.max(Number(existing.lecUnits) || 0, Number(row.lecUnits) || 0);
+            existing.labUnits = Math.max(Number(existing.labUnits) || 0, Number(row.labUnits) || 0);
+            existing.lecHours = Math.max(Number(existing.lecHours) || 0, Number(row.lecHours) || 0);
+            existing.labHours = Math.max(Number(existing.labHours) || 0, Number(row.labHours) || 0);
+          }
+          existing.units = existing.lecUnits + existing.labUnits;
+          existing.totalHours = existing.lecHours + existing.labHours;
+          existing.type = existing.lecUnits > 0 && existing.labUnits > 0
+            ? 'both'
+            : (existing.labUnits > 0 ? 'laboratory' : 'lecture');
+          existing.lecServiceCollegeName ||= row.lecServiceCollegeName;
+          existing.labServiceCollegeName ||= row.labServiceCollegeName;
+          existing.errors = [...new Set([...(existing.errors || []), ...(row.errors || [])])];
+          existing.isValid = existing.errors.length === 0;
+        });
+
+        onProgress({ stage: 'preview', percent: 88, message: 'Preparing rows for final validation' });
+        resolve({ rows: [...mergedRows.values()], mappingSource, columnMap: colMap });
       } catch (err) {
         reject(new Error('Failed to parse course spreadsheet: ' + err.message));
       }

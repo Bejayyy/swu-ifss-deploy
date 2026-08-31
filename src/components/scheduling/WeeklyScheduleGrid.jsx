@@ -42,6 +42,9 @@ export default function WeeklyScheduleGrid({
   showControls = true,
   readOnly = false,
   canPlot = false,
+  hideSectionNameInBlocks = false,
+  addScheduleDisabledReason = 'Scheduling access is currently unavailable.',
+  courseChecklist = [],
   showDayDates = true, // New prop to control date display
   onAddBlock,
   onSlotSelect,
@@ -195,7 +198,7 @@ export default function WeeklyScheduleGrid({
     });
   }, [blocks, typeFilter]);
 
-  const blocksByDay = Array.from({ length: 7 }, (_, day) => filteredBlocks.filter((b) => b.day === day));
+  const blocksByDay = Array.from({ length: 7 }, (_, day) => filteredBlocks.filter((block) => block.day === day));
 
   const formatPrintInterval = (slotIdx) => {
     const startH = slotIndexToHour(slotIdx);
@@ -264,15 +267,65 @@ export default function WeeklyScheduleGrid({
             </div>
           )}
 
-          {canPlot && onAddBlock && (
-            <button
-              type="button"
-              className="btn-maroon text-xs gap-1.5 py-2 px-4 shadow-sm font-bold flex items-center cursor-pointer ml-auto"
-              onClick={onAddBlock}
-            >
-              <Plus size={14} /> Add schedule
-            </button>
+          {onAddBlock || (scheduleTab === 'regular' && courseChecklist.length > 0) ? (
+            <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap">
+          {onAddBlock && (
+            <div className="group/add-schedule relative shrink-0">
+              <button
+                type="button"
+                className={`whitespace-nowrap text-xs gap-1.5 py-2 px-4 shadow-sm font-bold flex items-center ${
+                  canPlot ? 'btn-maroon cursor-pointer' : 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400'
+                }`}
+                onClick={onAddBlock}
+                disabled={!canPlot}
+                aria-describedby={!canPlot ? 'add-schedule-disabled-reason' : undefined}
+              >
+                <Plus size={14} /> Add schedule
+              </button>
+              {!canPlot && (
+                <div
+                  id="add-schedule-disabled-reason"
+                  role="tooltip"
+                  className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-64 -translate-x-1/2 rounded-xl border border-red-200 bg-white px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-gray-700 shadow-xl group-hover/add-schedule:block group-focus-within/add-schedule:block"
+                >
+                  <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-red-200 bg-white" />
+                  <span className="relative block font-black text-[#7A0808]">Add Schedule is unavailable</span>
+                  <span className="relative mt-0.5 block">{addScheduleDisabledReason}</span>
+                </div>
+              )}
+            </div>
           )}
+
+          {scheduleTab === 'regular' && courseChecklist.length > 0 && (
+            <div className="w-[460px] max-w-full shrink px-1 py-1">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-700">Course checklist</span>
+                <span className="text-[9px] font-bold text-gray-500">
+                  {courseChecklist.filter((course) => course.status === 'complete').length}/{courseChecklist.length} plotted
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {courseChecklist.map((course, courseIndex) => (
+                  <div
+                    key={`${course.code}-${courseIndex}`}
+                    className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-bold ${
+                      course.status === 'complete'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : course.status === 'partial'
+                          ? 'border-amber-200 bg-amber-50 text-amber-900'
+                          : 'border-red-200 bg-white text-[#7A0808]'
+                    }`}
+                    title={`${course.code} — ${course.title}: ${course.status === 'complete' ? 'Fully plotted' : course.status === 'partial' ? 'Partially plotted' : 'Not yet plotted'}`}
+                  >
+                    <span aria-hidden="true">{course.status === 'complete' ? '✓' : course.status === 'partial' ? '◐' : '○'}</span>
+                    <span className="truncate">{course.code}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -378,14 +431,14 @@ export default function WeeklyScheduleGrid({
         </div>
       )}
 
-      <div className={`w-full ${drag?.active ? 'select-none' : ''}`}>
-        <div className="w-full">
+      <div className={`w-full overflow-x-auto rounded-xl border border-gray-300 ${drag?.active ? 'select-none' : ''}`}>
+        <div className="min-w-[760px] w-full">
           {/* Header Row */}
           <div
-            className="grid sticky top-0 bg-white z-10 print:bg-[#7A0808] print:text-white print:border print:border-black"
-            style={{ gridTemplateColumns: '85px repeat(7, 1fr)' }}
+            className="grid sticky top-0 bg-gray-50 z-10 border-b-2 border-gray-400 print:bg-[#7A0808] print:text-white print:border print:border-black"
+            style={{ gridTemplateColumns: '92px repeat(7, minmax(94px, 1fr))' }}
           >
-            <div className="py-2 text-[10px] font-bold text-gray-400 uppercase text-center print:bg-[#7A0808] print:text-white print:font-extrabold print:text-xs print:border-r print:border-black flex items-center justify-center">
+            <div className="py-2 text-[10px] font-black text-gray-700 uppercase text-center border-r border-gray-400 print:bg-[#7A0808] print:text-white print:font-extrabold print:text-xs print:border-r print:border-black flex items-center justify-center">
               TIME
             </div>
             {SCHEDULE_DAYS.map((day, i) => {
@@ -395,11 +448,11 @@ export default function WeeklyScheduleGrid({
               return (
                 <div
                   key={day}
-                  className={`py-2 text-center print:bg-[#7A0808] print:text-white print:border-r print:border-black flex flex-col justify-center transition-all ${
+                  className={`py-2 text-center border-r border-gray-300 print:bg-[#7A0808] print:text-white print:border-r print:border-black flex flex-col justify-center transition-all ${
                     disabled ? 'bg-red-50/70 border-b-2 border-red-300' : ''
                   }`}
                 >
-                  <p className="text-[10px] font-bold uppercase text-gray-400 print:text-white print:font-extrabold print:text-xs">
+                  <p className="text-[11px] font-black uppercase text-gray-700 print:text-white print:font-extrabold print:text-xs">
                     <span className="print:hidden">{day}</span>
                     <span className="hidden print:inline">{shortDay}</span>
                   </p>
@@ -441,14 +494,14 @@ export default function WeeklyScheduleGrid({
                   key={slotIndex}
                   className="grid absolute left-0 right-0 print:border-b print:border-black"
                   style={{
-                    gridTemplateColumns: '85px repeat(7, 1fr)',
-                    height: 'var(--cell-height, 48px)',
-                    top: `calc(${slotIndex} * var(--cell-height, 48px))`
+                    gridTemplateColumns: '92px repeat(7, minmax(94px, 1fr))',
+                    height: `var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px)`,
+                    top: `calc(${slotIndex} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`
                   }}
                 >
-                  <div className="border-t border-gray-100 pr-2 flex items-center justify-center bg-white z-[1] print:border-r print:border-l print:border-black">
-                    <span className="text-[10px] text-gray-500 font-semibold print:hidden select-none whitespace-nowrap">
-                      {label}
+                  <div className="border-t border-r border-gray-300 px-1 flex items-center justify-center bg-white z-[1] print:border-r print:border-l print:border-black">
+                    <span className="text-[9px] text-gray-700 font-bold print:hidden select-none whitespace-nowrap">
+                      {intervalLabel}
                     </span>
                     <span className="hidden print:inline text-[9px] font-bold text-gray-900">{intervalLabel}</span>
                   </div>
@@ -458,9 +511,9 @@ export default function WeeklyScheduleGrid({
                     return (
                       <div
                         key={dayIndex}
-                        className="border-t border-l border-gray-100 print:border-r print:border-black"
+                        className="border-t border-r border-gray-300 print:border-r print:border-black"
                         style={{
-                          height: 'var(--cell-height, 48px)',
+                          height: `var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px)`,
                           background: disabled
                             ? 'repeating-linear-gradient(45deg, #FEF2F2, #FEF2F2 10px, #FFF5F5 10px, #FFF5F5 20px)'
                             : selected
@@ -487,8 +540,8 @@ export default function WeeklyScheduleGrid({
             <div
               className="grid absolute left-0 right-0 pointer-events-none"
               style={{
-                gridTemplateColumns: '85px repeat(7, 1fr)',
-                top: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, 48px))`
+                gridTemplateColumns: '92px repeat(7, minmax(94px, 1fr))',
+                top: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`
               }}
             >
               <div className="border-t border-gray-100" />
@@ -499,7 +552,7 @@ export default function WeeklyScheduleGrid({
 
             <div
               className="absolute top-0 grid pointer-events-none"
-              style={{ left: 85, right: 0, height: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`, gridTemplateColumns: 'repeat(7, 1fr)' }}
+              style={{ left: 92, right: 0, height: `calc(${SCHEDULE_SLOT_COUNT} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`, gridTemplateColumns: 'repeat(7, minmax(94px, 1fr))' }}
             >
               {blocksByDay.map((dayBlocks, dayIndex) => {
                 const dayStatus = dayStatuses[dayIndex];
@@ -540,15 +593,14 @@ export default function WeeklyScheduleGrid({
                         (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
                         SCHEDULE_TYPE_COLORS.Lecture;
                       const slotsFromStart = (sched.start - SCHEDULE_START_HOUR) * 2;
-                      const durationSlots = Math.max(1, Math.round((sched.end - sched.start) * 2) + 1);
+                      const durationSlots = Math.max(1, Math.round((sched.end - sched.start) * 2));
                       const topCalc = `calc(${slotsFromStart} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
                       const heightCalc = `calc(${durationSlots} * var(--cell-height, ${SCHEDULE_CELL_HEIGHT}px))`;
-
                       const isNonCourse = sched.isReservation || sched.isMaintenance;
                       return (
                         <div
                           key={sched.id}
-                          className={`absolute left-1 right-1 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center cursor-pointer hover:shadow-md hover:scale-[1.01] hover:brightness-95 transition-all group ${
+                          className={`absolute inset-x-0 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center cursor-pointer hover:z-20 hover:shadow-md hover:brightness-95 transition-all group ${
                             isNonCourse ? 'print:hidden' : ''
                           }`}
                           onClick={(e) => {
@@ -556,19 +608,24 @@ export default function WeeklyScheduleGrid({
                             onBlockClick?.(sched);
                           }}
                           onMouseDown={(e) => e.stopPropagation()}
-                          title="Click to view full schedule details"
+                          title={`${sched.title || sched.course || 'Schedule'} | ${formatScheduleHour(sched.start)}–${formatScheduleHour(sched.end)} | ${sched.roomCode || 'No room assigned'} | Click to view details`}
                           style={{
                             top: topCalc,
                             height: heightCalc,
                             background: colors.bg,
                             border: `1.5px solid ${colors.border}`,
                             boxSizing: 'border-box',
-                            padding: '8px',
-                            borderRadius: '8px',
+                            padding: '5px',
+                            borderRadius: '3px',
                           }}
                         >
                           <div className="flex items-center justify-between gap-1 mb-0.5">
                             <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                            {sched.approvalStatus === 'pending' && (
+                              <span className="shrink-0 rounded border border-amber-400 bg-amber-100 px-1 text-[7px] font-black uppercase text-amber-900">
+                                Pending
+                              </span>
+                            )}
                             {sched.rotationCycle === 'week_a' && (
                               <span className="text-[8px] font-black uppercase px-1 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 shrink-0">
                                 Week A
@@ -583,7 +640,7 @@ export default function WeeklyScheduleGrid({
                           <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                             {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                           </p>
-                          {(sched.section || sched.sectionName || sched.program) && (
+                          {!hideSectionNameInBlocks && (sched.section || sched.sectionName || sched.program) && (
                             <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight flex items-center gap-1" style={{ color: colors.text }}>
                               <span>Sec: {sched.section || sched.sectionName || sched.program}</span>
                               {sched.isCombinedSection && (
@@ -597,7 +654,7 @@ export default function WeeklyScheduleGrid({
                           <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
                             {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
                           </p>
-                          <div className="flex items-center gap-1 mt-1 pointer-events-auto">
+                          <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-md bg-white/90 px-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-auto">
                             {onBlockClick && (
                               <button
                                 type="button"

@@ -20,6 +20,7 @@ import {
   Pencil,
   RefreshCw,
   Users,
+  Plus,
 } from 'lucide-react';
 import {
   parseTimeToHour,
@@ -34,10 +35,14 @@ import { formatScheduleHour, SCHEDULE_DAYS, SCHEDULE_START_HOUR, SCHEDULE_END_HO
 import { formatDisplayDate } from '../../utils/academicCalendarUtils';
 import { subscribeCollegeCourses } from '../../services/courseService';
 import { subscribeToBuildings } from '../../services/buildingService';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 import { subscribeStaffUsers } from '../../services/systemUserService';
+import { formatCollegeName } from '../../constants/colleges';
 import RoomScheduleViewer from '../scheduling/RoomScheduleViewer';
 import CustomSelect from '../ui/CustomSelect';
 import TeacherScheduleModal from './TeacherScheduleModal';
+import LoadingModal from './LoadingModal';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
 
@@ -156,10 +161,12 @@ export default function AddPlotEntryModalEnhanced({
   lockTimes = false,
   deanCollege, // Dean's college code for fetching courses
   deanUid, // Dean's UID for querying room schedules
+  deanName, // Exact-name fallback for legacy room manager assignments
   programCode, // Optional program code to filter curriculum
   programName, // Optional program title
   semester = '1', // Current semester
   sectionYearLevel = '1st Year', // Selected section's year level
+  allowOjtRotation = false, // Registrar-controlled OJT alternating flag for this section/year
   dayIndex, // 0-6 for Mon-Sun
   fromDrag = false,
   initialBuildingId,
@@ -177,9 +184,10 @@ export default function AddPlotEntryModalEnhanced({
   serviceComponent = null,
   serviceCollegeCode = null,
 }) {
+  const { showConfirm, confirmState, notificationState } = useModal();
   // Multi-step form state
   const isEditingExisting = Boolean(initial?.id || initial?.entryId || initial?.courseCode);
-  const [step, setStep] = useState(() => (isEditingExisting ? 4 : 1)); // 1: Course, 3: Type, 4: Building & Room, 2: Teacher (optional), 5: Summary
+  const [step, setStep] = useState(() => (isEditingExisting ? 6 : 1)); // Course → Type (when needed) → Preferred Time → Teacher → Room → Summary
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -222,6 +230,7 @@ export default function AddPlotEntryModalEnhanced({
   const [courses, setCourses] = useState([]);
   const [buildings, setBuildings] = useState([]);
   const [teachersList, setTeachersList] = useState([]);
+  const [staffDirectory, setStaffDirectory] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingBuildings, setLoadingBuildings] = useState(true);
 
@@ -229,6 +238,8 @@ export default function AddPlotEntryModalEnhanced({
   const [courseSearch, setCourseSearch] = useState('');
   const [teacherSearch, setTeacherSearch] = useState('');
   const [buildingSearch, setBuildingSearch] = useState('');
+  const [showAllAvailableRooms, setShowAllAvailableRooms] = useState(false);
+  const [nonBudgetedRoomReason, setNonBudgetedRoomReason] = useState(initial?.nonBudgetedRoomReason || '');
 
   // Form data
   const [isEditMode, setIsEditMode] = useState(Boolean(initial?.id || initial?.entryId));
@@ -257,9 +268,18 @@ export default function AddPlotEntryModalEnhanced({
     if (dayIndex !== undefined && dayIndex !== null && Number(dayIndex) >= 0 && Number(dayIndex) <= 6) return [Number(dayIndex)];
     return [];
   });
-  const [timeMode, setTimeMode] = useState('combined'); // 'combined' | 'individual'
+  const [timeMode, setTimeMode] = useState(() => (
+    initial?.dayTimes && Object.keys(initial.dayTimes).length > 0 ? 'individual' : 'combined'
+  )); // 'combined' | 'individual'
   const [combinedStartTime, setCombinedStartTime] = useState(initial?.startTime || '');
   const [combinedEndTime, setCombinedEndTime] = useState(initial?.endTime || '');
+  const [additionalTimeSlots, setAdditionalTimeSlots] = useState(() =>
+    Array.isArray(initial?.additionalTimeSlots) ? initial.additionalTimeSlots : []
+  );
+
+  useEffect(() => {
+    setAdditionalTimeSlots((prev) => prev.filter((slot) => selectedDays.includes(Number(slot.day))));
+  }, [selectedDays]);
   const [dayTimes, setDayTimes] = useState(() => {
     if (initial?.dayTimes && typeof initial.dayTimes === 'object') return initial.dayTimes;
     if (initial?.day !== undefined && initial?.startTime && initial?.endTime) {
@@ -278,6 +298,14 @@ export default function AddPlotEntryModalEnhanced({
     }
     return [initialSection || selectedSection || ''];
   });
+
+  useEffect(() => {
+    if (!allowOjtRotation) {
+      setRotationCycle('all');
+      setPartnerSection('');
+      setAutoMirrorPartner(false);
+    }
+  }, [allowOjtRotation]);
 
   // Keep selectedCombinedSections locked to primary selectedSection and valid within mergeableSections
   useEffect(() => {
@@ -319,8 +347,18 @@ export default function AddPlotEntryModalEnhanced({
   useEffect(() => {
     return subscribeStaffUsers(
       (users) => {
-        const teachersOnly = users.filter((u) => u.roleValue === 'teacher');
+        setStaffDirectory(users || []);
+        const targetCollege = formatCollegeName(serviceCollegeCode || deanCollege || '').trim().toLowerCase();
+        const teachersOnly = users.filter((u) => {
+          if (u.roleValue !== 'teacher' || u.status !== 'Active') return false;
+          if (!targetCollege) return false;
+          const teacherCollege = formatCollegeName(u.college || u.department || '').trim().toLowerCase();
+          return teacherCollege === targetCollege;
+        });
         setTeachersList(teachersOnly);
+        if (selectedTeacher?.uid && !teachersOnly.some((teacher) => teacher.uid === selectedTeacher.uid)) {
+          setSelectedTeacher(null);
+        }
         if (selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' && !selectedTeacher.uid) {
           const match = teachersOnly.find(
             (t) =>
@@ -340,7 +378,7 @@ export default function AddPlotEntryModalEnhanced({
       },
       (err) => console.error('Error loading teachers in modal:', err)
     );
-  }, [selectedTeacher]);
+  }, [selectedTeacher, serviceCollegeCode, deanCollege]);
 
   // Subscribe to Dean's sections if deanUid is provided and sections not passed
   useEffect(() => {
@@ -473,7 +511,7 @@ export default function AddPlotEntryModalEnhanced({
         
         // In edit mode, jump directly to Building & Room / Time
         if (initial?.id || initial?.courseCode) {
-          setStep(4);
+          setStep(6);
         }
       }
     }
@@ -619,13 +657,11 @@ export default function AddPlotEntryModalEnhanced({
   const availableTeachers = useMemo(() => {
     if (!selectedCourse) return [];
     if (selectedCourse.assignedTeacherUid) {
-      return [
-        {
-          uid: selectedCourse.assignedTeacherUid,
-          name: selectedCourse.assignedTeacherName,
-          email: selectedCourse.assignedTeacherEmail,
-        },
-      ];
+      const currentAssignedTeacher = teachersList.find(
+        (teacher) => teacher.uid === selectedCourse.assignedTeacherUid
+      );
+      // Never revive a deleted or moved teacher from stale course metadata.
+      return currentAssignedTeacher ? [currentAssignedTeacher] : teachersList;
     }
     return teachersList;
   }, [selectedCourse, teachersList]);
@@ -646,21 +682,31 @@ export default function AddPlotEntryModalEnhanced({
     let filtered = buildings;
 
     const isRoomInAssignedList = (r, list) => {
-      if (!list || list.length === 0) return true;
+      if (!list || list.length === 0) return false;
       const c = String(r?.roomCode || r?.name || r?.id || '').trim().toUpperCase();
       return list.some((item) => String(item || '').trim().toUpperCase() === c);
     };
+    const isManagedByCurrentDean = (room, floor = {}) => {
+      const managerUid = room?.managedBy || floor?.managedBy || '';
+      const managerName = String(room?.managedByName || floor?.managedByName || '').trim().toLowerCase();
+      const currentDeanName = String(deanName || '').trim().toLowerCase();
+      return (Boolean(deanUid) && String(managerUid) === String(deanUid))
+        || (Boolean(currentDeanName) && managerName === currentDeanName);
+    };
+    const isAccessibleRoom = (room, floor = {}) => (
+      isRoomInAssignedList(room, assignedRooms) || isManagedByCurrentDean(room, floor)
+    );
 
-    // Filter by assignedRooms if configured for this college
-    if (assignedRooms && assignedRooms.length > 0) {
+    // Assigned rooms and rooms managed by this dean are immediately accessible.
+    if (!showAllAvailableRooms) {
       filtered = filtered.filter((b) => {
         const floors = Array.isArray(b.floorData) ? b.floorData : [];
         const roomsDirect = Array.isArray(b.rooms) ? b.rooms : [];
         const hasAssignedInFloors = floors.some((f) =>
-          (f.rooms || []).some((r) => isRoomInAssignedList(r, assignedRooms))
+          (f.rooms || []).some((r) => isAccessibleRoom(r, f))
         );
         if (hasAssignedInFloors) return true;
-        return roomsDirect.some((r) => isRoomInAssignedList(r, assignedRooms));
+        return roomsDirect.some((r) => isAccessibleRoom(r));
       });
     }
 
@@ -674,8 +720,8 @@ export default function AddPlotEntryModalEnhanced({
           (f.rooms || []).some((r) => {
             const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
             if (!matchesType) return false;
-            if (assignedRooms && assignedRooms.length > 0) {
-              return isRoomInAssignedList(r, assignedRooms);
+            if (!showAllAvailableRooms) {
+              return isAccessibleRoom(r, f);
             }
             return true;
           })
@@ -685,16 +731,16 @@ export default function AddPlotEntryModalEnhanced({
         const hasMatchingDirectRoom = roomsDirect.some((r) => {
           const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
           if (!matchesType) return false;
-          if (assignedRooms && assignedRooms.length > 0) {
-            return isRoomInAssignedList(r, assignedRooms);
+          if (!showAllAvailableRooms) {
+            return isAccessibleRoom(r);
           }
           return true;
         });
         if (hasMatchingDirectRoom) return true;
 
-        // Fallback for buildings with no rooms array populated yet
-        const totalRooms = b.totalRooms || 0;
-        return totalRooms === 0 || floors.length === 0;
+        // Never suggest an empty building. A building becomes selectable only
+        // after at least one real room matches the selected component type.
+        return false;
       });
     }
 
@@ -708,7 +754,7 @@ export default function AddPlotEntryModalEnhanced({
     }
 
     return filtered;
-  }, [buildings, selectedType, buildingSearch, assignedRooms]);
+  }, [buildings, selectedType, buildingSearch, assignedRooms, showAllAvailableRooms, deanUid, deanName]);
 
   // Get all floors & rooms for selected building, strictly filtered by selected class type & assignedRooms
   const availableFloors = useMemo(() => {
@@ -717,7 +763,7 @@ export default function AddPlotEntryModalEnhanced({
     let rawFloors = [];
 
     const isRoomInAssignedList = (r, list) => {
-      if (!list || list.length === 0) return true;
+      if (!list || list.length === 0) return false;
       const c = String(r?.roomCode || r?.name || r?.id || '').trim().toUpperCase();
       return list.some((item) => String(item || '').trim().toUpperCase() === c);
     };
@@ -725,6 +771,7 @@ export default function AddPlotEntryModalEnhanced({
     // 1. If floorData array exists on building object
     if (Array.isArray(selectedBuilding.floorData) && selectedBuilding.floorData.length > 0) {
       rawFloors = selectedBuilding.floorData.map((floor, idx) => ({
+        ...floor,
         floorNumber: floor.floorNumber || idx + 1,
         label: floor.label || `Floor ${floor.floorNumber || idx + 1}`,
         rooms: Array.isArray(floor.rooms) ? floor.rooms : [],
@@ -762,18 +809,57 @@ export default function AddPlotEntryModalEnhanced({
         const matchingRooms = f.rooms.filter((r) => {
           const matchesType = matchesRoomType(r.type || r.roomType, selectedType);
           if (!matchesType) return false;
-          if (assignedRooms && assignedRooms.length > 0) {
-            return isRoomInAssignedList(r, assignedRooms);
+          if (!showAllAvailableRooms) {
+            const effectiveManagerUid = r.managedBy || f.managedBy || null;
+            const effectiveManagerName = String(r.managedByName || f.managedByName || '').trim().toLowerCase();
+            const currentDeanName = String(deanName || '').trim().toLowerCase();
+            const managedByCurrentDean = (Boolean(deanUid) && String(effectiveManagerUid || '') === String(deanUid))
+              || (Boolean(currentDeanName) && effectiveManagerName === currentDeanName);
+            return isRoomInAssignedList(r, assignedRooms) || managedByCurrentDean;
           }
           return true;
-        });
+        }).map((room) => ({
+          ...room,
+          effectiveManagerUid: room.managedBy || f.managedBy || null,
+          effectiveManagerName: room.managedByName || f.managedByName || null,
+          effectiveFloorId: room.floorId || f.floorId || f.id || null,
+          effectiveFloorNumber: room.floorNumber || f.floorNumber || f.floor || null,
+        }));
         return {
           ...f,
           rooms: matchingRooms,
         };
       })
-      .filter((f) => f.rooms.length > 0 || rawFloors.length === 1);
-  }, [selectedBuilding, selectedType, assignedRooms]);
+      .filter((f) => f.rooms.length > 0);
+  }, [selectedBuilding, selectedType, assignedRooms, showAllAvailableRooms, deanUid, deanName]);
+
+  const selectedRoomIsBudgeted = useMemo(() => {
+    if (!selectedRoom) return false;
+    const managerUid = selectedRoom.effectiveManagerUid || selectedRoom.managedBy || '';
+    const managerName = String(selectedRoom.effectiveManagerName || selectedRoom.managedByName || '').trim().toLowerCase();
+    const currentDeanName = String(deanName || '').trim().toLowerCase();
+    const managedByCurrentDean = (Boolean(deanUid) && String(managerUid) === String(deanUid))
+      || (Boolean(currentDeanName) && managerName === currentDeanName);
+    if (managedByCurrentDean) return true;
+    if (!assignedRooms?.length) return false;
+    const selectedCode = String(selectedRoom.roomCode || selectedRoom.name || selectedRoom.id || '').trim().toUpperCase();
+    return assignedRooms.some((code) => String(code || '').trim().toUpperCase() === selectedCode);
+  }, [selectedRoom, assignedRooms, deanUid, deanName]);
+
+  const selectedRoomApprover = useMemo(() => {
+    if (!selectedRoom || selectedRoomIsBudgeted) return null;
+    const managerUid = selectedRoom.effectiveManagerUid || selectedRoom.managedBy || '';
+    const managerName = String(selectedRoom.effectiveManagerName || selectedRoom.managedByName || '').trim();
+    if (!managerUid && !managerName) return { name: 'Registrar', department: '' };
+    const manager = staffDirectory.find((user) => (
+      (managerUid && String(user.uid || user.id) === String(managerUid))
+      || (managerName && String(user.name || user.displayName || '').trim().toLowerCase() === managerName.toLowerCase())
+    ));
+    return {
+      name: manager?.name || manager?.displayName || managerName || 'Room Manager',
+      department: formatCollegeName(manager?.college || manager?.department || ''),
+    };
+  }, [selectedRoom, selectedRoomIsBudgeted, staffDirectory]);
 
   // Pre-select building ONCE if initialBuilding, initialBuildingId, or initial?.buildingName is passed
   useEffect(() => {
@@ -899,16 +985,18 @@ export default function AddPlotEntryModalEnhanced({
     if (isTypeSkipped) {
       return [
         { id: 1, title: 'Select Course' },
-        { id: 4, title: 'Select Building & Room' },
+        { id: 6, title: 'Select Preferred Time' },
         { id: 2, title: 'Select Teacher' },
+        { id: 4, title: 'Select Building & Room' },
         { id: 5, title: 'Summary' },
       ];
     }
     return [
       { id: 1, title: 'Select Course' },
       { id: 3, title: 'Select Type' },
-      { id: 4, title: 'Select Building & Room' },
+      { id: 6, title: 'Select Preferred Time' },
       { id: 2, title: 'Select Teacher' },
+      { id: 4, title: 'Select Building & Room' },
       { id: 5, title: 'Summary' },
     ];
   }, [isTypeSkipped]);
@@ -923,26 +1011,23 @@ export default function AddPlotEntryModalEnhanced({
 
   // Calculate day slots with startHour, endHour, and duration
   const selectedDaySlots = useMemo(() => {
-    if (!selectedDays || selectedDays.length === 0) return [];
+    const slots = [];
 
-    if (timeMode === 'combined') {
-      if (!combinedStartTime || !combinedEndTime) return [];
+    if (selectedDays?.length > 0 && timeMode === 'combined' && combinedStartTime && combinedEndTime) {
       const sHour = parseTimeToHour(combinedStartTime);
       const eHour = parseTimeToHour(combinedEndTime);
-      if (eHour <= sHour) return [];
-      const duration = Math.max(0, eHour - sHour);
-
-      return selectedDays.map((d) => ({
-        day: d,
-        dayName: SCHEDULE_DAYS[d],
-        startTime: combinedStartTime,
-        endTime: combinedEndTime,
-        startHour: sHour,
-        endHour: eHour,
-        duration: Math.round(duration * 10) / 10,
-      }));
-    } else {
-      const slots = [];
+      if (eHour > sHour) {
+        selectedDays.forEach((d) => slots.push({
+          day: d,
+          dayName: SCHEDULE_DAYS[d],
+          startTime: combinedStartTime,
+          endTime: combinedEndTime,
+          startHour: sHour,
+          endHour: eHour,
+          duration: Math.round((eHour - sHour) * 10) / 10,
+        }));
+      }
+    } else if (selectedDays?.length > 0) {
       selectedDays.forEach((d) => {
         const sTime = dayTimes[d]?.startTime || combinedStartTime;
         const eTime = dayTimes[d]?.endTime || combinedEndTime;
@@ -962,17 +1047,115 @@ export default function AddPlotEntryModalEnhanced({
           }
         }
       });
-      return slots;
     }
-  }, [selectedDays, timeMode, combinedStartTime, combinedEndTime, dayTimes]);
+
+    additionalTimeSlots.forEach((extra, index) => {
+      if (extra.day === '' || extra.day === null || extra.day === undefined || !extra.startTime || !extra.endTime) return;
+      const startHour = parseTimeToHour(extra.startTime);
+      const endHour = parseTimeToHour(extra.endTime);
+      if (endHour <= startHour) return;
+      slots.push({
+        ...extra,
+        id: extra.id || `extra-${index}`,
+        day: Number(extra.day),
+        dayName: SCHEDULE_DAYS[Number(extra.day)],
+        startHour,
+        endHour,
+        duration: Math.round((endHour - startHour) * 10) / 10,
+        isAdditional: true,
+      });
+    });
+
+    return slots.sort((a, b) => a.day - b.day || a.startHour - b.startHour);
+  }, [selectedDays, timeMode, combinedStartTime, combinedEndTime, dayTimes, additionalTimeSlots]);
+
+  const overlappingPreferredSlots = useMemo(() => {
+    const overlaps = [];
+    selectedDaySlots.forEach((slot, index) => {
+      selectedDaySlots.slice(index + 1).forEach((other) => {
+        if (slot.day === other.day && slot.startHour < other.endHour && slot.endHour > other.startHour) {
+          overlaps.push({ slot, other });
+        }
+      });
+    });
+    return overlaps;
+  }, [selectedDaySlots]);
 
   const totalPlottedHours = useMemo(() => {
     return Math.round(selectedDaySlots.reduce((acc, slot) => acc + slot.duration, 0) * 10) / 10;
   }, [selectedDaySlots]);
 
+  const sectionTimeConflicts = useMemo(() => {
+    if (selectedDaySlots.length === 0) return [];
+    const targetSections = new Set(
+      (selectedCombinedSections.length ? selectedCombinedSections : [selectedSection])
+        .filter(Boolean)
+        .map((name) => String(name).trim().toUpperCase())
+    );
+    const activeEditId = editingEntryId || initial?.id || initial?.entryId;
+    const found = [];
+
+    for (const entry of allSemesterEntries || []) {
+      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) continue;
+      const entrySection = String(entry.section || entry.sectionName || '').trim().toUpperCase();
+      const entrySections = new Set([
+        entrySection,
+        ...(entry.combinedSections || []).map((name) => String(name).trim().toUpperCase()),
+      ]);
+      const affected = [...targetSections].filter((name) => entrySections.has(name));
+      if (affected.length === 0) continue;
+
+      const entryCycle = String(entry.rotationCycle || entry.weekCycle || 'all').toLowerCase();
+      const oppositeRotation =
+        (rotationCycle === 'week_a' && entryCycle === 'week_b') ||
+        (rotationCycle === 'week_b' && entryCycle === 'week_a');
+      if (allowOjtRotation && oppositeRotation) continue;
+
+      const rawDay = entry.day ?? entry.date ?? entry.dayLabel;
+      const entryDay = typeof rawDay === 'number'
+        ? rawDay
+        : Math.max(0, SCHEDULE_DAYS.findIndex((name) => String(rawDay || '').toUpperCase().includes(name)));
+      const start = Number(entry.startHour) || 0;
+      const end = Number(entry.endHour) || 0;
+      for (const slot of selectedDaySlots) {
+        if (entryDay === slot.day && start < slot.endHour && end > slot.startHour) {
+          found.push({ ...entry, affectedSections: affected, conflictDayName: slot.dayName, start, end });
+          break;
+        }
+      }
+    }
+    return found;
+  }, [selectedDaySlots, selectedCombinedSections, selectedSection, allSemesterEntries, editingEntryId, initial, rotationCycle, allowOjtRotation]);
+
   const targetHours = useMemo(() => {
     return courseUnits.targetHoursForType(selectedType);
   }, [courseUnits, selectedType]);
+
+  const componentHoursProgress = useMemo(() => {
+    const status = getCourseScheduleStatus(selectedCourse);
+    const activeEditId = editingEntryId || initial?.id || initial?.entryId;
+    const selectedIsLab = String(selectedType || '').toLowerCase().includes('lab');
+    const alreadyPlotted = (status.matchingEntries || []).reduce((sum, entry) => {
+      const entryIsLab = String(entry.type || '').toLowerCase().includes('lab');
+      if (entryIsLab !== selectedIsLab) return sum;
+      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) return sum;
+      const start = entry.startHour ?? parseTimeToHour(entry.startTime || '');
+      const end = entry.endHour ?? parseTimeToHour(entry.endTime || '');
+      return sum + Math.max(0, (Number(end) || 0) - (Number(start) || 0));
+    }, 0);
+    const existing = Math.round(alreadyPlotted * 10) / 10;
+    const current = Math.round(totalPlottedHours * 10) / 10;
+    const required = Math.round(targetHours * 10) / 10;
+    const resulting = Math.round((existing + current) * 10) / 10;
+    return {
+      existing,
+      current,
+      required,
+      resulting,
+      remaining: Math.round(Math.max(0, required - resulting) * 10) / 10,
+      excess: Math.round(Math.max(0, resulting - required) * 10) / 10,
+    };
+  }, [selectedCourse, selectedType, sectionPlotEntries, editingEntryId, initial, totalPlottedHours, targetHours]);
 
   const otherType = useMemo(() => {
     if (!courseUnits?.isCombined) return null;
@@ -1011,7 +1194,11 @@ export default function AddPlotEntryModalEnhanced({
     if (!allSemesterEntries || allSemesterEntries.length === 0) return map;
 
     const rCodeNorm = selectedRoom?.roomCode ? String(selectedRoom.roomCode).replace(/[\s\-_]/g, '').toUpperCase() : '';
-    const secNorm = selectedSection ? String(selectedSection).trim().toUpperCase() : '';
+    const sectionNorms = new Set(
+      (selectedCombinedSections.length > 0 ? selectedCombinedSections : [selectedSection])
+        .filter(Boolean)
+        .map((name) => String(name).trim().toUpperCase())
+    );
     const tName = selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? String(selectedTeacher.name).trim().toLowerCase() : '';
     const tEmail = selectedTeacher?.email ? String(selectedTeacher.email).trim().toLowerCase() : '';
 
@@ -1033,7 +1220,7 @@ export default function AddPlotEntryModalEnhanced({
           : parseDayIndex(entry.day, entry.date, entry.dayLabel);
         const initDay = typeof initial?.day === 'number' ? initial.day : dayIndex;
 
-        if (eCode === initialCourseCodeNorm && (eSec === secNorm || (initial?.combinedSections || []).map(s => String(s).toUpperCase()).includes(eSec)) && eDay === initDay) {
+        if (eCode === initialCourseCodeNorm && (sectionNorms.has(eSec) || (initial?.combinedSections || []).map(s => String(s).toUpperCase()).includes(eSec)) && eDay === initDay) {
           return;
         }
       }
@@ -1066,11 +1253,15 @@ export default function AddPlotEntryModalEnhanced({
       }
 
       // 2. Section is occupied
-      if (!isOccupied && secNorm) {
+      if (!isOccupied && sectionNorms.size > 0) {
         const entrySec = String(entry.section || entry.sectionName || '').trim().toUpperCase();
-        if (entrySec === secNorm) {
+        const entryCombinedSections = (entry.combinedSections || []).map((name) => String(name).trim().toUpperCase());
+        const conflictingSection = [...sectionNorms].find(
+          (name) => entrySec === name || entryCombinedSections.includes(name)
+        );
+        if (conflictingSection) {
           isOccupied = true;
-          reason = `Section ${selectedSection} in Class (${entry.courseCode || entry.title || 'Class'})`;
+          reason = `Section ${conflictingSection} in Class (${entry.courseCode || entry.title || 'Class'})`;
         }
       }
 
@@ -1097,7 +1288,7 @@ export default function AddPlotEntryModalEnhanced({
     });
 
     return map;
-  }, [allSemesterEntries, selectedRoom, selectedSection, selectedTeacher, editingEntryId, initial, isEditMode, selectedCourse, dayIndex]);
+  }, [allSemesterEntries, selectedRoom, selectedSection, selectedCombinedSections, selectedTeacher, editingEntryId, initial, isEditMode, selectedCourse, dayIndex, rotationCycle]);
 
   // Generates start time dropdown options with occupied slots disabled
   const getStartTimeOptions = useCallback((daysToCheck) => {
@@ -1109,7 +1300,7 @@ export default function AddPlotEntryModalEnhanced({
       const val = hourToTimeInput(h);
       const label = formatScheduleHour(h);
 
-      if (days.length === 0 || !selectedRoom) {
+      if (days.length === 0) {
         return { value: val, label, disabled: false };
       }
 
@@ -1135,7 +1326,7 @@ export default function AddPlotEntryModalEnhanced({
         disabled: isOccupied,
       };
     });
-  }, [selectedRoom, occupiedIntervalsByDay]);
+  }, [occupiedIntervalsByDay]);
 
   // Generates end time dropdown options with occupied/conflict slots disabled
   const getEndTimeOptions = useCallback((daysToCheck, currentStartTimeVal) => {
@@ -1152,7 +1343,7 @@ export default function AddPlotEntryModalEnhanced({
         return { value: val, label, disabled: true };
       }
 
-      if (days.length === 0 || !selectedRoom) {
+      if (days.length === 0) {
         return { value: val, label, disabled: false };
       }
 
@@ -1174,11 +1365,44 @@ export default function AddPlotEntryModalEnhanced({
         disabled: hasConflict,
       };
     });
-  }, [selectedRoom, occupiedIntervalsByDay]);
+  }, [occupiedIntervalsByDay]);
+
+  const getAdditionalStartOptions = useCallback((extra, index) => {
+    const day = Number(extra.day);
+    const currentId = extra.id || `extra-${index}`;
+    const otherProposed = selectedDaySlots.filter((slot) => slot.day === day && slot.id !== currentId);
+    return getStartTimeOptions([day]).map((option) => {
+      const hour = parseTimeToHour(option.value);
+      const overlapsProposed = otherProposed.some((slot) => hour < slot.endHour && hour + 0.5 > slot.startHour);
+      return {
+        ...option,
+        disabled: option.disabled || overlapsProposed,
+        label: overlapsProposed ? `${option.label} (Already selected)` : option.label,
+      };
+    });
+  }, [selectedDaySlots, getStartTimeOptions]);
+
+  const getAdditionalEndOptions = useCallback((extra, index) => {
+    const day = Number(extra.day);
+    const currentId = extra.id || `extra-${index}`;
+    const startHour = parseTimeToHour(extra.startTime);
+    const otherProposed = selectedDaySlots.filter((slot) => slot.day === day && slot.id !== currentId);
+    return getEndTimeOptions([day], extra.startTime).map((option) => {
+      const endHour = parseTimeToHour(option.value);
+      const crossesProposed = Number.isFinite(startHour) && otherProposed.some(
+        (slot) => startHour < slot.endHour && endHour > slot.startHour
+      );
+      return {
+        ...option,
+        disabled: option.disabled || crossesProposed,
+        label: crossesProposed ? `${option.label} (Crosses selected time)` : option.label,
+      };
+    });
+  }, [selectedDaySlots, getEndTimeOptions]);
 
   // Auto-adjust start & end times when room, days, or occupied intervals change so current selection doesn't sit on an occupied slot
   useEffect(() => {
-    if (!selectedRoom || !selectedDays || selectedDays.length === 0) return;
+    if (!selectedDays || selectedDays.length === 0) return;
 
     if (timeMode === 'combined') {
       const startOpts = getStartTimeOptions(selectedDays);
@@ -1251,33 +1475,33 @@ export default function AddPlotEntryModalEnhanced({
       };
     }
 
-    const roundedPlotted = totalPlottedHours;
-    const roundedTarget = Math.round(targetHours * 10) / 10;
+    const roundedPlotted = componentHoursProgress.resulting;
+    const roundedTarget = componentHoursProgress.required;
     const diff = Math.round(Math.abs(roundedPlotted - roundedTarget) * 10) / 10;
 
     if (roundedPlotted === roundedTarget) {
       return {
         type: 'match',
-        message: `✓ Exact Match: Exactly ${roundedPlotted} hrs plotted matches the required ${roundedTarget} hrs/week for ${selectedCourse?.code || 'this course'} (${selectedType}).`,
+        message: `Exact Match: ${componentHoursProgress.existing}h already plotted + ${componentHoursProgress.current}h current = ${roundedPlotted}h of ${roundedTarget}h required for ${selectedType}.`,
         badge: '✓ Exact Match',
         color: 'emerald',
       };
     } else if (roundedPlotted > roundedTarget) {
       return {
         type: 'exceed',
-        message: `⚠️ Overlapping / Exceeding Time: Plotted time (${roundedPlotted} hrs) exceeds the required ${roundedTarget} hrs/week for this course by ${diff} hr(s). Please adjust the duration or verify intentional overlap.`,
+        message: `Exceeds Requirement: ${componentHoursProgress.existing}h already plotted + ${componentHoursProgress.current}h current = ${roundedPlotted}h, which is ${diff}h over the ${roundedTarget}h ${selectedType} requirement.`,
         badge: `⚠️ +${diff} hrs Over`,
         color: 'red',
       };
     } else {
       return {
         type: 'lack',
-        message: `⚠️ Lacking Time: Plotted time (${roundedPlotted} hrs) is lacking/less than the required ${roundedTarget} hrs/week (${diff} hr(s) remaining needed).`,
+        message: `Remaining Time: ${componentHoursProgress.existing}h already plotted + ${componentHoursProgress.current}h current = ${roundedPlotted}h of ${roundedTarget}h required. ${diff}h still needed for ${selectedType}.`,
         badge: `⚠️ -${diff} hrs Lacking`,
         color: 'red',
       };
     }
-  }, [selectedDaySlots, totalPlottedHours, targetHours, selectedCourse, selectedType]);
+  }, [selectedDaySlots, componentHoursProgress, selectedType]);
 
   // Evaluates a teacher's schedule across all sections in the semester for conflicts
   const getTeacherConflictStatus = (t) => {
@@ -1350,6 +1574,24 @@ export default function AddPlotEntryModalEnhanced({
     return getTeacherConflictStatus(selectedTeacher);
   }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, dayIndex]);
 
+  const getRoomConflictStatus = useCallback((room) => {
+    const roomCode = String(room?.roomCode || room?.name || room?.id || '').replace(/[\s\-_]/g, '').toUpperCase();
+    if (!roomCode || selectedDaySlots.length === 0) return { hasConflict: false, conflicts: [] };
+    const activeEditId = editingEntryId || initial?.id || initial?.entryId;
+    const conflicts = (allSemesterEntries || []).filter((entry) => {
+      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) return false;
+      const entryRoom = String(entry.roomCode || entry.room || entry.roomId || '').replace(/[\s\-_]/g, '').toUpperCase();
+      if (entryRoom !== roomCode) return false;
+      const entryCycle = String(entry.rotationCycle || entry.weekCycle || 'all').toLowerCase();
+      if ((rotationCycle === 'week_a' && entryCycle === 'week_b') || (rotationCycle === 'week_b' && entryCycle === 'week_a')) return false;
+      const entryDay = parseDayIndex(entry.day, entry.date, entry.dayLabel);
+      const start = Number(entry.startHour) || 0;
+      const end = Number(entry.endHour) || 0;
+      return selectedDaySlots.some((slot) => entryDay === slot.day && start < slot.endHour && end > slot.startHour);
+    });
+    return { hasConflict: conflicts.length > 0, conflicts };
+  }, [selectedDaySlots, allSemesterEntries, editingEntryId, initial, rotationCycle]);
+
   // Allows freely clicking between any steps in the stepper header
   const handleStepClick = (targetStepId) => {
     setError('');
@@ -1359,6 +1601,29 @@ export default function AddPlotEntryModalEnhanced({
     }
     if (!selectedCourse) {
       setError('Please select a course first before moving to other steps.');
+      return;
+    }
+    if (step === 6 && targetStepId !== 1 && targetStepId !== 6) {
+      if (selectedDaySlots.length === 0) {
+        setError('Select at least one day and a valid preferred start and end time.');
+        return;
+      }
+      if (overlappingPreferredSlots.length > 0) {
+        setError('Two preferred time blocks overlap on the same day. Adjust or remove one of the blocks before continuing.');
+        return;
+      }
+      if (componentHoursProgress.resulting > componentHoursProgress.required) {
+        setError(`The selected time exceeds the required ${componentHoursProgress.required} hours for ${selectedType}.`);
+        return;
+      }
+      if (sectionTimeConflicts.length > 0) {
+        setError('The preferred time overlaps an existing section schedule. Choose a conflict-free time before continuing.');
+        return;
+      }
+    }
+    const targetStepIndex = stepConfig.findIndex((item) => item.id === targetStepId);
+    if (step === 4 && targetStepIndex > currentStepIndex && !selectedRoom) {
+      setError('Please select a room before continuing to the next step.');
       return;
     }
     setStep(targetStepId);
@@ -1460,6 +1725,7 @@ export default function AddPlotEntryModalEnhanced({
       setCombinedStartTime('');
       setCombinedEndTime('');
       setDayTimes({});
+      setAdditionalTimeSlots([]);
     }
   };
 
@@ -1487,12 +1753,34 @@ export default function AddPlotEntryModalEnhanced({
     handleTypeSelect(initialTypeToUse, course, targetEntry);
     setViewScheduleCourse(null);
 
-    // Direct jump: If combined course without specific entry, open Type step (3), otherwise Building & Room (4)
+    // Existing blocks still pass through preferred-time validation before resources are chosen.
     if (cu.isCombined && !targetEntry) {
       setStep(3);
     } else {
-      setStep(4);
+      setStep(6);
     }
+  };
+
+  // Start a separate meeting without modifying an existing schedule entry.
+  const startAddingCourseBlock = (course) => {
+    const cu = getCourseUnitBreakdown(course);
+
+    setError('');
+    setIsEditMode(false);
+    setEditingEntryId(null);
+    setSelectedCourse(course);
+    setSelectedType(cu.isLabOnly ? 'Laboratory' : 'Lecture');
+    setSelectedTeacher(null);
+    setSelectedBuilding(null);
+    setSelectedRoom(null);
+    setSelectedDays([]);
+    setCombinedStartTime('');
+    setCombinedEndTime('');
+    setDayTimes({});
+    setAdditionalTimeSlots([]);
+    setRoomConflicts([]);
+    setViewScheduleCourse(null);
+    setStep(cu.isCombined ? 3 : 4);
   };
 
   const handleNext = () => {
@@ -1517,6 +1805,33 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
+    if (step === 6) {
+      if (selectedDaySlots.length === 0) {
+        setError('Select at least one day and a valid preferred start and end time.');
+        return;
+      }
+      if (overlappingPreferredSlots.length > 0) {
+        setError('Two preferred time blocks overlap on the same day. Adjust or remove one of the blocks.');
+        return;
+      }
+      if (componentHoursProgress.resulting > componentHoursProgress.required) {
+        setError(`The selected time exceeds the required ${componentHoursProgress.required} hours for ${selectedType}.`);
+        return;
+      }
+      for (const slot of selectedDaySlots) {
+        const timeCheck = validateScheduleHours(slot.startHour, slot.endHour);
+        if (!timeCheck.valid) {
+          setError(`${slot.dayName}: ${timeCheck.message}`);
+          return;
+        }
+      }
+      if (sectionTimeConflicts.length > 0) {
+        const conflict = sectionTimeConflicts[0];
+        setError(`Section conflict: ${conflict.affectedSections.join(', ')} already has ${conflict.courseCode || conflict.title || 'a class'} on ${conflict.conflictDayName} at ${formatScheduleHour(conflict.start)}–${formatScheduleHour(conflict.end)}.`);
+        return;
+      }
+    }
+
     if (step === 4) {
       if (!selectedBuilding) {
         setError('Please select a building.');
@@ -1526,21 +1841,9 @@ export default function AddPlotEntryModalEnhanced({
         setError('Please select a room from the left floor list.');
         return;
       }
-      if (!selectedDays || selectedDays.length === 0) {
-        setError('Please select at least one day (e.g., Monday, or Mon & Thu).');
+      if (!selectedRoomIsBudgeted && !nonBudgetedRoomReason.trim()) {
+        setError('Please explain why this non-assigned room is required.');
         return;
-      }
-      if (selectedDaySlots.length === 0) {
-        setError('Please select valid start and end times for the scheduled days.');
-        return;
-      }
-      // Check each day slot has valid time
-      for (const slot of selectedDaySlots) {
-        const timeCheck = validateScheduleHours(slot.startHour, slot.endHour);
-        if (!timeCheck.valid) {
-          setError(`${slot.dayName}: ${timeCheck.message}`);
-          return;
-        }
       }
       // Only room occupancy and section double-booking block proceeding from Step 3 (Building & Room)
       const hardConflicts = roomConflicts.filter((c) => c.conflictType !== 'teacher');
@@ -1600,10 +1903,26 @@ export default function AddPlotEntryModalEnhanced({
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const dayLabels = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
+    const confirmed = await showConfirm({
+      title: isEditMode ? 'Save schedule changes?' : `Save ${selectedType} schedule?`,
+      message: continueToOther
+        ? `This will save the ${selectedType} schedule and continue to the ${otherType} component.`
+        : isEditMode
+          ? `Confirm the updated ${selectedType} schedule for ${selectedCourse.code}.`
+          : `Confirm the ${selectedType} schedule for ${selectedCourse.code}${completedTypes.length > 0 ? ' and complete this combined course schedule' : ''}.`,
+      confirmText: isEditMode ? 'Save Changes' : continueToOther ? `Save & Continue` : 'Save Schedule',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setSaving(true);
     try {
       const isCombined = selectedCombinedSections.length > 1;
       const combinedSecList = isCombined ? selectedCombinedSections : [selectedSection || 'Section 1'];
+      const approvalSubmissionId = !selectedRoomIsBudgeted
+        ? `schedule_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+        : null;
 
       // Save schedule blocks for each plotted day
       for (const slot of selectedDaySlots) {
@@ -1611,7 +1930,7 @@ export default function AddPlotEntryModalEnhanced({
         const finalDayLabel = scheduleMode === 'regular' ? dayLabels[slot.day] : dayLabel;
 
         const mainPayload = {
-          id: editingEntryId || initial?.id || null,
+          id: isEditMode ? (editingEntryId || initial?.id || null) : null,
           date: finalDate,
           day: slot.day,
           dayLabel: finalDayLabel,
@@ -1624,20 +1943,31 @@ export default function AddPlotEntryModalEnhanced({
           startHour: slot.startHour,
           endHour: slot.endHour,
           roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
+          roomId: selectedRoom.docId || selectedRoom.id || selectedRoom.roomCode,
           buildingId: selectedBuilding?.id || selectedBuilding?.docId,
           buildingName: selectedBuilding?.name,
+          floorId: selectedRoom.effectiveFloorId || selectedRoom.floorId || null,
+          floor: selectedRoom.effectiveFloorNumber || selectedRoom.floorNumber || selectedRoom.floor || null,
           section: selectedSection || 'Section 1',
           partnerSection: partnerSection || null,
-          rotationCycle: rotationCycle || 'all',
+          rotationCycle: allowOjtRotation ? (rotationCycle || 'all') : 'all',
           isCombinedSection: isCombined,
           combinedSections: combinedSecList,
           yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
           scheduleMode,
           semester,
+          approvalStatus: selectedRoomIsBudgeted ? 'approved' : 'pending',
+          approved: selectedRoomIsBudgeted,
+          usedNonBudgetedRoom: !selectedRoomIsBudgeted,
+          nonBudgetedRoomReason: !selectedRoomIsBudgeted ? nonBudgetedRoomReason.trim() : null,
+          roomManagerUid: selectedRoom?.effectiveManagerUid || selectedRoom?.managedBy || null,
+          roomManagerName: selectedRoom?.effectiveManagerName || selectedRoom?.managedByName || null,
+          roomManagerDepartment: selectedRoomApprover?.department || null,
+          approvalSubmissionId,
         };
 
         // If auto-mirror partner is checked and partner is selected for rotation
-        if (autoMirrorPartner && partnerSection && rotationCycle !== 'all') {
+        if (allowOjtRotation && autoMirrorPartner && partnerSection && rotationCycle !== 'all') {
           mainPayload.reciprocalEntry = {
             date: finalDate,
             day: slot.day,
@@ -1651,14 +1981,25 @@ export default function AddPlotEntryModalEnhanced({
             startHour: slot.startHour,
             endHour: slot.endHour,
             roomCode: selectedRoom.roomCode || selectedRoom.id || selectedRoom.name,
+            roomId: selectedRoom.docId || selectedRoom.id || selectedRoom.roomCode,
             buildingId: selectedBuilding?.id || selectedBuilding?.docId,
             buildingName: selectedBuilding?.name,
+            floorId: selectedRoom.effectiveFloorId || selectedRoom.floorId || null,
+            floor: selectedRoom.effectiveFloorNumber || selectedRoom.floorNumber || selectedRoom.floor || null,
             section: partnerSection,
             partnerSection: selectedSection,
             rotationCycle: rotationCycle === 'week_a' ? 'week_b' : 'week_a',
             yearLevel: activeYearLevel !== 'All' ? activeYearLevel : (selectedCourse.yearLevel || '1st Year'),
             scheduleMode,
             semester,
+            approvalStatus: selectedRoomIsBudgeted ? 'approved' : 'pending',
+            approved: selectedRoomIsBudgeted,
+            usedNonBudgetedRoom: !selectedRoomIsBudgeted,
+            nonBudgetedRoomReason: !selectedRoomIsBudgeted ? nonBudgetedRoomReason.trim() : null,
+            roomManagerUid: selectedRoom?.effectiveManagerUid || selectedRoom?.managedBy || null,
+            roomManagerName: selectedRoom?.effectiveManagerName || selectedRoom?.managedByName || null,
+            roomManagerDepartment: selectedRoomApprover?.department || null,
+            approvalSubmissionId,
           };
           mainPayload.partnerSection = partnerSection;
         }
@@ -1682,13 +2023,16 @@ export default function AddPlotEntryModalEnhanced({
         setCombinedStartTime('');
         setCombinedEndTime('');
         setDayTimes({});
+        setAdditionalTimeSlots([]);
         setRoomConflicts([]);
+        setShowAllAvailableRooms(false);
+        setNonBudgetedRoomReason('');
         setTransitionBanner({
           prevType: justSavedType,
           nextType: nextTargetType,
           courseCode: selectedCourse.code,
         });
-        setStep(4); // Move directly to Building & Room selection for next component
+        setStep(6); // Select the next component's preferred time before resources
         setSaving(false);
       } else {
         onClose();
@@ -1712,6 +2056,10 @@ export default function AddPlotEntryModalEnhanced({
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
+      <LoadingModal
+        isOpen={saving}
+        message={selectedRoomIsBudgeted ? 'Saving approved schedule...' : 'Submitting schedule for room approval...'}
+      />
       <div
         className="bg-white rounded-2xl w-full max-w-[1400px] max-h-[90vh] shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -2012,6 +2360,18 @@ export default function AddPlotEntryModalEnhanced({
                                 <Eye size={14} />
                               </button>
 
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startAddingCourseBlock(course);
+                                }}
+                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-[#7A0808] bg-white hover:bg-red-50 text-[#7A0808] flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Add another non-overlapping schedule block for this course"
+                              >
+                                <Plus size={11} /> Add Block
+                              </button>
+
                               {/* Edit Schedule Button */}
                               <button
                                 type="button"
@@ -2178,6 +2538,351 @@ export default function AddPlotEntryModalEnhanced({
             </div>
           )}
 
+          {/* Step 6: choose section-safe time before assigning people or rooms */}
+          {step === 6 && (
+            <div className="space-y-4">
+              {transitionBanner && (
+                <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[#D9A3A3] bg-[#FFF5F5] p-3.5 shadow-xs animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#7A0808] text-sm font-black text-white">
+                      2
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-[#7A0808]">
+                        {transitionBanner.prevType} saved — now plotting {transitionBanner.nextType}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-medium text-[#9B2C2C]">
+                        Part 1 of {transitionBanner.courseCode} is complete. Select the preferred days and times for the {transitionBanner.nextType} component ({targetHours} hrs/week required).
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTransitionBanner(null)}
+                    className="flex-shrink-0 rounded-lg border border-[#D9A3A3] bg-white px-2.5 py-1 text-[10px] font-black text-[#7A0808] hover:bg-[#FDE8E8]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Calendar size={20} className="text-[#7A0808]" />
+                    <h3 className="font-bold text-base text-[#2B3235]">Select Preferred Section Time</h3>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Choose a conflict-free time for {selectedCombinedSections.length > 1 ? `all merged sections (${selectedCombinedSections.join(', ')})` : selectedSection}. Teacher and room availability will be checked next.
+                  </p>
+                </div>
+                <span className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-[#7A0808]">
+                  {selectedCourse?.code} · {selectedType}
+                </span>
+              </div>
+
+              <div className={`rounded-2xl border-2 p-3 ${componentHoursProgress.resulting === componentHoursProgress.required ? 'border-emerald-300 bg-emerald-50' : componentHoursProgress.resulting > componentHoursProgress.required ? 'border-red-400 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black text-gray-950">{selectedType} Required Hours</p>
+                    <p className="text-[10px] text-gray-600">Only {String(selectedType || 'course').toLowerCase()} blocks for {selectedCourse?.code} are counted here.</p>
+                  </div>
+                  <span className="rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-[#7A0808] shadow-sm">
+                    {componentHoursProgress.resulting}/{componentHoursProgress.required} hrs after this plot
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="rounded-xl border border-white/80 bg-white/80 p-2">
+                    <p className="text-[9px] font-black uppercase text-gray-500">Required</p>
+                    <p className="text-sm font-black text-gray-950">{componentHoursProgress.required} hrs</p>
+                  </div>
+                  <div className="rounded-xl border border-white/80 bg-white/80 p-2">
+                    <p className="text-[9px] font-black uppercase text-gray-500">Already plotted</p>
+                    <p className="text-sm font-black text-blue-800">{componentHoursProgress.existing} hrs</p>
+                  </div>
+                  <div className="rounded-xl border border-white/80 bg-white/80 p-2">
+                    <p className="text-[9px] font-black uppercase text-gray-500">Current selection</p>
+                    <p className="text-sm font-black text-[#7A0808]">{componentHoursProgress.current} hrs</p>
+                  </div>
+                  <div className="rounded-xl border border-white/80 bg-white/80 p-2">
+                    <p className="text-[9px] font-black uppercase text-gray-500">{componentHoursProgress.excess > 0 ? 'Excess' : 'Remaining'}</p>
+                    <p className={`text-sm font-black ${componentHoursProgress.excess > 0 ? 'text-red-700' : componentHoursProgress.remaining === 0 ? 'text-emerald-700' : 'text-amber-800'}`}>
+                      {componentHoursProgress.excess > 0 ? componentHoursProgress.excess : componentHoursProgress.remaining} hrs
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                  <div
+                    className={`h-full rounded-full transition-all ${componentHoursProgress.resulting > componentHoursProgress.required ? 'bg-red-600' : componentHoursProgress.resulting === componentHoursProgress.required ? 'bg-emerald-600' : 'bg-amber-500'}`}
+                    style={{ width: `${Math.min(100, componentHoursProgress.required > 0 ? (componentHoursProgress.resulting / componentHoursProgress.required) * 100 : 0)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/60 p-4 space-y-4">
+                <div>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-gray-600">Select schedule day(s)</p>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    {SCHEDULE_DAYS.map((day, index) => {
+                      const active = selectedDays.includes(index);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => setSelectedDays((prev) => active ? prev.filter((d) => d !== index) : [...prev, index].sort((a, b) => a - b))}
+                          className={`rounded-xl border px-2 py-2 text-xs font-black transition-colors ${active ? 'border-[#7A0808] bg-[#7A0808] text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-[#7A0808]'}`}
+                        >
+                          {day.slice(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {allowOjtRotation && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-purple-200 bg-purple-50 p-2.5">
+                    <span className="text-[10px] font-black uppercase text-purple-900">OJT rotational week</span>
+                    <div className="flex gap-1">
+                      {[['all', 'All Weeks'], ['week_a', 'Week A'], ['week_b', 'Week B']].map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setRotationCycle(value)} className={`rounded-lg px-2.5 py-1 text-[10px] font-bold ${rotationCycle === value ? 'bg-purple-700 text-white' : 'bg-white text-purple-800 border border-purple-200'}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-600">Apply start time to all selected days</label>
+                    <CustomSelect
+                      size="sm"
+                      value={combinedStartTime}
+                      onChange={(e) => {
+                        const nextStart = e.target.value;
+                        setTimeMode('combined');
+                        setDayTimes({});
+                        setCombinedStartTime(nextStart);
+                        const validEnd = getEndTimeOptions(selectedDays, nextStart).find((option) => !option.disabled);
+                        if (!combinedEndTime || parseTimeToHour(combinedEndTime) <= parseTimeToHour(nextStart)) setCombinedEndTime(validEnd?.value || '');
+                      }}
+                      options={getStartTimeOptions(selectedDays)}
+                      placeholder="Select start time"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-600">Apply end time to all selected days</label>
+                    <CustomSelect
+                      size="sm"
+                      value={combinedEndTime}
+                      onChange={(e) => {
+                        setTimeMode('combined');
+                        setDayTimes({});
+                        setCombinedEndTime(e.target.value);
+                      }}
+                      options={getEndTimeOptions(selectedDays, combinedStartTime)}
+                      placeholder="Select end time"
+                    />
+                  </div>
+                </div>
+
+                {selectedDays.length > 0 && combinedStartTime && combinedEndTime && timeMode === 'individual' && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-blue-950">Set time for each selected day</p>
+                        <p className="text-[10px] text-blue-700">Each selected day may use a different start and end time.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimeMode('combined');
+                          setDayTimes({});
+                        }}
+                        className="rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[9px] font-black text-blue-800 hover:bg-blue-100"
+                      >
+                        Use same time for all days
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {selectedDays.map((day) => {
+                        const startValue = dayTimes[day]?.startTime || combinedStartTime;
+                        const endValue = dayTimes[day]?.endTime || combinedEndTime;
+                        return (
+                          <div key={day} className="grid grid-cols-1 items-end gap-2 rounded-lg border border-blue-100 bg-white p-2 sm:grid-cols-[140px_1fr_1fr]">
+                            <div>
+                              <p className="text-[9px] font-black uppercase text-gray-500">Day</p>
+                              <p className="py-2 text-xs font-black text-gray-900">{SCHEDULE_DAYS[day]}</p>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[9px] font-black uppercase text-gray-500">Start</label>
+                              <CustomSelect
+                                size="sm"
+                                value={startValue}
+                                onChange={(event) => {
+                                  const nextStart = event.target.value;
+                                  const endOptions = getEndTimeOptions([day], nextStart);
+                                  const nextEnd = parseTimeToHour(endValue) > parseTimeToHour(nextStart) && !endOptions.find((option) => option.value === endValue)?.disabled
+                                    ? endValue
+                                    : (endOptions.find((option) => !option.disabled)?.value || '');
+                                  setTimeMode('individual');
+                                  setDayTimes((prev) => ({ ...prev, [day]: { startTime: nextStart, endTime: nextEnd } }));
+                                }}
+                                options={getStartTimeOptions([day])}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[9px] font-black uppercase text-gray-500">End</label>
+                              <CustomSelect
+                                size="sm"
+                                value={endValue}
+                                onChange={(event) => {
+                                  setTimeMode('individual');
+                                  setDayTimes((prev) => ({ ...prev, [day]: { startTime: startValue, endTime: event.target.value } }));
+                                }}
+                                options={getEndTimeOptions([day], startValue)}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className={additionalTimeSlots.length > 0 ? 'border-t border-gray-200 pt-3' : ''}>
+                  <div className={`flex flex-wrap items-center justify-end gap-2 ${additionalTimeSlots.length > 0 ? 'mb-2' : ''}`}>
+                    {additionalTimeSlots.length > 0 && <div className="mr-auto">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-gray-700">Split hours within a day</p>
+                      <p className="text-[10px] text-gray-500">Add separate class periods on the same day, such as 11:00–12:00 and 1:00–3:00.</p>
+                    </div>}
+                    {timeMode !== 'individual' && selectedDays.length > 0 && combinedStartTime && combinedEndTime && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDayTimes(Object.fromEntries(selectedDays.map((day) => [day, {
+                            startTime: combinedStartTime,
+                            endTime: combinedEndTime,
+                          }])));
+                          setTimeMode('individual');
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[10px] font-black text-blue-800 hover:bg-blue-50"
+                      >
+                        <Plus size={12} /> Different time per day
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetDays = selectedDays.length > 0 ? selectedDays : [0];
+                        const groupId = Date.now();
+                        setAdditionalTimeSlots((prev) => [
+                          ...prev,
+                          ...targetDays.map((day, dayIndex) => ({
+                            id: `extra-${groupId}-${day}-${dayIndex}`,
+                            groupId,
+                            day,
+                            startTime: '',
+                            endTime: '',
+                          })),
+                        ]);
+                      }}
+                      className="flex items-center gap-1 rounded-lg border border-[#7A0808] bg-white px-2.5 py-1 text-[10px] font-black text-[#7A0808] hover:bg-red-50"
+                    >
+                      <Plus size={12} /> {additionalTimeSlots.length > 0
+                        ? `Add another block for ${selectedDays.length > 1 ? `${selectedDays.length} selected days` : 'selected day'}`
+                        : 'Split hours in one day'}
+                    </button>
+                  </div>
+
+                  {additionalTimeSlots.length > 0 && (
+                    <div className="space-y-2">
+                      {additionalTimeSlots.map((extra, index) => (
+                        <div key={extra.id || index} className="grid grid-cols-1 items-end gap-2 rounded-xl border border-gray-200 bg-white p-2.5 sm:grid-cols-[150px_1fr_1fr_34px]">
+                          <div>
+                            <label className="mb-1 block text-[9px] font-black uppercase text-gray-500">Day</label>
+                            <CustomSelect
+                              size="sm"
+                              value={String(extra.day)}
+                              onChange={(event) => setAdditionalTimeSlots((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, day: Number(event.target.value) } : item))}
+                              options={(selectedDays.length > 0 ? selectedDays : [0]).map((dayIndex) => ({ value: String(dayIndex), label: SCHEDULE_DAYS[dayIndex] }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[9px] font-black uppercase text-gray-500">Start</label>
+                            <CustomSelect
+                              size="sm"
+                              value={extra.startTime}
+                              onChange={(event) => setAdditionalTimeSlots((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value, endTime: '' } : item))}
+                              options={getAdditionalStartOptions(extra, index)}
+                              placeholder="Start time"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[9px] font-black uppercase text-gray-500">End</label>
+                            <CustomSelect
+                              size="sm"
+                              value={extra.endTime}
+                              onChange={(event) => setAdditionalTimeSlots((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item))}
+                              options={getAdditionalEndOptions(extra, index)}
+                              placeholder="End time"
+                            />
+                          </div>
+                          <button type="button" onClick={() => setAdditionalTimeSlots((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} title="Remove this time block" className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {overlappingPreferredSlots.length > 0 && (
+                <div className="rounded-xl border-2 border-red-500 bg-red-50 p-3 text-xs font-black text-red-900">
+                  Two preferred blocks overlap on {overlappingPreferredSlots[0].slot.dayName}. Keep the blocks separate, for example 11:00–12:00 and 1:00–3:00.
+                </div>
+              )}
+
+              {sectionTimeConflicts.length > 0 && (
+                <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-3">
+                  <p className="text-xs font-black text-red-950">This preferred time conflicts with {sectionTimeConflicts.length} existing section schedule(s).</p>
+                  {sectionTimeConflicts.slice(0, 4).map((conflict, index) => (
+                    <p key={`${conflict.id || index}-${index}`} className="mt-1 text-[11px] font-semibold text-red-800">
+                      {conflict.affectedSections.join(', ')} · {conflict.courseCode || conflict.title} · {conflict.conflictDayName} {formatScheduleHour(conflict.start)}–{formatScheduleHour(conflict.end)}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <RoomScheduleViewer
+                roomCode=""
+                sectionName={selectedSection}
+                rotationCycle={allowOjtRotation ? rotationCycle : 'all'}
+                scheduleMode={scheduleMode}
+                semester={semester}
+                deanUid={deanUid}
+                currentTimeSlots={selectedDaySlots}
+                isEditMode={isEditMode}
+                ignoreEntryIds={editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : [])}
+                initialCourse={selectedCourse?.code || initial?.courseCode || ''}
+                onTimeSelect={(clickedDay, startHour, endHour) => {
+                  const hasBlockOnDay = selectedDaySlots.some((slot) => slot.day === clickedDay);
+                  if (hasBlockOnDay) {
+                    setAdditionalTimeSlots((prev) => [...prev, {
+                      id: `extra-${Date.now()}`,
+                      day: clickedDay,
+                      startTime: hourToTimeInput(startHour),
+                      endTime: hourToTimeInput(endHour),
+                    }]);
+                  } else {
+                    if (!selectedDays.includes(clickedDay)) setSelectedDays((prev) => [...prev, clickedDay].sort((a, b) => a - b));
+                    setTimeMode('combined');
+                    setCombinedStartTime(hourToTimeInput(startHour));
+                    setCombinedEndTime(hourToTimeInput(endHour));
+                  }
+                }}
+              />
+            </div>
+          )}
+
           {/* Step 2: Select Teacher with Compact List & Search (Optional) */}
           {step === 2 && (
             <div>
@@ -2220,7 +2925,7 @@ export default function AddPlotEntryModalEnhanced({
               {selectedTeacherConflict.hasConflict && (
                 <div className="p-4 bg-red-50/95 border-2 border-red-500 rounded-2xl space-y-2.5 mb-4 shadow-md animate-in fade-in">
                   <div className="flex items-center justify-between gap-2 border-b border-red-200 pb-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="w-6 h-6 rounded-lg bg-red-600 text-white font-black text-xs flex items-center justify-center shadow-xs flex-shrink-0">
                         ⚠️
                       </div>
@@ -2478,7 +3183,7 @@ export default function AddPlotEntryModalEnhanced({
                         {transitionBanner.prevType} Schedule Saved for {transitionBanner.courseCode}!
                       </p>
                       <p className="text-[11px] font-medium text-emerald-800">
-                        Now select the building, room, and time for the <span className="font-extrabold underline">{transitionBanner.nextType}</span> component ({targetHours} hrs/week required). The {transitionBanner.prevType} block you plotted is now marked on the schedule grid below.
+                        Now select a building and room for the <span className="font-extrabold underline">{transitionBanner.nextType}</span> component. The {transitionBanner.prevType} block you plotted is already saved.
                       </p>
                     </div>
                   </div>
@@ -2509,9 +3214,22 @@ export default function AddPlotEntryModalEnhanced({
                         </p>
                         {assignedRooms && assignedRooms.length > 0 && (
                           <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
-                            <CheckCircle2 size={12} /> {assignedRooms.length} Registrar-Assigned Rooms Only
+                            <CheckCircle2 size={12} /> {assignedRooms.length} Registrar-Assigned Rooms
                           </span>
                         )}
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#D9A3A3] bg-[#FFF5F5] px-2.5 py-1 text-[10px] font-black text-[#7A0808] transition-colors hover:bg-[#FDE8E8]">
+                          <input
+                            type="checkbox"
+                            checked={showAllAvailableRooms}
+                            onChange={(event) => {
+                              setShowAllAvailableRooms(event.target.checked);
+                              setSelectedBuilding(null);
+                              setSelectedRoom(null);
+                            }}
+                            className="h-3.5 w-3.5 cursor-pointer accent-[#7A0808]"
+                          />
+                          <span>View other available rooms</span>
+                        </label>
                       </div>
                     </div>
 
@@ -2519,6 +3237,21 @@ export default function AddPlotEntryModalEnhanced({
                       {displayedBuildings.length} building(s) available
                     </span>
                   </div>
+
+                  {/* Building Search Bar */}
+                  {showAllAvailableRooms && (
+                    <div className="mb-4 rounded-xl border border-[#D9A3A3] bg-[#FFF5F5] p-3">
+                      <label className="block text-[11px] font-black text-[#7A0808]">Reason for requesting a non-assigned room</label>
+                      <p className="mb-2 text-[10px] text-[#9B2C2C]">The room manager or Registrar will read this reason before approving the pending schedule.</p>
+                      <textarea
+                        value={nonBudgetedRoomReason}
+                        onChange={(event) => setNonBudgetedRoomReason(event.target.value)}
+                        rows={2}
+                        placeholder="Explain why the assigned rooms are unsuitable or unavailable..."
+                        className="w-full resize-none rounded-lg border border-[#E7BABA] bg-white px-3 py-2 text-xs focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] focus:outline-none"
+                      />
+                    </div>
+                  )}
 
                   {/* Building Search Bar */}
                   <div className="mb-4 relative">
@@ -2604,6 +3337,19 @@ export default function AddPlotEntryModalEnhanced({
                         <Building2 size={16} className="text-[#7A0808]" />
                         <span>{selectedBuilding.name} ({selectedBuilding.code})</span>
                       </h4>
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#D9A3A3] bg-[#FFF5F5] px-2.5 py-1 text-[10px] font-black text-[#7A0808] transition-colors hover:bg-[#FDE8E8]">
+                        <input
+                          type="checkbox"
+                          checked={showAllAvailableRooms}
+                          onChange={(event) => {
+                            setShowAllAvailableRooms(event.target.checked);
+                            setSelectedBuilding(null);
+                            setSelectedRoom(null);
+                          }}
+                          className="h-3.5 w-3.5 cursor-pointer accent-[#7A0808]"
+                        />
+                        <span>View other available rooms</span>
+                      </label>
                     </div>
 
                     {selectedRoom && (
@@ -2612,6 +3358,40 @@ export default function AddPlotEntryModalEnhanced({
                       </span>
                     )}
                   </div>
+
+                  {showAllAvailableRooms && (
+                    <div className="mb-4 rounded-xl border border-[#D9A3A3] bg-[#FFF5F5] p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <label htmlFor="selected-room-request-reason" className="block text-[11px] font-black text-[#7A0808]">
+                            Reason for requesting a non-assigned room
+                          </label>
+                          <p className="mb-2 text-[10px] text-[#9B2C2C]">
+                            You may enter the reason before or after selecting a room. The room manager or Registrar will review it.
+                          </p>
+                        </div>
+                        {selectedRoom && (
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${selectedRoomIsBudgeted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-[#FDE8E8] text-[#7A0808] border border-[#D9A3A3]'}`}>
+                            {selectedRoomIsBudgeted ? 'No approval required' : 'Approval required'}
+                          </span>
+                        )}
+                      </div>
+                      <textarea
+                        id="selected-room-request-reason"
+                        value={nonBudgetedRoomReason}
+                        onChange={(event) => setNonBudgetedRoomReason(event.target.value)}
+                        rows={2}
+                        placeholder="Explain why the assigned rooms are unsuitable or unavailable..."
+                        className="w-full resize-none rounded-lg border border-[#E7BABA] bg-white px-3 py-2 text-xs focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] focus:outline-none"
+                      />
+                      {selectedRoom && !selectedRoomIsBudgeted && selectedRoomApprover && (
+                        <p className="mt-2 rounded-lg border border-[#D9A3A3] bg-white px-3 py-2 text-[11px] font-bold text-[#7A0808]">
+                          Approval required from {selectedRoomApprover.name}
+                          {selectedRoomApprover.department ? ` - ${selectedRoomApprover.department}` : ''}. This dean can review this room's schedule before deciding.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* 30 / 70 Panel Division */}
                   <div className="flex flex-col lg:flex-row gap-6">
@@ -2676,22 +3456,35 @@ export default function AddPlotEntryModalEnhanced({
                                     ) : (
                                       floorData.rooms.map((room) => {
                                         const isSelected = selectedRoom?.roomCode === room.roomCode;
+                                        const roomStatus = getRoomConflictStatus(room);
+                                        const roomCode = String(room.roomCode || room.name || room.id || '').trim().toUpperCase();
+                                        const isRegistrarAssigned = assignedRooms.some(
+                                          (code) => String(code || '').trim().toUpperCase() === roomCode
+                                        );
+                                        const managerUid = room.effectiveManagerUid || room.managedBy || floorData.managedBy || '';
+                                        const managerName = String(room.effectiveManagerName || room.managedByName || floorData.managedByName || '').trim().toLowerCase();
+                                        const isManagedByCurrentDean = (Boolean(deanUid) && String(managerUid) === String(deanUid))
+                                          || (Boolean(String(deanName || '').trim()) && managerName === String(deanName || '').trim().toLowerCase());
 
                                         return (
                                           <div
                                             key={room.roomCode}
                                             role="button"
-                                            tabIndex={0}
-                                            onClick={() => setSelectedRoom(room)}
+                                            tabIndex={roomStatus.hasConflict ? -1 : 0}
+                                            aria-disabled={roomStatus.hasConflict}
+                                            onClick={() => !roomStatus.hasConflict && setSelectedRoom(room)}
                                             onKeyDown={(e) => {
-                                              if (e.key === 'Enter' || e.key === ' ') {
+                                              if (!roomStatus.hasConflict && (e.key === 'Enter' || e.key === ' ')) {
                                                 e.preventDefault();
                                                 setSelectedRoom(room);
                                               }
                                             }}
-                                            className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between cursor-pointer ${
+                                            title={roomStatus.hasConflict ? 'Unavailable: this room already has a schedule during the preferred time.' : 'Available during the preferred time'}
+                                            className={`text-left p-2.5 rounded-lg border-2 transition-all flex items-center justify-between ${
                                               isSelected
                                                 ? 'border-[#7A0808] bg-red-50 shadow-2xs'
+                                                : roomStatus.hasConflict
+                                                ? 'border-red-200 bg-red-50/70 opacity-60 cursor-not-allowed'
                                                 : 'border-gray-100 hover:border-[#7A0808] hover:bg-gray-50'
                                             }`}
                                           >
@@ -2702,6 +3495,19 @@ export default function AddPlotEntryModalEnhanced({
                                               <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
                                             </div>
                                             <div className="flex items-center gap-1.5">
+                                              {showAllAvailableRooms && isRegistrarAssigned && (
+                                                <span className="rounded bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808] border border-[#D9A3A3]">
+                                                  Assigned
+                                                </span>
+                                              )}
+                                              {showAllAvailableRooms && !isRegistrarAssigned && isManagedByCurrentDean && (
+                                                <span className="rounded bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808] border border-[#D9A3A3]">
+                                                  Managed by you
+                                                </span>
+                                              )}
+                                              <span className={`text-[9px] font-black px-2 py-0.5 rounded ${roomStatus.hasConflict ? 'bg-red-600 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                                {roomStatus.hasConflict ? 'Conflict' : 'Available'}
+                                              </span>
                                               <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
                                                 Cap: {room.capacity}
                                               </span>
@@ -2739,7 +3545,7 @@ export default function AddPlotEntryModalEnhanced({
                       {selectedRoom ? (
                         <>
                           {/* Top Bar: Course Target Hours & Multi-Day Controls */}
-                          <div className="p-3.5 bg-gradient-to-r from-red-50/70 to-amber-50/40 border border-red-200/80 rounded-2xl space-y-3">
+                          <div className="hidden">
                             {/* Course Target Info */}
                             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-200/60 pb-2.5">
                               <div className="flex items-center gap-2">
@@ -2828,6 +3634,7 @@ export default function AddPlotEntryModalEnhanced({
                             </div>
 
                             {/* OJT Rotation Cycle & Partner Section Pairing Controls */}
+                            {allowOjtRotation && (
                             <div className="p-3 bg-white border border-red-200/80 rounded-2xl space-y-2.5 shadow-2xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
@@ -2915,6 +3722,7 @@ export default function AddPlotEntryModalEnhanced({
                                 </div>
                               )}
                             </div>
+                            )}
 
                             {/* Time Controls: Combined vs Individual */}
                             <div className="pt-2 border-t border-red-200/60">
@@ -3085,14 +3893,23 @@ export default function AddPlotEntryModalEnhanced({
                             </div>
                           </div>
 
-                          {/* Multi-Day Interactive Room Schedule Grid */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+                            <p className="text-[11px] font-bold text-blue-950">
+                              Preferred time locked from Step 2 · {selectedDaySlots.length} block{selectedDaySlots.length === 1 ? '' : 's'} · {totalPlottedHours} hrs
+                            </p>
+                            <button type="button" onClick={() => setStep(6)} className="text-[10px] font-black text-blue-800 underline hover:text-blue-950">
+                              Change preferred time
+                            </button>
+                          </div>
+
+                          {/* Read-only room availability grid; preferred time is edited in Step 2. */}
                           <div className="flex-1 bg-white rounded-xl">
                             <RoomScheduleViewer
                               roomCode={selectedRoom.roomCode || selectedRoom.name || selectedRoom.id}
                               sectionName={selectedSection}
                               teacher={selectedTeacher}
                               roomType={selectedRoom.type || selectedRoom.roomType}
-                              rotationCycle={rotationCycle}
+                              rotationCycle={allowOjtRotation ? rotationCycle : 'all'}
                               scheduleMode={scheduleMode}
                               semester={semester}
                               deanUid={deanUid}
@@ -3100,22 +3917,6 @@ export default function AddPlotEntryModalEnhanced({
                               isEditMode={isEditMode}
                               ignoreEntryIds={editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : [])}
                               initialCourse={selectedCourse?.code || initial?.courseCode || initial?.title || ''}
-                              onTimeSelect={(clickedDay, startHour, endHour) => {
-                                if (!selectedDays.includes(clickedDay)) {
-                                  setSelectedDays([...selectedDays, clickedDay].sort((a, b) => a - b));
-                                }
-                                const sTime = hourToTimeInput(startHour);
-                                const eTime = hourToTimeInput(endHour);
-                                if (timeMode === 'combined') {
-                                  setCombinedStartTime(sTime);
-                                  setCombinedEndTime(eTime);
-                                } else {
-                                  setDayTimes((prev) => ({
-                                    ...prev,
-                                    [clickedDay]: { startTime: sTime, endTime: eTime },
-                                  }));
-                                }
-                              }}
                               onConflictsChange={setRoomConflicts}
                             />
                           </div>
@@ -3329,17 +4130,29 @@ export default function AddPlotEntryModalEnhanced({
                 onClick={handleNext}
                 disabled={
                   saving ||
+                  (step === 6 && (selectedDaySlots.length === 0 || sectionTimeConflicts.length > 0 || overlappingPreferredSlots.length > 0 || componentHoursProgress.resulting > componentHoursProgress.required)) ||
                   (step === 4 && (!selectedRoom || selectedDaySlots.length === 0 || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0)) ||
                   (step === 2 && selectedTeacherConflict.hasConflict)
                 }
                 className={`btn-maroon flex items-center gap-2 text-xs transition-all cursor-pointer ${
-                  (step === 4 && (roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0 || selectedDaySlots.length === 0)) ||
+                  (step === 6 && (selectedDaySlots.length === 0 || sectionTimeConflicts.length > 0 || overlappingPreferredSlots.length > 0 || componentHoursProgress.resulting > componentHoursProgress.required)) ||
+                  (step === 4 && (!selectedRoom || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0 || selectedDaySlots.length === 0)) ||
                   (step === 2 && selectedTeacherConflict.hasConflict)
                     ? 'opacity-50 cursor-not-allowed bg-red-950/70 border border-red-800'
                     : ''
                 }`}
                 title={
-                  step === 4 && roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0
+                  step === 6 && overlappingPreferredSlots.length > 0
+                    ? 'Cannot proceed: preferred time blocks overlap on the same day'
+                    : step === 6 && componentHoursProgress.resulting > componentHoursProgress.required
+                    ? `Cannot proceed: selected time exceeds the required ${componentHoursProgress.required} hours`
+                    : step === 6 && sectionTimeConflicts.length > 0
+                    ? 'Cannot proceed: one or more selected/merged sections are already busy at this time'
+                    : step === 6 && selectedDaySlots.length === 0
+                    ? 'Select a preferred day and time to proceed'
+                    : step === 4 && !selectedRoom
+                    ? 'Select a room before continuing'
+                    : step === 4 && roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0
                     ? 'Cannot proceed: Room or section schedule conflict detected'
                     : step === 2 && selectedTeacherConflict.hasConflict
                     ? `Cannot proceed: ${selectedTeacher?.name || 'Selected teacher'} has a schedule conflict`
@@ -3659,6 +4472,7 @@ export default function AddPlotEntryModalEnhanced({
           onClose={() => setViewTeacherSchedule(null)}
         />
       )}
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }

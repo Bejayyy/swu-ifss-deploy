@@ -1,4 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, onSnapshot, query, where, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, setDoc, deleteDoc, getDocs, onSnapshot, query, where, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
 import { isCollegeMatch } from './scheduleAccessService';
@@ -206,7 +206,16 @@ export async function updateCourse(courseId, updates) {
   if (updates.labServiceCollege !== undefined) cleanUpdates.labServiceCollege = updates.labServiceCollege ? String(updates.labServiceCollege).trim().toUpperCase() : null;
   if (updates.serviceStatus !== undefined) cleanUpdates.serviceStatus = updates.serviceStatus;
 
-  await updateDoc(docRef, cleanUpdates);
+  try {
+    await updateDoc(docRef, cleanUpdates);
+  } catch (error) {
+    const isMissingDocument = error?.code === 'not-found' || /no document to update/i.test(error?.message || '');
+    if (!isMissingDocument) throw error;
+    await setDoc(docRef, {
+      ...cleanUpdates,
+      createdAt: serverTimestamp(),
+    }, { merge: true });
+  }
 }
 
 /**
@@ -215,6 +224,16 @@ export async function updateCourse(courseId, updates) {
 export async function deleteCourse(courseId) {
   const docRef = doc(db, COURSES_COLLECTION, courseId);
   await deleteDoc(docRef);
+}
+
+export async function batchDeleteCourses(courseIds = []) {
+  const uniqueIds = [...new Set(courseIds.filter(Boolean))];
+  for (let start = 0; start < uniqueIds.length; start += 500) {
+    const batch = writeBatch(db);
+    uniqueIds.slice(start, start + 500).forEach((courseId) => batch.delete(doc(db, COURSES_COLLECTION, courseId)));
+    await batch.commit();
+  }
+  return uniqueIds.length;
 }
 
 /** Delete the course catalogue records owned by a removed college program. */

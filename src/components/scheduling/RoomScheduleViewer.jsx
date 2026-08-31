@@ -44,6 +44,17 @@ export default function RoomScheduleViewer({
   const scrollContainerRef = useRef(null);
 
   const gridHeight = gridTotalHeightPx();
+  const timeColumnWidth = 92;
+  const gridColumns = '92px repeat(7, minmax(94px, 1fr))';
+
+  const formatInterval = (slotIndex) => {
+    const compactTime = (hour) => {
+      const wholeHour = Math.floor(hour);
+      const minutes = hour % 1 ? '30' : '00';
+      return `${wholeHour % 12 || 12}:${minutes}`;
+    };
+    return `${compactTime(slotIndexToHour(slotIndex))}–${compactTime(slotIndexToHour(slotIndex) + 0.5)}`;
+  };
 
   const cleanTeacherName = typeof teacher === 'object' ? (teacher?.name || teacher?.displayName || '') : String(teacher || '');
   const isTeacherTba = !cleanTeacherName || cleanTeacherName.toLowerCase().includes('tba') || cleanTeacherName.toLowerCase().includes('to be assigned');
@@ -383,10 +394,12 @@ export default function RoomScheduleViewer({
       <div className="flex items-center justify-between gap-2 mb-2">
         <div>
           <p className="text-xs font-black text-gray-900">
-            Weekly Schedule for Room {roomCode}
+            {roomCode ? `Weekly Schedule for Room ${roomCode}` : `Current Weekly Schedule for Section ${sectionName || ''}`}
           </p>
           <p className="text-[10px] font-medium text-gray-500">
-            {roomEntries.length === 0
+            {!roomCode
+              ? 'Use this section timetable to choose a preferred conflict-free time'
+              : roomEntries.length === 0
               ? 'No existing schedules in this room (Room is vacant)'
               : `${roomEntries.length} scheduled ${roomEntries.length === 1 ? 'class' : 'classes'} in this room`}
             {sectionName && sectionBusyBlocksCount > 0 && (
@@ -401,7 +414,11 @@ export default function RoomScheduleViewer({
             )}
           </p>
         </div>
-        {roomEntries.length > 0 ? (
+        {!roomCode ? (
+          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+            Section availability
+          </span>
+        ) : roomEntries.length > 0 ? (
           <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
             {roomEntries.length} room {roomEntries.length === 1 ? 'block' : 'blocks'}
           </span>
@@ -561,13 +578,13 @@ export default function RoomScheduleViewer({
       </div>
 
       {/* Full Weekly Schedule Grid (Always Rendered) */}
-      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
-        <div ref={scrollContainerRef} style={{ minWidth: 600, maxHeight: 420, overflowY: 'auto' }}>
+      <div className="border border-gray-300 rounded-xl overflow-x-auto bg-white shadow-2xs">
+        <div ref={scrollContainerRef} className="min-w-[760px] w-full" style={{ maxHeight: 420, overflowY: 'auto' }}>
           {/* Day Headers */}
-          <div className="grid sticky top-0 bg-white z-10 border-b border-gray-200 shadow-2xs" style={{ gridTemplateColumns: '60px repeat(7, 1fr)' }}>
-            <div className="p-2 text-[10px] font-black text-gray-400 uppercase">Time</div>
+          <div className="grid sticky top-0 bg-gray-50 z-20 border-b-2 border-gray-400 shadow-2xs" style={{ gridTemplateColumns: gridColumns }}>
+            <div className="py-2 text-[10px] font-black text-gray-700 uppercase text-center border-r border-gray-400">Time</div>
             {SCHEDULE_DAYS.map((day) => (
-              <div key={day} className="p-2 text-center border-l border-gray-200">
+              <div key={day} className="p-2 text-center border-r border-gray-300">
                 <p className="text-[10px] font-black text-gray-800 uppercase">{day.slice(0, 3)}</p>
               </div>
             ))}
@@ -577,16 +594,14 @@ export default function RoomScheduleViewer({
           <div className="relative" style={{ height: gridHeight }}>
             {/* Grid rows */}
             {Array.from({ length: SCHEDULE_SLOT_COUNT }, (_, slotIndex) => {
-              const hour = slotIndexToHour(slotIndex);
-              const isHalf = slotIndex % 2 !== 0;
-              const label = formatScheduleHour(hour);
+              const label = formatInterval(slotIndex);
 
               return (
                 <div
                   key={slotIndex}
                   className="grid"
                   style={{ 
-                    gridTemplateColumns: '60px repeat(7, 1fr)', 
+                    gridTemplateColumns: gridColumns,
                     height: SCHEDULE_CELL_HEIGHT,
                     position: 'absolute',
                     left: 0,
@@ -595,8 +610,8 @@ export default function RoomScheduleViewer({
                   }}
                 >
                   {/* Time label - show for all slots */}
-                  <div className="border-t border-gray-100 pr-2 flex items-start pt-1 bg-white z-[1]">
-                    <span className={`text-[9px] font-medium ${isHalf ? 'text-gray-300' : 'text-gray-400'}`}>
+                  <div className="border-t border-r border-gray-300 px-1 flex items-center justify-center bg-white z-[1]">
+                    <span className="text-[9px] text-gray-700 font-bold whitespace-nowrap">
                       {label}
                     </span>
                   </div>
@@ -616,7 +631,7 @@ export default function RoomScheduleViewer({
                     return (
                       <div
                         key={dayIndex}
-                        className="border-t border-l border-gray-100"
+                        className="border-t border-r border-gray-300"
                         style={{
                           height: SCHEDULE_CELL_HEIGHT,
                           background: cellBg,
@@ -640,24 +655,27 @@ export default function RoomScheduleViewer({
               <div
                 className="absolute top-0 grid pointer-events-none z-[5]"
                 style={{
-                  left: 60,
+                  left: timeColumnWidth,
                   right: 0,
                   height: gridHeight,
-                  gridTemplateColumns: 'repeat(7, 1fr)',
+                  gridTemplateColumns: 'repeat(7, minmax(94px, 1fr))',
                 }}
               >
-                {effectiveTimeSlots.map((slot, idx) => {
-                  const dayConflicts = conflicts.filter((c) => c.conflictDay === slot.day);
-                  const hasConflict = dayConflicts.length > 0;
-
-                  return (
-                    <div
-                      key={`${slot.day}-${slot.startHour}-${slot.endHour}-${idx}`}
-                      style={{ gridColumnStart: slot.day + 1 }}
-                      className="relative h-full"
-                    >
+                {SCHEDULE_DAYS.map((_, dayIndex) => (
+                  <div key={dayIndex} className="relative h-full">
+                    {effectiveTimeSlots
+                      .filter((slot) => Number(slot.day) === dayIndex)
+                      .map((slot, idx) => {
+                        const slotConflicts = conflicts.filter((conflict) =>
+                          conflict.conflictDay === dayIndex &&
+                          conflict.conflictStart < slot.endHour &&
+                          conflict.conflictEnd > slot.startHour
+                        );
+                        const hasConflict = slotConflicts.length > 0;
+                        return (
                       <div
-                        className={`absolute left-1 right-1 rounded-xl p-2 shadow-md pointer-events-auto overflow-hidden animate-in fade-in duration-150 ${
+                        key={`${dayIndex}-${slot.startHour}-${slot.endHour}-${slot.id || idx}`}
+                        className={`absolute inset-x-0 p-1.5 shadow-sm pointer-events-auto overflow-hidden animate-in fade-in duration-150 ${
                           hasConflict
                             ? 'bg-red-200/95 border-2 border-red-600 text-red-950'
                             : 'bg-amber-200/90 border-2 border-amber-600 text-amber-950'
@@ -665,6 +683,8 @@ export default function RoomScheduleViewer({
                         style={{
                           top: blockTopPx(slot.startHour),
                           height: blockHeightPx(slot.startHour, slot.endHour),
+                          borderRadius: 3,
+                          boxSizing: 'border-box',
                         }}
                       >
                         <p className={`text-[10px] font-black tracking-wide flex items-center gap-1 ${hasConflict ? 'text-red-900' : 'text-amber-900'}`}>
@@ -675,8 +695,8 @@ export default function RoomScheduleViewer({
                         </p>
                         {hasConflict ? (
                           <p className="text-[9px] font-black text-red-900 truncate">
-                            {dayConflicts[0].conflictType === 'section' ? 'Section Conflict: ' : 'Room Conflict: '}
-                            {dayConflicts[0].course || dayConflicts[0].title}
+                            {slotConflicts[0].conflictType === 'section' ? 'Section Conflict: ' : 'Room Conflict: '}
+                            {slotConflicts[0].course || slotConflicts[0].title}
                           </p>
                         ) : (
                           <p className="text-[9px] font-bold text-amber-800">
@@ -684,9 +704,10 @@ export default function RoomScheduleViewer({
                           </p>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
+                        );
+                      })}
+                  </div>
+                ))}
               </div>
             )}
 
@@ -694,10 +715,10 @@ export default function RoomScheduleViewer({
             <div
               className="absolute top-0 grid pointer-events-none z-[10]"
               style={{ 
-                left: 60, 
+                left: timeColumnWidth,
                 right: 0, 
                 height: gridHeight, 
-                gridTemplateColumns: 'repeat(7, 1fr)' 
+                gridTemplateColumns: 'repeat(7, minmax(94px, 1fr))'
               }}
             >
               {blocksByDay.map((dayBlocks, dayIndex) => (
@@ -710,13 +731,15 @@ export default function RoomScheduleViewer({
                     return (
                       <div
                         key={block.id}
-                        className="absolute left-1 right-1 rounded-lg p-2 pointer-events-auto overflow-hidden shadow-2xs"
+                        className="absolute inset-x-0 p-1.5 pointer-events-auto overflow-hidden shadow-2xs flex flex-col justify-center"
                         style={{
                           top: topPx,
                           height: heightPx,
                           maxHeight: gridHeight - topPx,
                           background: colors.bg,
                           border: block.isSectionOnly ? `2px dashed ${colors.border}` : `1.5px solid ${colors.border}`,
+                          borderRadius: 3,
+                          boxSizing: 'border-box',
                         }}
                       >
                         {block.isTeacherOnly ? (

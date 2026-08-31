@@ -161,6 +161,26 @@ export async function createStaffUserByEmailInvite({
   }
   
   const uid = authUser.uid;
+
+  // Reusing an email must start a new account lifecycle. Remove notifications
+  // left by an older account that used this address before creating the profile.
+  try {
+    const { getDocs, collection: firestoreCollection, writeBatch } = await import('firebase/firestore');
+    const notificationSnap = await getDocs(firestoreCollection(db, 'notifications'));
+    const legacyNotifications = notificationSnap.docs.filter((notificationDoc) => {
+      const data = notificationDoc.data() || {};
+      return [data.userId, data.recipientId, data.userEmail, data.recipientEmail, data.recipientUid]
+        .filter(Boolean)
+        .some((key) => String(key).trim().toLowerCase() === normalized);
+    });
+    for (let start = 0; start < legacyNotifications.length; start += 500) {
+      const batch = writeBatch(db);
+      legacyNotifications.slice(start, start + 500).forEach((notificationDoc) => batch.delete(notificationDoc.ref));
+      await batch.commit();
+    }
+  } catch (cleanupError) {
+    console.warn('Could not clear legacy notifications for reused email:', cleanupError);
+  }
   
   // GSD and Student Life don't have departments or colleges
   const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
@@ -306,6 +326,30 @@ export async function deleteStaffUser(uid) {
     console.warn('Error clearing user subcollections:', secErr);
   }
 
+  // Clear assignments belonging to this exact identity. Do not match by email:
+  // the same institutional address may later be provisioned under a new UID.
+  try {
+    const assignedCoursesQuery = buildQuery(
+      col(db, 'courses'),
+      whereClause('assignedTeacherUid', '==', uid),
+    );
+    const assignedCoursesSnap = await fetchDocs(assignedCoursesQuery);
+    for (let start = 0; start < assignedCoursesSnap.docs.length; start += 500) {
+      const batch = createBatch(db);
+      assignedCoursesSnap.docs.slice(start, start + 500).forEach((courseDoc) => {
+        batch.update(courseDoc.ref, {
+          assignedTeacherUid: null,
+          assignedTeacherName: null,
+          assignedTeacherEmail: null,
+          updatedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+  } catch (courseAssignmentErr) {
+    console.warn('Error clearing deleted teacher course assignments:', courseAssignmentErr);
+  }
+
   // ── 2. Clean Schedule Access Control (schedule_access_control) ──
   try {
     const accessCol = col(db, COLLECTIONS.SCHEDULE_ACCESS_CONTROL || 'schedule_access_control');
@@ -394,27 +438,21 @@ export async function deleteStaffUser(uid) {
   // ── 5. Delete Notifications ──
   try {
     const notificationsRef = col(db, 'notifications');
-    const notificationsQuery = buildQuery(notificationsRef, whereClause('userId', '==', uid));
-    const notificationsSnap = await fetchDocs(notificationsQuery);
-
-    if (!notificationsSnap.empty) {
+    const notificationsSnap = await fetchDocs(notificationsRef);
+    const deletedUserKeys = new Set(
+      [uid, userEmail].filter(Boolean).map((key) => String(key).trim().toLowerCase())
+    );
+    const ownedNotifications = notificationsSnap.docs.filter((notificationDoc) => {
+      const data = notificationDoc.data() || {};
+      return [data.userId, data.recipientId, data.userEmail, data.recipientEmail, data.recipientUid]
+        .filter(Boolean)
+        .map((key) => String(key).trim().toLowerCase())
+        .some((key) => deletedUserKeys.has(key));
+    });
+    for (let start = 0; start < ownedNotifications.length; start += 500) {
       const batch = createBatch(db);
-      notificationsSnap.docs.forEach((d) => batch.delete(d.ref));
+      ownedNotifications.slice(start, start + 500).forEach((notificationDoc) => batch.delete(notificationDoc.ref));
       await batch.commit();
-    }
-
-    if (userEmail) {
-      const notifEmailQuery = buildQuery(notificationsRef, whereClause('userEmail', '==', userEmail));
-      const notifEmailSnap = await fetchDocs(notifEmailQuery);
-      if (!notifEmailSnap.empty) {
-        const batch = createBatch(db);
-        notifEmailSnap.docs.forEach((d) => {
-          if (!notificationsSnap.docs.some((prev) => prev.id === d.id)) {
-            batch.delete(d.ref);
-          }
-        });
-        await batch.commit();
-      }
     }
   } catch (notifErr) {
     console.warn('Error clearing notifications:', notifErr);

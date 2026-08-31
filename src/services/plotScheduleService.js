@@ -325,6 +325,9 @@ export function entriesToGridBlocks(entries, weekDates = []) {
       return {
         id: e.id,
         rawEntry: e,
+        sourceDeanUid: e._sourceDeanUid || e.deanUid || null,
+        sourceSection: e._sourceSection || e.section || e.sectionName || null,
+        sourcePath: e._sourcePath || null,
         date: e.date,
         day: dayIndex >= 0 ? dayIndex : e.day,
         title: e.title || e.subject || 'Untitled',
@@ -351,6 +354,9 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         semester: e.semester || '',
         program: e.program || e.programCode || '',
         programCode: e.programCode || e.program || '',
+        approvalStatus: e.approvalStatus || (e.approved === false ? 'pending' : 'approved'),
+        usedNonBudgetedRoom: Boolean(e.usedNonBudgetedRoom),
+        nonBudgetedRoomReason: e.nonBudgetedRoomReason || null,
       };
     })
     .filter((e) => e.day >= 0 && e.day <= 6); // Only include valid days (0-6)
@@ -556,10 +562,17 @@ export function subscribeAllPlotEntriesForSection(
   return onSnapshot(
     entriesRef,
     (snapshot) => {
-      const allDocs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const allDocs = snapshot.docs.map((snapshotDoc) => {
+        const sectionDoc = snapshotDoc.ref.parent.parent;
+        const deanDoc = sectionDoc?.parent?.parent;
+        return {
+          id: snapshotDoc.id,
+          ...snapshotDoc.data(),
+          _sourceDeanUid: deanDoc?.id || null,
+          _sourceSection: sectionDoc?.id || null,
+          _sourcePath: snapshotDoc.ref.path,
+        };
+      });
 
       const filtered = allDocs.filter((e) => {
         // Section matching (or combined sections matching)

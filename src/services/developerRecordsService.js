@@ -2,11 +2,14 @@ import {
   collection,
   collectionGroup,
   deleteDoc,
+  deleteField,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   writeBatch,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
@@ -25,6 +28,106 @@ async function executeBatchDeletes(docRefs) {
     });
     await batch.commit();
   }
+}
+
+const INTEGRITY_COLLECTIONS = [
+  COLLECTIONS.ROOM_RESERVATIONS,
+  COLLECTIONS.SCHEDULE_PLOT_REQUESTS,
+  COLLECTIONS.MAINTENANCE_SCHEDULES,
+  COLLECTIONS.MAINTENANCE_REPORTS,
+  'notifications',
+  'courses',
+  'program_sections',
+];
+
+const USER_REFERENCE_FIELDS = [
+  'userId', 'recipientId', 'recipientUid', 'createdByUid', 'requestedByUid',
+  'requestorUid', 'plottedBy', 'deanUid', 'scheduledByUid', 'reportedByUid',
+  'assignedTeacherUid', 'managedBy', 'managerUid',
+];
+
+const USER_EMAIL_FIELDS = [
+  'userEmail', 'recipientEmail', 'createdByEmail', 'requestorEmail',
+  'requestedByEmail', 'deanEmail', 'scheduledByEmail', 'reportedByEmail',
+  'assignedTeacherEmail', 'managerEmail',
+];
+
+export async function runReferentialIntegrityAudit() {
+  const [usersSnap, collegesSnap] = await Promise.all([
+    getDocs(collection(db, COLLECTIONS.USERS)),
+    getDocs(collection(db, 'colleges')),
+  ]);
+  const userUids = new Set(usersSnap.docs.flatMap((d) => [d.id, d.data().uid]).filter(Boolean).map((v) => String(v).toLowerCase()));
+  const userEmails = new Set(usersSnap.docs.map((d) => d.data().email).filter(Boolean).map((v) => String(v).trim().toLowerCase()));
+  const collegeCodes = new Set();
+  const programKeys = new Set();
+  collegesSnap.docs.forEach((d) => {
+    const data = d.data() || {};
+    const collegeCode = String(data.code || '').trim().toUpperCase();
+    if (collegeCode) collegeCodes.add(collegeCode);
+    (data.programs || []).forEach((program) => {
+      const programCode = String(program.code || '').trim().toUpperCase();
+      if (collegeCode && programCode) programKeys.add(`${collegeCode}|${programCode}`);
+    });
+  });
+
+  const sources = INTEGRITY_COLLECTIONS.map(async (collectionName) => {
+    try {
+      const snap = await getDocs(collection(db, collectionName));
+      return snap.docs.map((document) => ({ collectionName, document }));
+    } catch (error) {
+      return [{ collectionName, scanError: error?.message || 'Collection could not be scanned' }];
+    }
+  });
+  try {
+    const plottedSnap = await getDocs(collectionGroup(db, 'plotEntries'));
+    sources.push(Promise.resolve(plottedSnap.docs.map((document) => ({ collectionName: 'plotEntries', document }))));
+  } catch {
+    // Some deployments disallow collection-group reads; other collections still audit normally.
+  }
+
+  const records = (await Promise.all(sources)).flat();
+  const findings = [];
+  records.forEach(({ collectionName, document, scanError }) => {
+    if (scanError) {
+      findings.push({ id: `scan:${collectionName}`, type: 'scan_error', severity: 'warning', collection: collectionName, path: collectionName, reason: scanError, action: 'none' });
+      return;
+    }
+    const data = document.data() || {};
+    USER_REFERENCE_FIELDS.forEach((field) => {
+      const value = data[field];
+      if (value && !userUids.has(String(value).trim().toLowerCase())) {
+        findings.push({ id: `${document.ref.path}:${field}`, type: 'orphan_user', severity: 'high', collection: collectionName, path: document.ref.path, field, value: String(value), reason: `References a user UID that no longer exists`, action: collectionName === 'notifications' ? 'delete_document' : 'clear_field' });
+      }
+    });
+    USER_EMAIL_FIELDS.forEach((field) => {
+      const value = data[field];
+      if (value && !userEmails.has(String(value).trim().toLowerCase())) {
+        findings.push({ id: `${document.ref.path}:${field}`, type: 'orphan_email', severity: 'medium', collection: collectionName, path: document.ref.path, field, value: String(value), reason: `References an email with no active user account`, action: collectionName === 'notifications' ? 'delete_document' : 'clear_field' });
+      }
+    });
+    if (collectionName === 'courses') {
+      const owner = String(data.collegeCode || '').trim().toUpperCase();
+      const program = String(data.programCode || '').trim().toUpperCase();
+      if (owner && !collegeCodes.has(owner)) findings.push({ id: `${document.ref.path}:collegeCode`, type: 'orphan_college', severity: 'high', collection: collectionName, path: document.ref.path, field: 'collegeCode', value: owner, reason: 'Owning college no longer exists', action: 'delete_document' });
+      else if (owner && program && !programKeys.has(`${owner}|${program}`)) findings.push({ id: `${document.ref.path}:programCode`, type: 'orphan_program', severity: 'high', collection: collectionName, path: document.ref.path, field: 'programCode', value: program, reason: `Program is not registered under ${owner}`, action: 'delete_document' });
+    }
+    if (collectionName === 'program_sections') {
+      const owner = String(data.collegeCode || '').trim().toUpperCase();
+      const program = String(data.programCode || '').trim().toUpperCase();
+      if (owner && program && !programKeys.has(`${owner}|${program}`)) findings.push({ id: `${document.ref.path}:program`, type: 'orphan_program', severity: 'high', collection: collectionName, path: document.ref.path, field: 'programCode', value: program, reason: `Section belongs to a removed program (${owner})`, action: 'delete_document' });
+    }
+  });
+  return findings;
+}
+
+export async function cleanIntegrityFinding(finding) {
+  if (!finding?.path || finding.action === 'none') return false;
+  const ref = doc(db, finding.path);
+  if (finding.action === 'delete_document') await deleteDoc(ref);
+  else if (finding.action === 'clear_field' && finding.field) await updateDoc(ref, { [finding.field]: deleteField() });
+  else return false;
+  return true;
 }
 
 /**
@@ -782,6 +885,5 @@ export async function batchDeleteApprovalWorkflows(workflowIds) {
   await executeBatchDeletes(docRefs);
   return workflowIds.length;
 }
-
 
 

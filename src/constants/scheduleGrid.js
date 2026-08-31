@@ -10,7 +10,7 @@ export const SCHEDULE_TYPE_COLORS = {
 
 export const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
-export const SCHEDULE_CELL_HEIGHT = 48;
+export const SCHEDULE_CELL_HEIGHT = 36;
 export const SCHEDULE_START_HOUR = 6;
 export const SCHEDULE_END_HOUR = 20;
 export const SCHEDULE_SLOT_COUNT = (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 2;
@@ -52,9 +52,9 @@ export function blockTopPx(startHour) {
 }
 
 export function blockHeightPx(startHour, endHour) {
-  // Calculate the number of 30-minute slots needed (inclusive of end slot row)
+  // The end time is a boundary, not another occupied 30-minute row.
   const hours = Math.max(0, endHour - startHour);
-  const slots = Math.max(1, Math.round(hours * 2) + 1);
+  const slots = Math.max(1, Math.round(hours * 2));
   return slots * SCHEDULE_CELL_HEIGHT;
 }
 
