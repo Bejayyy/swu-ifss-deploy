@@ -13,6 +13,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { isCollegeMatch } from './scheduleAccessService';
 
 const NOTIFICATIONS_COLLECTION = 'notifications';
 
@@ -131,7 +132,9 @@ export async function sendNotification({
     const cleanPayload = {
       userId: targetUserId || null,
       recipientId: targetUserId || null,
+      recipientUid: targetUserId || null,
       recipientEmail: recipientEmail || null,
+      userEmail: recipientEmail || null,
       title,
       message,
       link,
@@ -164,24 +167,50 @@ export async function notifyServiceCollegeDeans({
   if (!serviceCollegeCode) return;
 
   try {
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('role', '==', 'dean'));
-    const snap = await getDocs(q);
-
     const sCodeNorm = String(serviceCollegeCode).trim().toUpperCase();
+
+    // Check if service college is a GE Provider that does not handle its own sections (e.g. CAS)
+    const collegesRef = collection(db, 'colleges');
+    const colSnap = await getDocs(collegesRef);
+    const matchedCollege = colSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .find((c) => isCollegeMatch(c.code, sCodeNorm) || isCollegeMatch(sCodeNorm, c.code));
+
+    if (
+      matchedCollege &&
+      matchedCollege.managesGeneralEducationCourses &&
+      (matchedCollege.noOwnSections || matchedCollege.doesNotHandleSections)
+    ) {
+      // GE Providers with no own sections plot directly upon Registrar access and do not require mother college release notifications
+      return;
+    }
+
+    const usersRef = collection(db, 'users');
+    const snap = await getDocs(usersRef);
 
     const deans = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((d) => {
-        const dCol = String(d.college || d.department || '').trim().toUpperCase();
-        return dCol === sCodeNorm || dCol.includes(sCodeNorm) || sCodeNorm.includes(dCol);
+        const role = String(d.role || d.roleValue || '').toLowerCase();
+        if (!role.includes('dean')) return false;
+
+        const dCol = String(d.college || d.department || '').trim();
+        if (!dCol) return false;
+
+        return (
+          isCollegeMatch(dCol, sCodeNorm) ||
+          isCollegeMatch(sCodeNorm, dCol) ||
+          dCol.toUpperCase() === sCodeNorm ||
+          dCol.toUpperCase().includes(sCodeNorm) ||
+          sCodeNorm.includes(dCol.toUpperCase())
+        );
       });
 
     for (const dean of deans) {
       const isReady = statusType === 'ready';
       const title = isReady
-        ? `🏛️ Ready to Schedule: ${courseCode} (${component})`
-        : `🏛️ Service College Assignment: ${courseCode} (${component})`;
+        ? `Ready to Schedule: ${courseCode} (${component})`
+        : `Service College Assignment: ${courseCode} (${component})`;
 
       const message = isReady
         ? `${motherCollege || 'Mother College'} has completed internal scheduling and released ${courseCode} - ${courseTitle} (${component})${sectionName ? ` for Section ${sectionName}` : ''}. You may now assign faculty and room.`
@@ -189,7 +218,10 @@ export async function notifyServiceCollegeDeans({
 
       await sendNotification({
         userId: dean.id || dean.uid,
+        recipientId: dean.id || dean.uid,
+        recipientUid: dean.id || dean.uid,
         recipientEmail: dean.email,
+        userEmail: dean.email,
         title,
         message,
         link: '/course-scheduling',

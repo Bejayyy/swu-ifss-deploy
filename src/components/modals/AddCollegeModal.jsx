@@ -40,6 +40,8 @@ import {
   toTitleCase,
 } from '../../utils/excelTemplate';
 import CustomSelect from '../ui/CustomSelect';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -135,10 +137,12 @@ const createEmptyProgram = () => ({
 });
 
 export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [], editingCollege = null }) {
+  const { showConfirm, confirmState, notificationState } = useModal();
   const [form, setForm] = useState({
     code: editingCollege?.code || '',
     name: editingCollege?.name || '',
     managesGeneralEducationCourses: Boolean(editingCollege?.managesGeneralEducationCourses),
+    noOwnSections: Boolean(editingCollege?.noOwnSections ?? editingCollege?.doesNotHandleSections),
     programs: editingCollege?.programs?.length
       ? editingCollege.programs.map((p) => ({
           id: p.id || `prg_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
@@ -643,6 +647,19 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       }
     }
 
+    const isEditing = Boolean(editingCollege);
+    const confirmed = await showConfirm({
+      title: isEditing ? 'Save Changes to College?' : 'Add New College?',
+      message: isEditing
+        ? `Are you sure you want to save changes to "${name}" (${code}) and its programs/courses?`
+        : `Are you sure you want to create the college "${name}" (${code}) with ${form.programs.length} program(s)?`,
+      confirmText: isEditing ? 'Save Changes' : 'Add College',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
+
     setLoading(true);
     try {
       const cleanPrograms = form.programs.map((p) => ({
@@ -660,11 +677,14 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         (programCode) => !currentProgramCodes.has(programCode)
       );
 
+      const noOwnSections = Boolean(form.managesGeneralEducationCourses && form.noOwnSections);
+
       if (editingCollege) {
         await updateCollege(editingCollege.id, {
           code,
           name,
           managesGeneralEducationCourses: form.managesGeneralEducationCourses,
+          noOwnSections,
           programs: cleanPrograms,
         });
       } else {
@@ -672,6 +692,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           code,
           name,
           managesGeneralEducationCourses: form.managesGeneralEducationCourses,
+          noOwnSections,
           programs: cleanPrograms,
         });
       }
@@ -884,6 +905,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   onChange={(event) => setForm((prev) => ({
                     ...prev,
                     managesGeneralEducationCourses: event.target.checked,
+                    noOwnSections: event.target.checked ? prev.noOwnSections : false,
                   }))}
                   className="mt-0.5 h-4 w-4 accent-[#7A0808]"
                 />
@@ -894,6 +916,34 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   </span>
                 </span>
               </label>
+
+              {form.managesGeneralEducationCourses && (
+                <div className="ml-6 pl-3 border-l-2 border-[#7A0808]/30">
+                  <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+                    form.noOwnSections
+                      ? 'border-[#7A0808]/30 bg-red-50/80'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={form.noOwnSections}
+                      onChange={(event) => setForm((prev) => ({
+                        ...prev,
+                        noOwnSections: event.target.checked,
+                      }))}
+                      className="mt-0.5 h-4 w-4 accent-[#7A0808]"
+                    />
+                    <span>
+                      <span className="block text-xs font-black text-gray-800">
+                        Does not handle college sections (Minor subjects plotted directly across colleges)
+                      </span>
+                      <span className="mt-0.5 block text-[10px] font-medium leading-relaxed text-gray-500">
+                        Enable if this college (e.g. CAS) does not have its own degree sections (like BSIT1-A1) and only plots minor subjects across all other colleges upon Registrar access grant without waiting for Mother College release notifications.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Section 2: Programs Offered */}
@@ -1625,6 +1675,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       </div>
     </div>
     <ServiceArrangementGuideCloud position={serviceGuidePosition} />
+    {/* Global Confirmation & Notification Modal */}
+    <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </>
   );
 }

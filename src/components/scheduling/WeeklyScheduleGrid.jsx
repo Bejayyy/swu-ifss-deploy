@@ -46,6 +46,7 @@ export default function WeeklyScheduleGrid({
   addScheduleDisabledReason = 'Scheduling access is currently unavailable.',
   courseChecklist = [],
   showDayDates = true, // New prop to control date display
+  stickyHeaderOffset = 76,
   onAddBlock,
   onSlotSelect,
   onEditBlock,
@@ -431,12 +432,15 @@ export default function WeeklyScheduleGrid({
         </div>
       )}
 
-      <div className={`w-full overflow-x-auto rounded-xl border border-gray-300 ${drag?.active ? 'select-none' : ''}`}>
-        <div className="min-w-[760px] w-full">
+      <div className={`w-full rounded-xl border border-gray-300 ${drag?.active ? 'select-none' : ''}`}>
+        <div className="w-full">
           {/* Header Row */}
           <div
-            className="grid sticky top-0 bg-gray-50 z-10 border-b-2 border-gray-400 print:bg-[#7A0808] print:text-white print:border print:border-black"
-            style={{ gridTemplateColumns: '92px repeat(7, minmax(94px, 1fr))' }}
+            className="grid sticky bg-gray-50 z-10 border-b-2 border-gray-400 print:bg-[#7A0808] print:text-white print:border print:border-black"
+            style={{
+              gridTemplateColumns: '92px repeat(7, minmax(94px, 1fr))',
+              top: typeof stickyHeaderOffset === 'number' ? `${stickyHeaderOffset}px` : stickyHeaderOffset,
+            }}
           >
             <div className="py-2 text-[10px] font-black text-gray-700 uppercase text-center border-r border-gray-400 print:bg-[#7A0808] print:text-white print:font-extrabold print:text-xs print:border-r print:border-black flex items-center justify-center">
               TIME

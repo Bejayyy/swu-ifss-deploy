@@ -367,6 +367,148 @@ exports.sendStaffWelcomeEmail = functions.https.onCall(async (data, context) => 
   }
 });
 
+// Resend a fresh temporary password for an existing staff user account
+exports.resendStaffTempPassword = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const caller = await admin.firestore().doc(`users/${context.auth.uid}`).get();
+  if (!caller.exists || caller.data().status !== 'active') {
+    throw new functions.https.HttpsError('permission-denied', 'Active user required.');
+  }
+
+  // Only registrars and developers may send temp passwords
+  const callerRole = caller.data().role;
+  if (!['registrar', 'developer'].includes(callerRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Registrar or Developer role required.');
+  }
+
+  const { uid } = data;
+  if (!uid) {
+    throw new functions.https.HttpsError('invalid-argument', 'uid is required.');
+  }
+
+  // Fetch target user from Firestore
+  const targetDoc = await admin.firestore().doc(`users/${uid}`).get();
+  if (!targetDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'User not found.');
+  }
+
+  const targetData = targetDoc.data();
+  const email = (targetData.email || '').trim().toLowerCase();
+  const displayName = targetData.displayName || targetData.name || email.split('@')[0];
+  const role = targetData.role || 'user';
+
+  if (!email) {
+    throw new functions.https.HttpsError('failed-precondition', 'User has no email on record.');
+  }
+
+  // Generate a new temporary password
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let tempPassword = '';
+  for (let i = 0; i < 12; i++) {
+    tempPassword += chars[Math.floor(Math.random() * chars.length)];
+  }
+
+  // Look up the Firebase Auth user by email
+  let authUser;
+  try {
+    authUser = await admin.auth().getUserByEmail(email);
+  } catch (err) {
+    throw new functions.https.HttpsError('not-found', 'No Firebase Auth account found for this email.');
+  }
+
+  // Update the password in Firebase Auth
+  await admin.auth().updateUser(authUser.uid, { password: tempPassword });
+
+  // Mark account as needing a password reset
+  await admin.firestore().doc(`users/${uid}`).set(
+    {
+      mustSetPassword: true,
+      passwordEnabled: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const roleLabels = {
+    dean: 'Dean',
+    organization_head: 'Organization Head',
+    teacher: 'Teacher',
+    gsd: 'GSD Head',
+    student_life: 'Student Life',
+    registrar: 'Registrar',
+    vp_academics: 'VP Academics',
+    chancellor: 'Chancellor',
+    property_office: 'Property Office',
+  };
+  const roleLabel = roleLabels[role] || role;
+
+  // Send new credentials email
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@swu-ifss.com',
+    to: email,
+    subject: 'SWU IFSS — New Temporary Password',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #7A0808; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background-color: #7A0808; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .credentials { background-color: #fff; padding: 15px; border-left: 4px solid #7A0808; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>SWU IFSS — New Credentials</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${displayName},</h2>
+            <p>A new temporary password has been issued for your account on the SWU Integrated Facility Scheduling System (IFSS).</p>
+
+            <div class="credentials">
+              <h3>Your Updated Login Credentials:</h3>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Role:</strong> ${roleLabel}</p>
+              <p><strong>New Temporary Password:</strong> ${tempPassword}</p>
+              <p><em>You will be required to set a new password on your next login.</em></p>
+            </div>
+
+            <center>
+              <a href="${APP_URL}" class="button">Sign In Now</a>
+            </center>
+
+            <p>If you did not request this, please contact your registrar administrator immediately.</p>
+
+            <p>Best regards,<br>SWU IFSS Team</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await getTransporter().sendMail(mailOptions);
+  } catch (emailErr) {
+    console.error('Failed to send temp password email:', emailErr);
+    // Password was reset — still return success but note the email issue
+    return { success: true, emailSent: false, message: 'Password reset but email delivery failed.' };
+  }
+
+  return { success: true, emailSent: true, message: 'New temporary password sent successfully.' };
+});
+
 // ─── Forgot Password: Send OTP ─────────────────────────────────────────────
 exports.sendPasswordResetOTP = functions.https.onCall(async (data) => {
   const { email } = data;

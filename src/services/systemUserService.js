@@ -593,3 +593,17 @@ export async function deleteStaffUser(uid) {
   console.log('Successfully deleted staff user and completely cleaned all related collections:', uid);
 }
 
+/**
+ * Generates a new temporary password for an existing staff user account
+ * and emails it to them. Requires the caller to be a registrar or developer.
+ */
+export async function resendTempPassword(uid) {
+  if (!uid) throw new Error('User ID is required.');
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('../firebase/firebase');
+  const resendFn = httpsCallable(functions, 'resendStaffTempPassword');
+  const result = await resendFn({ uid });
+  return result.data;
+}
+
+

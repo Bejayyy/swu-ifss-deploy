@@ -514,6 +514,7 @@ export default function RoomWeeklyScheduleModal({
               showControls={false}
               showLegend={true}
               roomType={room.type || 'Classroom'}
+              stickyHeaderOffset={0}
             />
           )}
         </div>

@@ -21,6 +21,8 @@ import { addCourse, updateCourse } from '../../services/courseService';
 import { subscribeColleges } from '../../services/collegeService';
 import { notifyServiceCollegeDeans } from '../../services/notificationService';
 import CustomSelect from '../ui/CustomSelect';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -41,6 +43,7 @@ export default function AddCourseModal({
   defaultProgramCode = '',
   centralized = false,
 }) {
+  const { showConfirm, confirmState, notificationState } = useModal();
   const [activeTab, setActiveTab] = useState(centralized ? 'bulk' : 'individual'); // 'individual' | 'bulk'
   const [allColleges, setAllColleges] = useState([]);
 
@@ -330,6 +333,19 @@ export default function AddCourseModal({
       return;
     }
 
+    const isEditing = Boolean(editingCourse);
+    const confirmed = await showConfirm({
+      title: isEditing ? 'Save Changes to Course?' : 'Add Course?',
+      message: isEditing
+        ? `Are you sure you want to save changes to "${code} - ${title}"?`
+        : `Are you sure you want to add the course "${code} - ${title}" to ${collegeCode}?`,
+      confirmText: isEditing ? 'Save Changes' : 'Add Course',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
+
     setIsSubmitting(true);
     try {
       const reqSvc = Boolean(individualForm.lecServiceCollege || individualForm.labServiceCollege);
@@ -490,6 +506,16 @@ export default function AddCourseModal({
       setParseError('No valid rows to import.');
       return;
     }
+
+    const confirmed = await showConfirm({
+      title: 'Import Courses in Bulk?',
+      message: `Are you sure you want to import ${validRows.length} course(s) into ${collegeName || collegeCode}?`,
+      confirmText: 'Import Courses',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
 
     setIsBulkImporting(true);
     setImportedProgress(0);
@@ -1364,6 +1390,9 @@ export default function AddCourseModal({
           </div>
         )}
       </div>
+
+      {/* Global Confirmation & Notification Modal */}
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }

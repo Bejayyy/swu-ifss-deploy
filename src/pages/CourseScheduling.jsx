@@ -357,7 +357,7 @@ export default function CourseScheduling() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] items-start gap-5">
         <div className="space-y-3">
           {loading && <p className="text-sm font-semibold opacity-60" style={{ color: '#2B3235' }}>Loading…</p>}
           {!loading && !plotRequests.length && (

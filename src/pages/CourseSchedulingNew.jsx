@@ -33,10 +33,12 @@ import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessModal';
 import ResetDeanSchedulesModal from '../components/modals/ResetDeanSchedulesModal';
+import NotifyServiceCollegeModal from '../components/modals/NotifyServiceCollegeModal';
 import CustomSelect from '../components/ui/CustomSelect';
 import { subscribeColleges } from '../services/collegeService';
 import { subscribeToBuildings } from '../services/buildingService';
 import { subscribeCollegeCourses, subscribeServiceCollegeCourses } from '../services/courseService';
+import { subscribeServiceCourseReleases, isServiceCourseReleased } from '../services/serviceCourseReleaseService';
 import { notifyServiceCollegeDeans } from '../services/notificationService';
 import { submitScheduleApprovalRequest } from '../services/scheduleApprovalService';
 import { getCollegeProgramSections, generateSectionNames } from '../services/sectionService';
@@ -155,6 +157,11 @@ export default function CourseSchedulingNew() {
   const [expandedYearLevels, setExpandedYearLevels] = useState({});
   const [sectionSearchQuery, setSectionSearchQuery] = useState('');
 
+  const [scheduleTab, setScheduleTab] = useState('regular');
+  const [semester, setSemester] = useState('1');
+  const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
+  const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
+
   // Service College (Cross-College Teaching Assignments) State
   const [serviceCourses, setServiceCourses] = useState([]);
   const [serviceSectionsMap, setServiceSectionsMap] = useState({}); // { [courseId]: [ { name, programCode, yearNumber, motherCollege } ] }
@@ -162,6 +169,22 @@ export default function CourseSchedulingNew() {
   const [expandedServiceMothers, setExpandedServiceMothers] = useState({});
   const [activeServiceAssignment, setActiveServiceAssignment] = useState(null);
   const [curriculumCourses, setCurriculumCourses] = useState([]);
+  const [showNotifyServiceModal, setShowNotifyServiceModal] = useState(false);
+  const [serviceCourseReleases, setServiceCourseReleases] = useState([]);
+
+  // Subscribe to service course releases for the active school year and semester
+  useEffect(() => {
+    if (!activeSchoolYearId || !semester) {
+      setServiceCourseReleases([]);
+      return;
+    }
+    return subscribeServiceCourseReleases(
+      activeSchoolYearId,
+      semester,
+      (releases) => setServiceCourseReleases(releases || []),
+      (err) => console.warn('Error subscribing to service course releases:', err)
+    );
+  }, [activeSchoolYearId, semester]);
 
   useEffect(() => subscribeToBuildings(
     setBuildingList,
@@ -176,11 +199,6 @@ export default function CourseSchedulingNew() {
     }
     return null;
   }, [deanSections, selectedSection, activeServiceAssignment, serviceSectionsMap]);
-
-  const [scheduleTab, setScheduleTab] = useState('regular');
-  const [semester, setSemester] = useState('1');
-  const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
-  const [selectedExamPeriod, setSelectedExamPeriod] = useState('p1'); // 'p1', 'p2', 'p3', 'rbe'
 
   // Automatically determine student category (Freshmen for 1st Year, Upperclassmen for 2nd Year+)
   const selectedStudentCategory = useMemo(() => {
@@ -466,6 +484,13 @@ export default function CourseSchedulingNew() {
         }))
     ) || null;
   }, [colleges, activeCollegeCode, selectedDeanUid, selectedDean, isDean, profile]);
+
+  const isGENoSections = useMemo(() => {
+    return Boolean(
+      activeCollegeObj?.managesGeneralEducationCourses &&
+      (activeCollegeObj?.noOwnSections || activeCollegeObj?.doesNotHandleSections)
+    );
+  }, [activeCollegeObj]);
 
   // Programs offered by this dean's college
   const availablePrograms = useMemo(() => {
@@ -800,61 +825,80 @@ export default function CourseSchedulingNew() {
       .sort((a, b) => a.code.localeCompare(b.code));
   }, [selectedSection, scheduleTab, activeServiceAssignment, curriculumCourses, currentSectionObj, selectedProgram, semester, plotEntries]);
 
-  // Handle Mother College Dean notifying the Service College
-  const handleNotifyServiceCollege = async () => {
-    const serviced = (curriculumCourses || []).filter(
-      (c) => c.lecServiceCollege || c.labServiceCollege
-    );
+  // Check if current active service assignment has been released by Mother College
+  const isCurrentServiceAssignmentReleased = useMemo(() => {
+    if (!activeServiceAssignment) return true;
+    if (isGENoSections) return true;
+    return isServiceCourseReleased(serviceCourseReleases, {
+      courseId: activeServiceAssignment.course?.id,
+      courseCode: activeServiceAssignment.course?.code,
+      component: activeServiceAssignment.component,
+      sectionName: selectedSection,
+      serviceCollegeCode: profile?.college || profile?.department || selectedDean?.college,
+      motherCollegeCode: activeServiceAssignment.motherCollege,
+    });
+  }, [activeServiceAssignment, isGENoSections, serviceCourseReleases, selectedSection, profile, selectedDean]);
+
+  // Count unreleased service courses in the active curriculum for the selected section
+  const unreleasedServiceCourseCount = useMemo(() => {
+    if (!curriculumCourses || curriculumCourses.length === 0) return 0;
+    const isGENoSecCol = (code) => {
+      if (!code) return false;
+      const norm = String(code).trim().toUpperCase();
+      return colleges.some(
+        (col) =>
+          (String(col.code).trim().toUpperCase() === norm || String(col.name).trim().toUpperCase() === norm) &&
+          col.managesGeneralEducationCourses &&
+          (col.noOwnSections || col.doesNotHandleSections)
+      );
+    };
+
+    const serviceList = curriculumCourses.filter((c) => {
+      const lecCol = c.lecServiceCollege ? String(c.lecServiceCollege).trim().toUpperCase() : null;
+      const labCol = c.labServiceCollege ? String(c.labServiceCollege).trim().toUpperCase() : null;
+      if (!lecCol && !labCol) return false;
+      if ((!lecCol || isGENoSecCol(lecCol)) && (!labCol || isGENoSecCol(labCol))) return false;
+      return true;
+    });
+
+    return serviceList.filter((c) => !isServiceCourseReleased(serviceCourseReleases, {
+      courseId: c.id,
+      courseCode: c.code,
+      sectionName: selectedSection,
+      motherCollegeCode: activeCollegeObj?.code || activeCollegeCode,
+    })).length;
+  }, [curriculumCourses, colleges, serviceCourseReleases, selectedSection, activeCollegeObj, activeCollegeCode]);
+
+  // Handle Mother College Dean clicking Notify Service College - opens release modal
+  const handleNotifyServiceCollege = () => {
+    const isGENoSecCol = (code) => {
+      if (!code) return false;
+      const norm = String(code).trim().toUpperCase();
+      return colleges.some(
+        (col) =>
+          (String(col.code).trim().toUpperCase() === norm || String(col.name).trim().toUpperCase() === norm) &&
+          col.managesGeneralEducationCourses &&
+          (col.noOwnSections || col.doesNotHandleSections)
+      );
+    };
+
+    const serviced = (curriculumCourses || []).filter((c) => {
+      const lecCol = c.lecServiceCollege ? String(c.lecServiceCollege).trim().toUpperCase() : null;
+      const labCol = c.labServiceCollege ? String(c.labServiceCollege).trim().toUpperCase() : null;
+      if (!lecCol && !labCol) return false;
+      if ((!lecCol || isGENoSecCol(lecCol)) && (!labCol || isGENoSecCol(labCol))) return false;
+      return true;
+    });
+
     if (serviced.length === 0) {
       showNotification({
         type: 'info',
-        title: 'No Service College Assigned',
-        message: 'None of the courses in this curriculum are assigned to an external service college.',
+        title: 'No External Service College to Notify',
+        message: 'Courses assigned to General Education Providers (e.g. CAS) plot directly upon Registrar access and do not require manual release notifications.',
       });
       return;
     }
-
-    setIsLoading(true);
-    setLoadingMessage('Notifying service college dean(s)...');
-    try {
-      for (const c of serviced) {
-        if (c.lecServiceCollege) {
-          await notifyServiceCollegeDeans({
-            serviceCollegeCode: c.lecServiceCollege,
-            motherCollege: activeCollegeObj?.name || activeCollegeObj?.code || activeCollegeCode,
-            courseCode: c.code,
-            courseTitle: c.title,
-            component: 'Lecture',
-            sectionName: selectedSection || '',
-            statusType: 'ready',
-          });
-        }
-        if (c.labServiceCollege) {
-          await notifyServiceCollegeDeans({
-            serviceCollegeCode: c.labServiceCollege,
-            motherCollege: activeCollegeObj?.name || activeCollegeObj?.code || activeCollegeCode,
-            courseCode: c.code,
-            courseTitle: c.title,
-            component: 'Laboratory',
-            sectionName: selectedSection || '',
-            statusType: 'ready',
-          });
-        }
-      }
-      setIsLoading(false);
-      showNotification({
-        type: 'success',
-        title: 'Service College Notified!',
-        message: `Successfully notified the Service College Dean(s) to schedule faculty and rooms for ${selectedSection || 'this program'}.`,
-      });
-    } catch (err) {
-      setIsLoading(false);
-      showNotification({
-        type: 'error',
-        title: 'Notification Failed',
-        message: err.message || 'Failed to send notification to service college.',
-      });
-    }
+    setShowNotifyServiceModal(true);
   };
 
   const accessStatus = useMemo(() => {
@@ -866,14 +910,18 @@ export default function CourseSchedulingNew() {
     if (isRegistrar) return false; // Registrar can only view
     if (isDean) {
       if (activeServiceAssignment) {
-        return true; // Service College Dean is authorized to plot the service course
+        if (isGENoSections) {
+          return accessStatus.hasAccess;
+        }
+        // Service College Dean is authorized ONLY if Mother College Dean has released this course/section
+        return isCurrentServiceAssignmentReleased;
       }
       if (profile?.uid === selectedDeanUid) {
         return accessStatus.hasAccess; // Dean must have access
       }
     }
     return false;
-  }, [isRegistrar, isDean, profile, selectedDeanUid, accessStatus, activeServiceAssignment]);
+  }, [isRegistrar, isDean, profile, selectedDeanUid, accessStatus, activeServiceAssignment, isGENoSections, isCurrentServiceAssignmentReleased]);
 
   const semesterBounds = useMemo(
     () => getSemesterBounds(calendarData.config, semester),
@@ -1571,7 +1619,7 @@ export default function CourseSchedulingNew() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] items-start gap-5">
         {/* Left Sidebar */}
         <div className="space-y-4">
           {/* Registrar View: Colleges & Deans Selection Card */}
@@ -1638,8 +1686,23 @@ export default function CourseSchedulingNew() {
             </div>
           )}
 
+          {/* General Education Provider Notice for CAS-type colleges without own sections */}
+          {isGENoSections && (
+            <div className="bg-gradient-to-br from-amber-50 to-red-50 border border-amber-200/80 rounded-2xl p-4 shadow-2xs space-y-2">
+              <div className="flex items-center gap-2">
+                <Building2 size={16} className="text-[#7A0808]" />
+                <h3 className="font-black text-xs text-[#7A0808] uppercase tracking-wider">
+                  General Education Provider
+                </h3>
+              </div>
+              <p className="text-[11px] text-gray-700 font-medium leading-relaxed">
+                This college centrally plots minor subjects across all assigned college sections. Select a course and section from the <strong>Service College Requests</strong> below to view or plot schedules.
+              </p>
+            </div>
+          )}
+
           {/* Degree Programs Navigation Card */}
-          {availablePrograms.length > 0 && (
+          {!isGENoSections && availablePrograms.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
               <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
                 <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
@@ -1693,147 +1756,149 @@ export default function CourseSchedulingNew() {
             </div>
           )}
 
-          {/* Sections per Year Level Sidebar (Rendered for both Dean and Registrar) */}
-          <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
-            <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
-              <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
-                <Layers size={16} className="text-[#7A0808]" /> Sections per Year Level
-              </h3>
-              {selectedProgram !== 'ALL' && selectedProgram && (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 truncate max-w-[100px]" title={`Filtered by ${selectedProgram}`}>
-                  {selectedProgram}
-                </span>
-              )}
-              {selectedProgram === 'ALL' && !isDean && selectedDean && (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
-                  {selectedDean.college || selectedDean.department || selectedDean.name}
-                </span>
-              )}
-            </div>
-
-            {/* Search Bar Below Divider Line */}
-            <div className="mb-3">
-              <div className="relative">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={sectionSearchQuery}
-                  onChange={(e) => setSectionSearchQuery(e.target.value)}
-                  placeholder="Search sections..."
-                  className="w-full pl-9 pr-7 py-2 bg-gray-50/80 border border-gray-200 rounded-full text-xs font-semibold focus:bg-white focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] transition-all outline-none"
-                />
-                {sectionSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSectionSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
-                  >
-                    <X size={13} />
-                  </button>
+          {/* Sections per Year Level Sidebar (Rendered for both Dean and Registrar when college handles sections) */}
+          {!isGENoSections && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-2xs">
+              <div className="pb-2.5 mb-3 border-b border-gray-100 flex items-center justify-between gap-2">
+                <h3 className="font-bold text-sm flex items-center gap-1.5" style={{ color: '#2B3235' }}>
+                  <Layers size={16} className="text-[#7A0808]" /> Sections per Year Level
+                </h3>
+                {selectedProgram !== 'ALL' && selectedProgram && (
+                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 truncate max-w-[100px]" title={`Filtered by ${selectedProgram}`}>
+                    {selectedProgram}
+                  </span>
+                )}
+                {selectedProgram === 'ALL' && !isDean && selectedDean && (
+                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-red-50 text-[#7A0808] truncate max-w-[110px]" title={selectedDean.college || selectedDean.department || selectedDean.name}>
+                    {selectedDean.college || selectedDean.department || selectedDean.name}
+                  </span>
                 )}
               </div>
-            </div>
 
-            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-              {(() => {
-                const isSearching = Boolean(sectionSearchQuery.trim());
-                const searchTerm = sectionSearchQuery.toLowerCase().trim();
+              {/* Search Bar Below Divider Line */}
+              <div className="mb-3">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={sectionSearchQuery}
+                    onChange={(e) => setSectionSearchQuery(e.target.value)}
+                    placeholder="Search sections..."
+                    className="w-full pl-9 pr-7 py-2 bg-gray-50/80 border border-gray-200 rounded-full text-xs font-semibold focus:bg-white focus:border-[#7A0808] focus:ring-1 focus:ring-[#7A0808] transition-all outline-none"
+                  />
+                  {sectionSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSectionSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                return YEAR_LEVELS.map((yearLevel) => {
-                  const sectionsForYear = displayedDeanSections.filter((s) => {
-                    const matchesYear = s.yearLevel === yearLevel;
-                    if (!isSearching) return matchesYear;
-                    return matchesYear && s.name?.toLowerCase().includes(searchTerm);
-                  });
+              <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                {(() => {
+                  const isSearching = Boolean(sectionSearchQuery.trim());
+                  const searchTerm = sectionSearchQuery.toLowerCase().trim();
 
-                  // Auto-expand year level if searching and has matching sections
-                  const isOpen = isSearching ? sectionsForYear.length > 0 : Boolean(expandedYearLevels[yearLevel]);
+                  return YEAR_LEVELS.map((yearLevel) => {
+                    const sectionsForYear = displayedDeanSections.filter((s) => {
+                      const matchesYear = s.yearLevel === yearLevel;
+                      if (!isSearching) return matchesYear;
+                      return matchesYear && s.name?.toLowerCase().includes(searchTerm);
+                    });
 
-                  if (isSearching && sectionsForYear.length === 0) return null;
+                    // Auto-expand year level if searching and has matching sections
+                    const isOpen = isSearching ? sectionsForYear.length > 0 : Boolean(expandedYearLevels[yearLevel]);
 
-                  return (
-                    <div key={yearLevel} className="space-y-1">
-                      {/* Year Level Header Dropdown */}
-                      <button
-                        type="button"
-                        onClick={() => toggleYearLevel(yearLevel)}
-                        className="w-full px-3 py-2 bg-white hover:bg-gray-50/80 rounded-xl border border-gray-200 transition-all flex items-center justify-between shadow-2xs group"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
-                            {yearLevel}
-                          </span>
-                          <span className="text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
-                            {sectionsForYear.length}
-                          </span>
-                        </div>
-                        {isOpen ? (
-                          <ChevronDown size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
-                        ) : (
-                          <ChevronRight size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
-                        )}
-                      </button>
+                    if (isSearching && sectionsForYear.length === 0) return null;
 
-                      {/* Sections Sub-List */}
-                      {isOpen && (
-                        <div className="ml-2 mt-1 space-y-1 pl-2 border-l-2 border-red-100">
-                          {sectionsForYear.length === 0 ? (
-                            <p className="text-[10px] text-gray-400 italic px-2 py-1">
-                              No {yearLevel} sections
-                            </p>
+                    return (
+                      <div key={yearLevel} className="space-y-1">
+                        {/* Year Level Header Dropdown */}
+                        <button
+                          type="button"
+                          onClick={() => toggleYearLevel(yearLevel)}
+                          className="w-full px-3 py-2 bg-white hover:bg-gray-50/80 rounded-xl border border-gray-200 transition-all flex items-center justify-between shadow-2xs group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs" style={{ color: '#2B3235' }}>
+                              {yearLevel}
+                            </span>
+                            <span className="text-[10px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-[6px] bg-[#F59E0B] text-white shadow-2xs">
+                              {sectionsForYear.length}
+                            </span>
+                          </div>
+                          {isOpen ? (
+                            <ChevronDown size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
                           ) : (
-                            sectionsForYear.map((section) => {
-                              const isSelected = selectedSection === section.name;
+                            <ChevronRight size={14} className="text-gray-400 group-hover:text-gray-600 transition-transform" />
+                          )}
+                        </button>
 
-                              return (
-                                <div
-                                  key={section.name}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => {
-                                    setActiveServiceAssignment(null);
-                                    setSelectedSection(section.name);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
+                        {/* Sections Sub-List */}
+                        {isOpen && (
+                          <div className="ml-2 mt-1 space-y-1 pl-2 border-l-2 border-red-100">
+                            {sectionsForYear.length === 0 ? (
+                              <p className="text-[10px] text-gray-400 italic px-2 py-1">
+                                No {yearLevel} sections
+                              </p>
+                            ) : (
+                              sectionsForYear.map((section) => {
+                                const isSelected = selectedSection === section.name;
+
+                                return (
+                                  <div
+                                    key={section.name}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => {
                                       setActiveServiceAssignment(null);
                                       setSelectedSection(section.name);
-                                    }
-                                  }}
-                                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-[#7A0808] text-white shadow-2xs'
-                                      : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-100'
-                                  }`}
-                                >
-                                  <span className="truncate">{section.name}</span>
-                                  {canPlot && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteSection(section.name);
-                                      }}
-                                      className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                                        isSelected ? 'text-white hover:bg-red-700' : 'text-red-500 hover:bg-red-100'
-                                      }`}
-                                      title="Delete section"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        setActiveServiceAssignment(null);
+                                        setSelectedSection(section.name);
+                                      }
+                                    }}
+                                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative flex items-center justify-between group cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#7A0808] text-white shadow-2xs'
+                                        : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-100'
+                                    }`}
+                                  >
+                                    <span className="truncate">{section.name}</span>
+                                    {canPlot && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteSection(section.name);
+                                        }}
+                                        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                                          isSelected ? 'text-white hover:bg-red-700' : 'text-red-500 hover:bg-red-100'
+                                        }`}
+                                        title="Delete section"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Inter-College Service Requests Card (Cross-College Teaching) */}
           {groupedServiceCourses.length > 0 && (
@@ -1969,6 +2034,15 @@ export default function CourseSchedulingNew() {
                                         selectedSection === sec.name &&
                                         activeServiceAssignment?.course?.id === crs.id;
 
+                                      const isReleasedForSec = isGENoSections || isServiceCourseReleased(serviceCourseReleases, {
+                                        courseId: crs.id,
+                                        courseCode: crs.code,
+                                        component: compLabel,
+                                        sectionName: sec.name,
+                                        serviceCollegeCode: providerCode,
+                                        motherCollegeCode: motherCol,
+                                      });
+
                                       return (
                                         <button
                                           key={sec.name}
@@ -1990,13 +2064,29 @@ export default function CourseSchedulingNew() {
                                               motherDeanUid: motherDean?.uid || selectedDeanUid,
                                             });
                                           }}
-                                          className={`text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer truncate ${
+                                          className={`text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             isSecActive
                                               ? 'bg-indigo-700 text-white shadow-2xs'
                                               : 'bg-white hover:bg-indigo-100/70 text-indigo-950 border border-indigo-200/60'
                                           }`}
+                                          title={isReleasedForSec ? 'Released by Mother College (Ready to Plot)' : 'Locked: Waiting for Mother College release'}
                                         >
-                                          {sec.name}
+                                          <div className="flex items-center justify-between gap-1 min-w-0">
+                                            <span className="truncate">{sec.name}</span>
+                                            {isReleasedForSec ? (
+                                              <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded shrink-0 ${
+                                                isSecActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                                              }`}>
+                                                ✓ Ready
+                                              </span>
+                                            ) : (
+                                              <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded shrink-0 ${
+                                                isSecActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                              }`}>
+                                                🔒 Locked
+                                              </span>
+                                            )}
+                                          </div>
                                         </button>
                                       );
                                     })}
@@ -2028,38 +2118,76 @@ export default function CourseSchedulingNew() {
             <div className="space-y-4">
               {/* Service College Mode Active Alert Banner */}
               {activeServiceAssignment && (
-                <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-850 to-purple-900 text-white rounded-2xl shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-black text-white shrink-0">
-                      🏛️
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
-                          Service College Mode
-                        </span>
-                        <span className="text-xs font-bold text-indigo-200">
-                          {activeServiceAssignment.motherCollege} Program
-                        </span>
+                isCurrentServiceAssignmentReleased ? (
+                  <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-850 to-purple-900 text-white rounded-2xl shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-black text-white shrink-0">
+                        🏛️
                       </div>
-                      <h3 className="font-black text-sm text-white mt-0.5">
-                        Scheduling <span className="underline">{activeServiceAssignment.component}</span> for {activeServiceAssignment.course.code} - {activeServiceAssignment.course.title}
-                      </h3>
-                      <p className="text-xs text-indigo-200 mt-0.5">
-                        Section: <span className="font-bold text-white">{selectedSection}</span> · You can assign your college faculty & rooms for this component.
-                      </p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
+                            Service College Mode
+                          </span>
+                          <span className="text-xs font-bold text-indigo-200">
+                            {activeServiceAssignment.motherCollege} Program
+                          </span>
+                          <span className="text-[9px] font-black bg-emerald-400 text-emerald-950 px-2 py-0.5 rounded-full">
+                            ✓ Released by Mother College
+                          </span>
+                        </div>
+                        <h3 className="font-black text-sm text-white mt-0.5">
+                          Scheduling <span className="underline">{activeServiceAssignment.component}</span> for {activeServiceAssignment.course.code} - {activeServiceAssignment.course.title}
+                        </h3>
+                        <p className="text-xs text-indigo-200 mt-0.5">
+                          Section: <span className="font-bold text-white">{selectedSection}</span> · You can assign your college faculty & rooms for this component.
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveServiceAssignment(null)}
-                    className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-                  >
-                    <X size={14} />
-                    Exit Service Mode
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveServiceAssignment(null)}
+                      className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <X size={14} />
+                      Exit Service Mode
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gradient-to-r from-amber-950 via-amber-900 to-red-950 text-white rounded-2xl shadow-md border-2 border-amber-500/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-black text-xl shrink-0 border border-amber-400/40">
+                        🔒
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500/30 text-amber-200 px-2 py-0.5 rounded-full">
+                            Plotting Locked
+                          </span>
+                          <span className="text-xs font-bold text-amber-200">
+                            {activeServiceAssignment.motherCollege} Program
+                          </span>
+                        </div>
+                        <h3 className="font-black text-sm text-white mt-0.5">
+                          Waiting for Mother College Dean ({activeServiceAssignment.motherCollege}) to release <span className="underline">{activeServiceAssignment.component}</span> for {activeServiceAssignment.course.code}
+                        </h3>
+                        <p className="text-xs text-amber-200/90 mt-0.5">
+                          Section: <span className="font-bold text-white">{selectedSection}</span> · You will be notified and granted plotting access once the Mother College Dean completes their schedule and clicks &quot;Notify Service College&quot;.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveServiceAssignment(null)}
+                      className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <X size={14} />
+                      Exit Service Mode
+                    </button>
+                  </div>
+                )
               )}
 
               {/* Active Section Info Header - Regular Schedule */}
@@ -2088,15 +2216,22 @@ export default function CourseSchedulingNew() {
                         </span>
 
                         {/* Mother College Notify Service College button */}
-                        {!activeServiceAssignment && curriculumCourses.some((c) => c.lecServiceCollege || c.labServiceCollege) && (
+                        {!isGENoSections && !activeServiceAssignment && curriculumCourses.some((c) => c.lecServiceCollege || c.labServiceCollege) && (
                           <button
                             type="button"
                             onClick={handleNotifyServiceCollege}
-                            className="btn-outline-maroon flex items-center gap-1.5 text-xs font-bold py-1 px-3 rounded-xl bg-amber-50/70 hover:bg-amber-100/90 border-amber-300 text-amber-950 shadow-2xs transition-colors"
+                            className={`btn-outline-maroon flex items-center gap-1.5 text-xs font-bold py-1 px-3 rounded-xl shadow-2xs transition-all cursor-pointer ${
+                              unreleasedServiceCourseCount > 0
+                                ? 'bg-amber-100/90 hover:bg-amber-200/90 border-amber-400 text-amber-950 ring-2 ring-amber-300/50 animate-pulse'
+                                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-950'
+                            }`}
                             title="Notify assigned Service College Deans to schedule their components"
                           >
-                            <Bell size={13} className="text-amber-700" />
-                            <span>Notify Service College</span>
+                            <Bell size={13} className={unreleasedServiceCourseCount > 0 ? 'text-amber-700' : 'text-emerald-700'} />
+                            <span>
+                              Notify Service College
+                              {unreleasedServiceCourseCount > 0 ? ` (${unreleasedServiceCourseCount} pending)` : ' (All released)'}
+                            </span>
                           </button>
                         )}
                       </div>
@@ -2277,9 +2412,11 @@ export default function CourseSchedulingNew() {
                     No Section Selected
                   </h3>
                   <p className="text-xs text-gray-500 max-w-md mx-auto">
-                    {displayedDeanSections.length === 0
-                      ? 'There are currently no sections created for this academic program. Go to College Inventory to create and configure sections for this program.'
-                      : `Please select a section from the left sidebar to view or plot its ${scheduleTab === 'exam' ? 'exam' : 'weekly'} schedule.`}
+                    {isGENoSections
+                      ? 'Please select a mother college section from the Service College Requests on the left to view or plot your assigned minor subject schedule.'
+                      : displayedDeanSections.length === 0
+                        ? 'There are currently no sections created for this academic program. Go to College Inventory to create and configure sections for this program.'
+                        : `Please select a section from the left sidebar to view or plot its ${scheduleTab === 'exam' ? 'exam' : 'weekly'} schedule.`}
                   </p>
                 </div>
               ) : (
@@ -2312,8 +2449,10 @@ export default function CourseSchedulingNew() {
                   addScheduleDisabledReason={
                     !isDean
                       ? 'Only a dean can add course schedules.'
-                      : profile?.uid !== selectedDeanUid && !activeServiceAssignment
-                        ? 'You can only add schedules for sections assigned to your dean account.'
+                      : activeServiceAssignment && !isCurrentServiceAssignmentReleased
+                        ? `This service course has not been released by the Mother College Dean (${activeServiceAssignment.motherCollege}) yet. Waiting for notification.`
+                        : profile?.uid !== selectedDeanUid && !activeServiceAssignment
+                          ? 'You can only add schedules for sections assigned to your dean account.'
                       : accessStatus.message || 'Scheduling access has not been granted for this college yet.'
                   }
                   courseChecklist={selectedSectionCourseChecklist}
@@ -2334,7 +2473,13 @@ export default function CourseSchedulingNew() {
                   onEditBlock={openEditModal}
                   onDeleteBlock={handleDeleteEntry}
                   onBlockClick={(block) => setViewingBlock(block)}
-                  emptyMessage={canPlot ? 'Click or drag on the grid to add schedule blocks.' : 'No schedule blocks yet.'}
+                  emptyMessage={
+                    activeServiceAssignment && !isCurrentServiceAssignmentReleased
+                      ? `🔒 Waiting for Mother College Dean (${activeServiceAssignment.motherCollege}) to notify & release this course.`
+                      : canPlot
+                      ? 'Click or drag on the grid to add schedule blocks.'
+                      : 'No schedule blocks yet.'
+                  }
                 />
               )}
             </div>
@@ -2525,6 +2670,25 @@ export default function CourseSchedulingNew() {
           semester={semester}
           semesterLabel={selectedSemesterObj?.label}
           schoolYear={schoolYearLabel}
+        />
+      )}
+
+      {/* Notify Service College Modal */}
+      {showNotifyServiceModal && (
+        <NotifyServiceCollegeModal
+          isOpen={showNotifyServiceModal}
+          onClose={() => setShowNotifyServiceModal(false)}
+          motherCollegeCode={activeCollegeObj?.code || activeCollegeCode}
+          motherCollegeName={activeCollegeObj?.name || activeCollegeObj?.code || activeCollegeCode}
+          programCode={selectedProgramObj?.code || currentSectionObj?.programCode || selectedProgram}
+          sectionName={selectedSection}
+          schoolYearId={activeSchoolYearId}
+          schoolYearLabel={schoolYearLabel}
+          semester={semester}
+          curriculumCourses={curriculumCourses}
+          serviceCourseReleases={serviceCourseReleases}
+          colleges={colleges}
+          currentUser={profile}
         />
       )}
 

@@ -232,6 +232,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                 blocks={gridBlocks}
                 readOnly={true}
                 showLegend={true}
+                stickyHeaderOffset={0}
                 emptyMessage="No classes scheduled for this week"
               />
 

@@ -31,6 +31,8 @@ import { subscribeToBuildings } from '../../services/buildingService';
 import { grantFirstCollegeAccess } from '../../services/scheduleAccessService';
 import { analyzeCollegeRoomRequirements } from '../../services/scheduleAiService';
 import { useAuth } from '../../context/AuthContext';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 
 export default function GrantScheduleAccessModal({
   isOpen,
@@ -47,6 +49,7 @@ export default function GrantScheduleAccessModal({
   onSuccess,
 }) {
   const { profile } = useAuth();
+  const { showConfirm, confirmState, notificationState } = useModal();
 
   // Tab State
   const [activeTab, setActiveTab] = useState('dean'); // 'dean' | 'rooms'
@@ -437,6 +440,20 @@ export default function GrantScheduleAccessModal({
       setError('Invalid college selection.');
       return;
     }
+
+    const isEditing = initialCollegeCodes.length > 0;
+    const collegeNames = selectedColleges.map((c) => c.name || c.code).join(', ');
+    const confirmed = await showConfirm({
+      title: isEditing ? 'Update Schedule Access?' : 'Grant Schedule Access?',
+      message: isEditing
+        ? `Are you sure you want to update scheduling access for ${collegeNames} with ${selectedRooms.length} allocated room(s)?`
+        : `Are you sure you want to grant scheduling access to ${collegeNames} with ${selectedRooms.length} allocated room(s)?`,
+      confirmText: isEditing ? 'Update Access' : 'Grant Access',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
 
     setSubmitting(true);
     setError('');
@@ -1348,6 +1365,9 @@ export default function GrantScheduleAccessModal({
           </div>
         </form>
       </div>
+
+      {/* Global Confirmation & Notification Modal for Grant/Edit Access */}
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Filter, Plus, MoreVertical, Shield, UserCog, Users, Building2, KeyRound, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { Filter, Plus, Shield, UserCog, Users, KeyRound, Trash2, Search, ChevronLeft, ChevronRight, Eye, SendHorizonal } from 'lucide-react';
 import Layout from '../components/Layout';
 import ProgressStatCards from '../components/ProgressStatCards';
 import AddUserModal from '../components/modals/AddUserModal';
@@ -20,6 +20,7 @@ import {
   subscribeStaffUsers,
   updateStaffUser,
   deleteStaffUser,
+  resendTempPassword,
 } from '../services/systemUserService';
 import {
   deleteRoleDefinition,
@@ -306,6 +307,47 @@ export default function SystemAdministration() {
         type: 'error',
         title: 'Deletion failed',
         message: err.message || 'Failed to delete role.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendNewPassword = async (user) => {
+    const confirmed = await showConfirm({
+      title: 'Send new temporary password?',
+      message: `This will reset the password for ${user.name} (${user.email}) and send them a new temporary password via email. They will be required to change it on next login.`,
+      confirmText: 'Send new password',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    setLoadingMessage(`Sending new password to ${user.name}...`);
+
+    try {
+      const result = await resendTempPassword(user.uid);
+      if (result?.emailSent === false) {
+        showNotification({
+          type: 'warning',
+          title: 'Password reset, email failed',
+          message: 'The password was reset successfully but the email could not be delivered. Please check the mail configuration.',
+        });
+      } else {
+        showNotification({
+          type: 'success',
+          title: 'New password sent',
+          message: `A new temporary password has been emailed to ${user.email}.`,
+          autoCloseMs: 4000,
+        });
+      }
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Failed to send password',
+        message: error.message || 'Could not reset the password. Please try again.',
       });
     } finally {
       setIsLoading(false);
@@ -606,6 +648,14 @@ export default function SystemAdministration() {
                                 onClick={() => setViewUser(u)}
                               >
                                 <Eye size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Send New Temporary Password"
+                                onClick={() => sendNewPassword(u)}
+                              >
+                                <SendHorizonal size={16} />
                               </button>
                               <button
                                 type="button"

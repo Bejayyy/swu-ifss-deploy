@@ -559,6 +559,11 @@ service cloud.firestore {
       allow read: if isMainRole() && isPhinmaedEmail();
     }
 
+    // Service Course Releases - Deans can release service courses, all authenticated users can read
+    match /service_course_releases/{releaseId} {
+      allow read, write: if isSignedIn();
+    }
+
     // CollectionGroup rules for schedule entries - allows developer, teachers & staff to query schedules across all deans
     match /{path=**}/entries/{entryId} {
       allow read, delete: if isDeveloper() || (isMainRole() && isPhinmaedEmail());
