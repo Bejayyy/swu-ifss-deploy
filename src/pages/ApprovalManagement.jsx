@@ -13,6 +13,7 @@ import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS, isR
 
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
+import RoomWeeklyScheduleModal from '../components/modals/RoomWeeklyScheduleModal';
 import DatePicker from '../components/ui/DatePicker';
 import CustomSelect from '../components/ui/CustomSelect';
 import { formatCollegeName } from '../constants/colleges';
@@ -68,7 +69,9 @@ export default function ApprovalManagement() {
   const { requests, requestsLoading, buildingList = [] } = useApp();
   const { profile } = useAuth();
 
-  const handleNavigateToRoom = (req) => {
+  const [scheduleRoom, setScheduleRoom] = useState(null);
+
+  const handleViewRoomSchedule = (req) => {
     if (!req) return;
 
     const rawRoomId = req.roomId || req.designatedVenueId || req.venueId || req.roomCode;
@@ -109,22 +112,22 @@ export default function ApprovalManagement() {
       }
     }
 
-    if (targetRoom) {
-      navigate(`/room/${targetRoom.id || targetRoom.roomCode}`, {
-        state: {
-          room: targetRoom,
-          buildingId: targetBuildingId,
-          buildingName: targetBuildingName,
-          floor: targetFloor,
-          floorId: targetFloorId,
-        },
-      });
-    } else if (rawRoomId) {
-      navigate(`/room/${rawRoomId}`);
-    } else {
-      const isAcademic = req.type === 'academic' || req.reservationType === 'academic';
-      navigate(isAcademic ? `/academic-request/${req.id}` : `/request/${req.id}`);
-    }
+    setScheduleRoom(targetRoom ? {
+      ...targetRoom,
+      buildingId: targetBuildingId,
+      buildingName: targetBuildingName,
+      floor: targetFloor,
+      floorId: targetFloorId,
+    } : {
+      id: rawRoomId || req.roomCode,
+      docId: req.roomId || req.designatedVenueId || req.venueId || '',
+      roomCode: req.roomCode || venueClean || rawRoomId,
+      name: req.roomCode || venueClean || rawRoomId,
+      buildingId: targetBuildingId,
+      buildingName: targetBuildingName,
+      floor: targetFloor,
+      floorId: targetFloorId,
+    });
   };
   const {
     role,
@@ -574,7 +577,7 @@ export default function ApprovalManagement() {
                         {request.rejectionReason ? <div className="rounded-lg border border-[#D9A3A3] bg-[#FFF0F0] p-2 text-[#7A0808]"><b>Rejected:</b> {request.rejectionReason}</div> : (request.nonBudgetedReason || 'No reason provided')}
                       </td>
                       <td className="px-4 py-3"><div className="flex justify-end gap-1.5">
-                        <button type="button" onClick={() => handleNavigateToRoom(request)} className="rounded-lg border border-[#D9A3A3] px-2.5 py-1.5 text-[10px] font-black text-[#7A0808] hover:bg-[#FFF0F0]">View Schedule</button>
+                        <button type="button" onClick={() => handleViewRoomSchedule(request)} className="rounded-lg border border-[#D9A3A3] px-2.5 py-1.5 text-[10px] font-black text-[#7A0808] hover:bg-[#FFF0F0]">View Schedule</button>
                         {showingActionableScheduleRequests && request.status === 'pending' ? <><button type="button" onClick={() => setScheduleRejection({ request, reason: '', error: '' })} className="rounded-lg border border-[#D9A3A3] px-2.5 py-1.5 text-[10px] font-black text-[#7A0808] hover:bg-[#FFF0F0]">Reject</button><button type="button" onClick={() => handleScheduleDecision(request, 'approved')} className="rounded-lg bg-[#7A0808] px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-[#600000]">Approve</button></> : <><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${request.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : request.status === 'rejected' ? 'bg-[#FFF0F0] text-[#7A0808]' : 'bg-amber-100 text-amber-800'}`}>{String(request.status || 'pending').toUpperCase()}</span>{!showingActionableScheduleRequests && request.status === 'rejected' && <button type="button" onClick={() => navigate('/course-scheduling', { state: { rejectedScheduleRequest: request } })} className="rounded-lg bg-[#7A0808] px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-[#600000]">Plot Replacement</button>}</>}
                       </div></td>
                     </tr>
@@ -1025,6 +1028,13 @@ export default function ApprovalManagement() {
             </div>
           </div>
         </div>
+      )}
+      {scheduleRoom && (
+        <RoomWeeklyScheduleModal
+          isOpen={Boolean(scheduleRoom)}
+          room={scheduleRoom}
+          onClose={() => setScheduleRoom(null)}
+        />
       )}
       <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />

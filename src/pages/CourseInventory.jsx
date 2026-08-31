@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { BookOpen, Plus, Pencil, Trash2, Clock, Users, Building2, Upload, CheckSquare } from 'lucide-react';
+import { BookOpen, Plus, Pencil, Trash2, Clock, Users, Building2, Upload, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
@@ -30,6 +30,8 @@ export default function CourseInventory() {
   const [semesterFilter, setSemesterFilter] = useState('');
   const [sortOrder, setSortOrder] = useState('latest');
   const [selectedCourseIds, setSelectedCourseIds] = useState(new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [coursesPerPage, setCoursesPerPage] = useState(10);
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -67,15 +69,6 @@ export default function CourseInventory() {
     }
   }, [isDean, isRegistrar, myCollege]);
 
-  // Group courses by year level
-  const coursesByYear = useMemo(() => {
-    const groups = {};
-    YEAR_LEVELS.forEach(year => {
-      groups[year] = courses.filter(c => c.yearLevel === year);
-    });
-    return groups;
-  }, [courses]);
-
   const filteredCourses = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     const matches = courses.filter((course) =>
@@ -101,6 +94,27 @@ export default function CourseInventory() {
       return 0;
     });
   }, [courses, searchTerm, collegeFilter, programFilter, yearFilter, semesterFilter, sortOrder]);
+
+  const displayedCourses = isRegistrar ? filteredCourses : courses;
+  const totalPages = Math.max(1, Math.ceil(displayedCourses.length / coursesPerPage));
+  const pageStartIndex = (currentPage - 1) * coursesPerPage;
+  const paginatedCourses = displayedCourses.slice(pageStartIndex, pageStartIndex + coursesPerPage);
+
+  const coursesByYear = useMemo(() => {
+    const groups = {};
+    YEAR_LEVELS.forEach((year) => {
+      groups[year] = paginatedCourses.filter((course) => course.yearLevel === year);
+    });
+    return groups;
+  }, [paginatedCourses]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, collegeFilter, programFilter, yearFilter, semesterFilter, sortOrder, coursesPerPage]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   useEffect(() => {
     const existingIds = new Set(courses.map((course) => course.id));
@@ -216,6 +230,31 @@ export default function CourseInventory() {
     { label: 'Unassigned', value: courses.filter(c => !c.assignedTeacherUid).length, color: 'yellow' },
     { label: 'Year Levels', value: YEAR_LEVELS.length, color: 'purple' },
   ];
+
+  const paginationFooter = displayedCourses.length > 0 && (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-4 py-3">
+      <p className="text-xs font-semibold text-gray-500">
+        Showing {pageStartIndex + 1}–{Math.min(pageStartIndex + coursesPerPage, displayedCourses.length)} of {displayedCourses.length} course assignment(s)
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="courses-per-page" className="text-xs font-bold text-gray-600">Rows</label>
+        <select
+          id="courses-per-page"
+          value={coursesPerPage}
+          onChange={(event) => setCoursesPerPage(Number(event.target.value))}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-700 outline-none focus:border-[#7A0808]"
+        >
+          <option value={5}>5</option>
+          <option value={10}>10</option>
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+        </select>
+        <button type="button" aria-label="Previous course page" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1} className="rounded-lg border border-gray-200 bg-white p-1.5 text-[#7A0808] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={15} /></button>
+        <span className="min-w-[72px] text-center text-xs font-black text-[#7A0808]">Page {currentPage} of {totalPages}</span>
+        <button type="button" aria-label="Next course page" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages} className="rounded-lg border border-gray-200 bg-white p-1.5 text-[#7A0808] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={15} /></button>
+      </div>
+    </div>
+  );
 
   return (
     <Layout 
@@ -333,7 +372,7 @@ export default function CourseInventory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredCourses.map((course) => {
+                {paginatedCourses.map((course) => {
                   const lecUnits = Number(course.lecUnits || 0);
                   const labUnits = Number(course.labUnits || 0);
                   return (
@@ -360,7 +399,7 @@ export default function CourseInventory() {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-gray-100 px-4 py-3 text-xs font-semibold text-gray-500">Showing {filteredCourses.length} of {courses.length} course assignment(s)</div>
+          {paginationFooter}
         </div>
       ) : (
         <div className="space-y-6">
@@ -508,6 +547,9 @@ export default function CourseInventory() {
               </div>
             );
           })}
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            {paginationFooter}
+          </div>
         </div>
       )}
 
