@@ -1377,22 +1377,10 @@ export default function CourseSchedulingNew() {
       selectedDean?.department ||
       (isDean ? (profile?.college || profile?.department) : '');
     const grantedRooms = getAssignedRoomsForCollege(scheduleAccess, code);
-    const targetDeanUid = isDean ? profile?.uid : selectedDeanUid;
-    const targetDeanName = String(selectedDean?.name || profile?.displayName || profile?.name || '').trim().toLowerCase();
-    const managedRooms = (buildingList || []).flatMap((building) =>
-      (building.floorData || []).flatMap((floor) =>
-        (floor.rooms || [])
-          .filter((room) => {
-            const managerUid = room.managedBy || floor.managedBy || '';
-            const managerName = String(room.managedByName || floor.managedByName || '').trim().toLowerCase();
-            return (Boolean(targetDeanUid) && String(managerUid) === String(targetDeanUid))
-              || (Boolean(targetDeanName) && managerName === targetDeanName);
-          })
-          .map((room) => room.roomCode || room.name || room.id)
-      )
-    );
-    return Array.from(new Set([...grantedRooms, ...managedRooms].filter(Boolean)));
-  }, [scheduleAccess, activeCollegeObj, selectedDean, selectedDeanUid, isDean, profile, buildingList]);
+    // Managed rooms are detected separately by the room picker. Keeping them
+    // out of this list prevents them from being mislabeled as Registrar-assigned.
+    return Array.from(new Set(grantedRooms.filter(Boolean)));
+  }, [scheduleAccess, activeCollegeObj, selectedDean, isDean, profile]);
 
   const subtitle = isRegistrar
     ? 'View course schedules plotted by college deans'
@@ -1798,7 +1786,7 @@ export default function CourseSchedulingNew() {
                 </div>
               </div>
 
-              <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+              <div className="space-y-2.5">
                 {(() => {
                   const isSearching = Boolean(sectionSearchQuery.trim());
                   const searchTerm = sectionSearchQuery.toLowerCase().trim();

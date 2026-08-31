@@ -677,6 +677,34 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [availableTeachers, teacherSearch]);
 
+  const managedRoomCountsByBuilding = useMemo(() => {
+    const counts = new Map();
+    const currentDeanName = String(deanName || '').trim().toLowerCase();
+    const isManagedByCurrentDean = (room, floor = {}) => {
+      const managerUid = room?.managedBy || floor?.managedBy || '';
+      const managerName = String(room?.managedByName || floor?.managedByName || '').trim().toLowerCase();
+      return (Boolean(deanUid) && String(managerUid) === String(deanUid))
+        || (Boolean(currentDeanName) && managerName === currentDeanName);
+    };
+
+    buildings.forEach((building) => {
+      const floorRooms = (building.floorData || []).flatMap((floor) =>
+        (floor.rooms || []).filter((room) =>
+          matchesRoomType(room.type || room.roomType, selectedType) && isManagedByCurrentDean(room, floor)
+        )
+      );
+      const directRooms = (building.rooms || []).filter((room) =>
+        matchesRoomType(room.type || room.roomType, selectedType) && isManagedByCurrentDean(room)
+      );
+      counts.set(building.id, new Set([...floorRooms, ...directRooms].map((room) => room.roomCode || room.name || room.id)).size);
+    });
+    return counts;
+  }, [buildings, selectedType, deanUid, deanName]);
+
+  const managedRoomCount = useMemo(() => (
+    [...managedRoomCountsByBuilding.values()].reduce((total, count) => total + count, 0)
+  ), [managedRoomCountsByBuilding]);
+
   // Filtered buildings by search query AND selected class type AND assignedRooms
   const displayedBuildings = useMemo(() => {
     let filtered = buildings;
@@ -3217,6 +3245,11 @@ export default function AddPlotEntryModalEnhanced({
                             <CheckCircle2 size={12} /> {assignedRooms.length} Registrar-Assigned Rooms
                           </span>
                         )}
+                        {managedRoomCount > 0 && (
+                          <span className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-extrabold text-blue-800">
+                            <DoorOpen size={12} /> {managedRoomCount} Managed by You — Unrestricted Access
+                          </span>
+                        )}
                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#D9A3A3] bg-[#FFF5F5] px-2.5 py-1 text-[10px] font-black text-[#7A0808] transition-colors hover:bg-[#FDE8E8]">
                           <input
                             type="checkbox"
@@ -3311,6 +3344,11 @@ export default function AddPlotEntryModalEnhanced({
                           <p className="text-xs font-semibold text-gray-500">
                             Code: <span className="font-bold text-gray-700">{building.code}</span>
                           </p>
+                          {(managedRoomCountsByBuilding.get(building.id) || 0) > 0 && (
+                            <span className="mt-2 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-800">
+                              <DoorOpen size={11} /> {managedRoomCountsByBuilding.get(building.id)} room(s) managed by you — no approval required
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -3337,6 +3375,11 @@ export default function AddPlotEntryModalEnhanced({
                         <Building2 size={16} className="text-[#7A0808]" />
                         <span>{selectedBuilding.name} ({selectedBuilding.code})</span>
                       </h4>
+                      {(managedRoomCountsByBuilding.get(selectedBuilding.id) || 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-800">
+                          <DoorOpen size={12} /> Managed by you — unrestricted access, no room approval required
+                        </span>
+                      )}
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#D9A3A3] bg-[#FFF5F5] px-2.5 py-1 text-[10px] font-black text-[#7A0808] transition-colors hover:bg-[#FDE8E8]">
                         <input
                           type="checkbox"
@@ -3495,14 +3538,14 @@ export default function AddPlotEntryModalEnhanced({
                                               <p className="text-[10px] text-gray-500">{room.type || room.roomType || 'Classroom'}</p>
                                             </div>
                                             <div className="flex items-center gap-1.5">
-                                              {showAllAvailableRooms && isRegistrarAssigned && (
+                                              {isRegistrarAssigned && (
                                                 <span className="rounded bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808] border border-[#D9A3A3]">
                                                   Assigned
                                                 </span>
                                               )}
-                                              {showAllAvailableRooms && !isRegistrarAssigned && isManagedByCurrentDean && (
-                                                <span className="rounded bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808] border border-[#D9A3A3]">
-                                                  Managed by you
+                                              {isManagedByCurrentDean && (
+                                                <span className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-black text-blue-800">
+                                                  Managed by you — unrestricted
                                                 </span>
                                               )}
                                               <span className={`text-[9px] font-black px-2 py-0.5 rounded ${roomStatus.hasConflict ? 'bg-red-600 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
