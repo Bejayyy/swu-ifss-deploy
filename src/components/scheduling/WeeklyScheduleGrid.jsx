@@ -215,10 +215,12 @@ export default function WeeklyScheduleGrid({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 print:p-0 print:border-none print:shadow-none print:bg-transparent print-schedule-container">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3 print:hidden">
+      <div className="mb-4 space-y-3 print:hidden">
         <div>
           <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>{title}</h3>
-          <p className="text-xs font-bold text-[#7A0808] mt-2 flex items-center gap-1.5 print:hidden">
+        </div>
+        <div className="grid w-full items-start gap-x-4 gap-y-3 print:hidden md:grid-cols-[auto_minmax(0,1fr)]">
+          <p className="flex items-center gap-1.5 text-xs font-bold text-[#7A0808] md:col-start-1 md:row-start-1 md:self-center">
             <Calendar size={13} className="text-[#7A0808]" />
             <span>
               {(() => {
@@ -239,10 +241,8 @@ export default function WeeklyScheduleGrid({
               })()}
             </span>
           </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap print:hidden">
           {showControls && (
-            <div className="inline-flex w-fit items-center p-1 gap-1 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="inline-flex w-fit max-w-full items-center gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-2xs md:col-start-1 md:row-start-2">
               <button
                 type="button"
                 onClick={() => onScheduleTabChange?.('regular')}
@@ -268,44 +268,15 @@ export default function WeeklyScheduleGrid({
             </div>
           )}
 
-          {onAddBlock || (scheduleTab === 'regular' && courseChecklist.length > 0) ? (
-            <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap">
-          {onAddBlock && (
-            <div className="group/add-schedule relative shrink-0">
-              <button
-                type="button"
-                className={`whitespace-nowrap text-xs gap-1.5 py-2 px-4 shadow-sm font-bold flex items-center ${
-                  canPlot ? 'btn-maroon cursor-pointer' : 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400'
-                }`}
-                onClick={onAddBlock}
-                disabled={!canPlot}
-                aria-describedby={!canPlot ? 'add-schedule-disabled-reason' : undefined}
-              >
-                <Plus size={14} /> Add schedule
-              </button>
-              {!canPlot && (
-                <div
-                  id="add-schedule-disabled-reason"
-                  role="tooltip"
-                  className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-64 -translate-x-1/2 rounded-xl border border-red-200 bg-white px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-gray-700 shadow-xl group-hover/add-schedule:block group-focus-within/add-schedule:block"
-                >
-                  <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-red-200 bg-white" />
-                  <span className="relative block font-black text-[#7A0808]">Add Schedule is unavailable</span>
-                  <span className="relative mt-0.5 block">{addScheduleDisabledReason}</span>
-                </div>
-              )}
-            </div>
-          )}
-
           {scheduleTab === 'regular' && courseChecklist.length > 0 && (
-            <div className="w-[460px] max-w-full shrink px-1 py-1">
+            <div className="min-w-0 w-full rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2 md:col-start-2 md:row-span-2 md:row-start-1">
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-gray-700">Course checklist</span>
                 <span className="text-[9px] font-bold text-gray-500">
                   {courseChecklist.filter((course) => course.status === 'complete').length}/{courseChecklist.length} plotted
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-1">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
                 {courseChecklist.map((course, courseIndex) => (
                   <div
                     key={`${course.code}-${courseIndex}`}
@@ -325,8 +296,6 @@ export default function WeeklyScheduleGrid({
               </div>
             </div>
           )}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -371,6 +340,32 @@ export default function WeeklyScheduleGrid({
                 Next Week <ChevronRight size={12} />
               </button>
             </>
+          )}
+          {onAddBlock && (
+            <div className="group/add-schedule relative ml-auto shrink-0">
+              <button
+                type="button"
+                className={`whitespace-nowrap text-xs gap-1.5 py-2 px-4 shadow-sm font-bold flex items-center ${
+                  canPlot ? 'btn-maroon cursor-pointer' : 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400'
+                }`}
+                onClick={onAddBlock}
+                disabled={!canPlot}
+                aria-describedby={!canPlot ? 'add-schedule-disabled-reason' : undefined}
+              >
+                <Plus size={14} /> Add schedule
+              </button>
+              {!canPlot && (
+                <div
+                  id="add-schedule-disabled-reason"
+                  role="tooltip"
+                  className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-64 rounded-xl border border-red-200 bg-white px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-gray-700 shadow-xl group-hover/add-schedule:block group-focus-within/add-schedule:block"
+                >
+                  <span className="absolute -top-1.5 right-6 h-3 w-3 rotate-45 border-l border-t border-red-200 bg-white" />
+                  <span className="relative block font-black text-[#7A0808]">Add Schedule is unavailable</span>
+                  <span className="relative mt-0.5 block">{addScheduleDisabledReason}</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

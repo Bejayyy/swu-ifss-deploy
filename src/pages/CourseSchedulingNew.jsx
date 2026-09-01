@@ -40,7 +40,10 @@ import { subscribeToBuildings } from '../services/buildingService';
 import { subscribeCollegeCourses, subscribeServiceCollegeCourses } from '../services/courseService';
 import { subscribeServiceCourseReleases, isServiceCourseReleased } from '../services/serviceCourseReleaseService';
 import { notifyServiceCollegeDeans } from '../services/notificationService';
-import { submitScheduleApprovalRequest } from '../services/scheduleApprovalService';
+import {
+  deleteScheduleApprovalRequestsForReset,
+  submitScheduleApprovalRequest,
+} from '../services/scheduleApprovalService';
 import { getCollegeProgramSections, generateSectionNames } from '../services/sectionService';
 import { addDays } from '../constants/scheduleGrid';
 import {
@@ -1086,12 +1089,21 @@ export default function CourseSchedulingNew() {
       lockTimes: false,
       initial: {
         id: block.id,
+        day: validDayIdx,
         courseCode: block.courseCode || block.course,
         type: block.type,
-        startTime: block.startTime,
-        endTime: block.endTime,
+        startTime: block.startTime || (
+          (block.startHour ?? block.start) != null
+            ? hourToTimeInput(block.startHour ?? block.start)
+            : ''
+        ),
+        endTime: block.endTime || (
+          (block.endHour ?? block.end) != null
+            ? hourToTimeInput(block.endHour ?? block.end)
+            : ''
+        ),
         roomCode: block.roomCode || block.room,
-        instructor: block.instructor,
+        instructor: block.instructorFullName || block.instructor,
         modality: block.modality || 'in_person',
         rotationCycle: block.rotationCycle || 'all',
         isCombinedSection: block.isCombinedSection || false,
@@ -1246,6 +1258,7 @@ export default function CourseSchedulingNew() {
           approverRole: isOtherDeanManagedRoom ? 'dean' : 'registrar',
           schoolYearId: activeSchoolYearId || null,
           semester: Number(semester),
+          scheduleMode: scheduleTab,
         });
       }
 
@@ -1890,22 +1903,18 @@ export default function CourseSchedulingNew() {
 
           {/* Inter-College Service Requests Card (Cross-College Teaching) */}
           {groupedServiceCourses.length > 0 && (
-            <div className="bg-gradient-to-br from-indigo-50/90 to-purple-50/90 border-2 border-indigo-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
+            <div className="space-y-2 rounded-2xl border border-[#E7BABA] bg-white p-3 shadow-2xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Building2 size={16} className="text-indigo-800" />
-                  <h4 className="font-black text-xs text-indigo-950 uppercase tracking-wider">
+                  <Building2 size={16} className="text-[#7A0808]" />
+                  <h4 className="font-black text-xs text-[#7A0808] uppercase tracking-wider">
                     Service College Requests
                   </h4>
                 </div>
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-900">
+                <span className="rounded-full bg-[#FFF0F0] px-2 py-0.5 text-[10px] font-black text-[#7A0808]">
                   {groupedServiceCourses.length} Course{groupedServiceCourses.length > 1 ? 's' : ''}
                 </span>
               </div>
-              <p className="text-[11px] text-indigo-900/80 font-medium leading-relaxed">
-                Courses from other colleges assigned to your faculty to teach:
-              </p>
-
               <div className="hidden">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#7A0808]">
                   Colleges requiring your schedules ({servicedMotherColleges.length})
@@ -1923,19 +1932,19 @@ export default function CourseSchedulingNew() {
                 ))}
               </div>
 
-              <div className="space-y-3 pt-1">
+              <div className="space-y-2">
                 {servicedMotherColleges.map((college) => (
-                  <section key={college.code} className="rounded-xl border border-indigo-200 bg-white/80 p-2.5">
-                    <div className="mb-2 flex items-center justify-between gap-2 border-b border-indigo-100 pb-2">
+                  <section key={college.code} className="rounded-xl border border-gray-200 bg-gray-50/50 p-2">
+                    <div className="mb-2 flex items-center justify-between gap-2 border-b border-[#F0DADA] pb-2">
                       <div className="min-w-0">
-                        <p className="truncate text-[11px] font-black text-indigo-950">{college.name}</p>
+                        <p className="truncate text-[11px] font-black text-[#7A0808]">{college.name}</p>
                         <p className="text-[9px] font-bold text-gray-500">{college.code}</p>
                       </div>
-                      <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-black text-indigo-800">
+                      <span className="shrink-0 rounded-full bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808]">
                         {college.courseCount} course{college.courseCount !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                 {[...YEAR_LEVELS, 'Unspecified Year'].map((yearLevel) => {
                   const hasCoursesForYear = serviceCourses.some(
                     (course) =>
@@ -1944,8 +1953,8 @@ export default function CourseSchedulingNew() {
                   );
                   if (!hasCoursesForYear) return null;
                   return (
-                    <div key={`${college.code}:${yearLevel}`} className="rounded-lg bg-indigo-50/60 p-2">
-                      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-900">
+                    <div key={`${college.code}:${yearLevel}`}>
+                      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#7A0808]">
                         <GraduationCap size={12} />
                         {yearLevel}
                       </div>
@@ -1960,7 +1969,7 @@ export default function CourseSchedulingNew() {
                   const expansionKey = `${college.code}:${grp.courseCode}`;
                   const isExp = Boolean(expandedServiceCourses[expansionKey]);
                   return (
-                    <div key={expansionKey} className="bg-white rounded-xl border border-indigo-100 overflow-hidden shadow-2xs">
+                    <div key={expansionKey} className="overflow-hidden rounded-xl border border-[#F0DADA] bg-white shadow-2xs">
                       {/* Header: Course Code & Title */}
                       <button
                         type="button"
@@ -1970,18 +1979,18 @@ export default function CourseSchedulingNew() {
                             [expansionKey]: !prev[expansionKey],
                           }))
                         }
-                        className="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-indigo-50/50 transition-colors cursor-pointer"
+                        className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left transition-colors hover:bg-[#FFF9F9]"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <BookOpen size={13} className="text-indigo-700 shrink-0" />
+                          <BookOpen size={13} className="shrink-0 text-[#7A0808]" />
                           <div className="truncate">
-                            <span className="font-extrabold text-xs text-indigo-950 block">{grp.courseCode}</span>
+                            <span className="block text-xs font-extrabold text-[#7A0808]">{grp.courseCode}</span>
                             <span className="text-[10px] text-gray-500 font-medium truncate block">{grp.courseTitle}</span>
                           </div>
                         </div>
                         <ChevronRight
                           size={14}
-                          className={`text-indigo-600 transition-transform duration-200 shrink-0 ${
+                          className={`shrink-0 text-[#7A0808] transition-transform duration-200 ${
                             isExp ? 'rotate-90' : ''
                           }`}
                         />
@@ -1989,7 +1998,7 @@ export default function CourseSchedulingNew() {
 
                       {/* Child: Mother College & Sections */}
                       {isExp && (
-                        <div className="px-3 pb-3 pt-1 border-t border-indigo-50 space-y-2 bg-indigo-50/30">
+                        <div className="space-y-2 border-t border-[#F0DADA] bg-[#FFF9F9] px-3 pb-3 pt-1">
                           {coursesForCollege.map((crs) => {
                             const motherCol = crs.collegeCode || 'Mother College';
                             const courseYearNumber = YEAR_LEVELS.indexOf(getCourseYearLevel(crs)) + 1;
@@ -2003,12 +2012,12 @@ export default function CourseSchedulingNew() {
                             const compLabel = handlesLecture && handlesLaboratory ? 'Lecture & Laboratory' : (handlesLecture ? 'Lecture' : 'Laboratory');
 
                             return (
-                              <div key={crs.id} className="space-y-1.5 pl-1 border-l-2 border-indigo-300">
+                              <div key={crs.id} className="space-y-1.5 border-l-2 border-[#D9A3A3] pl-1">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black text-indigo-950">
+                                  <span className="text-[11px] font-black text-[#7A0808]">
                                     🏛️ {motherCol} ({crs.programCode})
                                   </span>
-                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                                  <span className="rounded bg-[#FFF0F0] px-1.5 py-0.5 text-[9px] font-extrabold text-[#7A0808]">
                                     {compLabel}
                                   </span>
                                 </div>
@@ -2016,7 +2025,7 @@ export default function CourseSchedulingNew() {
                                 {secList.length === 0 ? (
                                   <p className="text-[10px] text-gray-400 italic">No sections created yet</p>
                                 ) : (
-                                  <div className="grid grid-cols-2 gap-1.5">
+                                  <div className="grid grid-cols-1 gap-1.5">
                                     {secList.map((sec) => {
                                       const isSecActive =
                                         selectedSection === sec.name &&
@@ -2052,24 +2061,24 @@ export default function CourseSchedulingNew() {
                                               motherDeanUid: motherDean?.uid || selectedDeanUid,
                                             });
                                           }}
-                                          className={`text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                          className={`min-w-0 cursor-pointer rounded-lg px-2.5 py-2 text-left text-xs font-bold transition-all ${
                                             isSecActive
-                                              ? 'bg-indigo-700 text-white shadow-2xs'
-                                              : 'bg-white hover:bg-indigo-100/70 text-indigo-950 border border-indigo-200/60'
+                                              ? 'bg-[#7A0808] text-white shadow-2xs'
+                                              : 'border border-[#E7BABA] bg-white text-[#7A0808] hover:bg-[#FFF0F0]'
                                           }`}
                                           title={isReleasedForSec ? 'Released by Mother College (Ready to Plot)' : 'Locked: Waiting for Mother College release'}
                                         >
-                                          <div className="flex items-center justify-between gap-1 min-w-0">
-                                            <span className="truncate">{sec.name}</span>
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            <span className="min-w-0 flex-1 break-words leading-tight">{sec.name}</span>
                                             {isReleasedForSec ? (
-                                              <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded shrink-0 ${
-                                                isSecActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                                              <span aria-label="Ready to plot" className={`h-2.5 w-2.5 shrink-0 rounded-full text-[0px] ${
+                                                isSecActive ? 'bg-emerald-300' : 'bg-emerald-500'
                                               }`}>
                                                 ✓ Ready
                                               </span>
                                             ) : (
-                                              <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded shrink-0 ${
-                                                isSecActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                              <span aria-label="Waiting for release" className={`h-2.5 w-2.5 shrink-0 rounded-full text-[0px] ${
+                                                isSecActive ? 'bg-amber-300' : 'bg-amber-500'
                                               }`}>
                                                 🔒 Locked
                                               </span>
@@ -2107,7 +2116,7 @@ export default function CourseSchedulingNew() {
               {/* Service College Mode Active Alert Banner */}
               {activeServiceAssignment && (
                 isCurrentServiceAssignmentReleased ? (
-                  <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-850 to-purple-900 text-white rounded-2xl shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex animate-in flex-col items-start justify-between gap-3 rounded-2xl bg-gradient-to-r from-[#600000] via-[#7A0808] to-[#9B111E] p-4 text-white shadow-md fade-in sm:flex-row sm:items-center">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-black text-white shrink-0">
                         🏛️
@@ -2120,7 +2129,7 @@ export default function CourseSchedulingNew() {
                           <span className="text-xs font-bold text-indigo-200">
                             {activeServiceAssignment.motherCollege} Program
                           </span>
-                          <span className="text-[9px] font-black bg-emerald-400 text-emerald-950 px-2 py-0.5 rounded-full">
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-[#7A0808]">
                             ✓ Released by Mother College
                           </span>
                         </div>
@@ -2181,15 +2190,15 @@ export default function CourseSchedulingNew() {
               {/* Active Section Info Header - Regular Schedule */}
               {scheduleTab === 'regular' && (
                 <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 space-y-3 shadow-2xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-black text-base" style={{ color: '#2B3235' }}>
+                        <h3 className="basis-full font-black text-base" style={{ color: '#2B3235' }}>
                           {selectedDean.department || selectedDean.college}
                         </h3>
                         {(selectedProgramObj || currentSectionObj?.programCode) && (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
-                            <GraduationCap size={13} className="text-amber-700" />
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-bold leading-normal text-[#7A0808] shadow-2xs">
+                            <GraduationCap size={13} className="text-[#7A0808]" />
                             Program: <span className="font-extrabold">{selectedProgramObj?.code || currentSectionObj?.programCode}</span>
                             {selectedProgramObj?.name ? ` · ${selectedProgramObj.name}` : ''}
                           </span>
@@ -2199,7 +2208,8 @@ export default function CourseSchedulingNew() {
                             Section: {selectedSection}
                           </span>
                         )}
-                        <span className="inline-flex items-center justify-center text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-1.5 rounded-full shadow-2xs leading-normal">
+                        <span aria-hidden="true" className="h-0 basis-full" />
+                        <span className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-bold leading-normal text-[#7A0808] shadow-2xs">
                           Week {currentWeekNum}
                         </span>
 
@@ -2210,12 +2220,12 @@ export default function CourseSchedulingNew() {
                             onClick={handleNotifyServiceCollege}
                             className={`btn-outline-maroon flex items-center gap-1.5 text-xs font-bold py-1 px-3 rounded-xl shadow-2xs transition-all cursor-pointer ${
                               unreleasedServiceCourseCount > 0
-                                ? 'bg-amber-100/90 hover:bg-amber-200/90 border-amber-400 text-amber-950 ring-2 ring-amber-300/50 animate-pulse'
-                                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-950'
+                                ? 'border-[#7A0808] bg-[#7A0808] text-white ring-2 ring-red-200/70 hover:bg-[#620606] animate-pulse'
+                                : 'border-[#7A0808] bg-white text-[#7A0808] hover:bg-red-50'
                             }`}
                             title="Notify assigned Service College Deans to schedule their components"
                           >
-                            <Bell size={13} className={unreleasedServiceCourseCount > 0 ? 'text-amber-700' : 'text-emerald-700'} />
+                            <Bell size={13} />
                             <span>
                               Notify Service College
                               {unreleasedServiceCourseCount > 0 ? ` (${unreleasedServiceCourseCount} pending)` : ' (All released)'}
@@ -2223,17 +2233,17 @@ export default function CourseSchedulingNew() {
                           </button>
                         )}
                       </div>
-                      <p className="text-xs font-medium text-gray-500 mt-2.5 flex items-center gap-1.5">
+                      <p className="mt-3 flex items-center gap-1.5 border-t border-gray-100 pt-2.5 text-xs font-medium text-gray-500">
                         {selectedDean.name} · {selectedDean.email}
                       </p>
                     </div>
 
                     {/* Section Modality Selector */}
                     {selectedSection && (
-                      <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200">
-                        <span className="text-xs font-bold text-gray-700 whitespace-nowrap">Class Modality:</span>
+                      <div className="flex w-full flex-col gap-1.5 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:w-auto lg:min-w-[330px]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-600">Class Modality</span>
                         {canPlot ? (
-                          <div className="min-w-[220px]">
+                          <div className="min-w-[240px]">
                             <CustomSelect
                               value={currentSectionObj?.modality || 'regular'}
                               onChange={(e) => handleUpdateSectionModality(e.target.value)}
@@ -2455,6 +2465,8 @@ export default function CourseSchedulingNew() {
                       lockTimes: false,
                       initial: null,
                       fromDrag: false,
+                      isServiceCollegeMode: Boolean(activeServiceAssignment),
+                      serviceComponent: activeServiceAssignment?.component || null,
                     });
                   }}
                   onSlotSelect={handleSlotSelect}
@@ -2485,6 +2497,7 @@ export default function CourseSchedulingNew() {
       {viewingBlock && (
         <ViewScheduleDetailsModal
           block={viewingBlock}
+          scheduleEntries={filteredEntries}
           onClose={() => setViewingBlock(null)}
           onEdit={(block) => {
             setViewingBlock(null);
@@ -2528,6 +2541,7 @@ export default function CourseSchedulingNew() {
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
           isServiceCollegeMode={entryModal.isServiceCollegeMode || Boolean(activeServiceAssignment)}
           serviceComponent={entryModal.serviceComponent || activeServiceAssignment?.component || null}
+          serviceCourse={activeServiceAssignment?.course || null}
           serviceCollegeCode={isDean ? (profile?.college || profile?.department) : (selectedDean?.college || selectedDean?.department)}
         />
       ) : entryModal ? (
@@ -2638,11 +2652,20 @@ export default function CourseSchedulingNew() {
             setLoadingMessage(`Deleting schedules for ${deanUids.length} dean(s)...`);
             try {
               const result = await resetMultipleDeansSchedules(deanUids, sem, activeSchoolYearId);
+              const successfullyResetDeanUids = result.results
+                .filter((item) => item.success)
+                .map((item) => item.deanUid);
+              const deletedApprovalRecords = await deleteScheduleApprovalRequestsForReset({
+                deanUids: successfullyResetDeanUids,
+                semester: sem,
+                schoolYearId: activeSchoolYearId,
+              });
+              const failedResets = result.results.filter((item) => !item.success);
               setIsLoading(false);
               showNotification({
-                type: 'success',
-                title: 'Schedules Deleted',
-                message: `Successfully deleted ${result.totalDeleted} schedule entries across ${deanUids.length} dean(s).`,
+                type: failedResets.length > 0 ? 'warning' : 'success',
+                title: failedResets.length > 0 ? 'Reset Partially Completed' : 'Schedules Deleted',
+                message: `Deleted ${result.totalDeleted} schedule entries and ${deletedApprovalRecords} related approval record(s) across ${successfullyResetDeanUids.length} dean(s).${failedResets.length > 0 ? ` ${failedResets.length} dean reset(s) failed.` : ''}`,
               });
             } catch (err) {
               setIsLoading(false);

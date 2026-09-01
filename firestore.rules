@@ -618,7 +618,13 @@ service cloud.firestore {
             'rejectionReason'
           ])
         );
-      allow delete: if isDeveloper() || (isRegistrar() && isPhinmaedEmail());
+      allow delete: if isDeveloper()
+        || (isRegistrar() && isPhinmaedEmail())
+        || (
+          isSignedIn()
+          && isPhinmaedEmail()
+          && resource.data.deanUid == request.auth.uid
+        );
     }
 
     // Notifications Collection - All signed-in authenticated staff can read, write, and manage in-app notifications

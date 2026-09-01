@@ -18,8 +18,9 @@ import DatePicker from '../components/ui/DatePicker';
 import CustomSelect from '../components/ui/CustomSelect';
 import { formatCollegeName } from '../constants/colleges';
 import { deleteRoomReservation } from '../services/reservationService';
-import { decideScheduleApproval, subscribeScheduleApprovalRequests } from '../services/scheduleApprovalService';
+import { decideScheduleApproval, deleteScheduleApprovalRequests, subscribeScheduleApprovalRequests } from '../services/scheduleApprovalService';
 import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
+import { compareNewestFirst } from '../utils/recordSort';
 
 function formatReadableDate(dateInput) {
   if (!dateInput) return '—';
@@ -162,6 +163,7 @@ export default function ApprovalManagement() {
   const [scheduleRequestStatus, setScheduleRequestStatus] = useState('all');
   const [scheduleRequestPage, setScheduleRequestPage] = useState(1);
   const [scheduleRequestsPerPage, setScheduleRequestsPerPage] = useState(5);
+  const [selectedScheduleRequestIds, setSelectedScheduleRequestIds] = useState([]);
   const [scheduleRejection, setScheduleRejection] = useState({ request: null, reason: '', error: '' });
 
   useEffect(() => {
@@ -213,6 +215,7 @@ export default function ApprovalManagement() {
   // Course-schedule requests use their own view and filters so the table remains
   // stable while the lower reservation section switches tabs.
   const showingActionableScheduleRequests = scheduleRequestView === 'approvals';
+  const canBulkDeleteScheduleRequests = isRegistrar || !showingActionableScheduleRequests;
   const baseScheduleRequests = showingActionableScheduleRequests ? managedScheduleRequests : myScheduleRequests;
   const visibleScheduleRequests = useMemo(() => {
     const query = scheduleRequestSearch.trim().toLowerCase();
@@ -231,7 +234,7 @@ export default function ApprovalManagement() {
         ...(request.sections || [request.section]),
       ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
       return statusMatches && searchMatches;
-    });
+    }).sort(compareNewestFirst);
   }, [baseScheduleRequests, scheduleRequestSearch, scheduleRequestStatus]);
   const scheduleRequestTotalPages = Math.max(1, Math.ceil(visibleScheduleRequests.length / scheduleRequestsPerPage));
   const paginatedScheduleRequests = useMemo(() => {
@@ -241,6 +244,7 @@ export default function ApprovalManagement() {
 
   useEffect(() => {
     setScheduleRequestPage(1);
+    setSelectedScheduleRequestIds([]);
   }, [scheduleRequestView, scheduleRequestSearch, scheduleRequestStatus, scheduleRequestsPerPage]);
 
   useEffect(() => {
@@ -287,6 +291,38 @@ export default function ApprovalManagement() {
     const request = scheduleRejection.request;
     setScheduleRejection({ request: null, reason: '', error: '' });
     await handleScheduleDecision(request, 'rejected', reason);
+  };
+
+  const deleteSelectedScheduleRequests = async () => {
+    const selectedRequests = scheduleRequests.filter((request) => selectedScheduleRequestIds.includes(request.id));
+    if (selectedRequests.length === 0) return;
+    const pendingCount = selectedRequests.filter((request) => String(request.status || 'pending').toLowerCase() === 'pending').length;
+    const confirmed = await showConfirm({
+      title: `Delete ${selectedRequests.length} approval record(s)?`,
+      message: pendingCount > 0
+        ? `${pendingCount} pending request(s) still reserve schedule time. Their associated plotted blocks will also be deleted.`
+        : 'The selected completed approval records will be permanently removed from tracking.',
+      confirmText: 'Delete Selected',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    setLoadingMessage(`Deleting ${selectedRequests.length} approval record(s)...`);
+    try {
+      const result = await deleteScheduleApprovalRequests(selectedRequests);
+      setSelectedScheduleRequestIds([]);
+      showNotification({
+        type: 'success',
+        title: 'Approval records deleted',
+        message: `Deleted ${result.deletedRequests} approval record(s)${result.deletedPendingEntries > 0 ? ` and ${result.deletedPendingEntries} pending schedule block(s)` : ''}.`,
+      });
+    } catch (error) {
+      showNotification({ type: 'error', title: 'Delete failed', message: error.message || 'Could not delete the selected approval records.' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -366,7 +402,7 @@ export default function ApprovalManagement() {
       }
 
       return typeMatch && statusMatch && dateMatch && searchMatch;
-    });
+    }).sort(compareNewestFirst);
   }, [activeCategoryRequests, tab, filter, dateFrom, dateTo, searchQuery, hasApprovalPermission, showSection, role, profile]);
 
   useEffect(() => {
@@ -540,7 +576,14 @@ export default function ApprovalManagement() {
               <h2 className="font-black text-amber-950">{showingActionableScheduleRequests ? (deanManagesRooms ? 'Managed Room Schedule Requests' : 'Course Schedule Approval Records') : 'My Course Schedule Requests'}</h2>
               <p className="text-xs text-amber-800">Pending requests reserve their selected time; completed decisions remain here for tracking.</p>
             </div>
-            <span className="rounded-full bg-amber-600 px-3 py-1 text-xs font-black text-white">{visibleScheduleRequests.length} of {baseScheduleRequests.length}</span>
+            <div className="flex items-center gap-2">
+              {canBulkDeleteScheduleRequests && selectedScheduleRequestIds.length > 0 && (
+                <button type="button" onClick={deleteSelectedScheduleRequests} className="btn-delete px-3 py-1.5 text-[11px] font-black">
+                  <Trash2 size={13} /> Delete Selected ({selectedScheduleRequestIds.length})
+                </button>
+              )}
+              <span className="rounded-full bg-amber-600 px-3 py-1 text-xs font-black text-white">{visibleScheduleRequests.length} of {baseScheduleRequests.length}</span>
+            </div>
           </div>
           <div className="mb-3 grid items-center gap-2 lg:grid-cols-[auto_minmax(280px,1fr)_170px]">
             <div className="inline-flex w-fit rounded-xl border border-[#D9A3A3] bg-white p-1">
@@ -562,13 +605,45 @@ export default function ApprovalManagement() {
           <div className="overflow-x-auto rounded-2xl border border-[#E7BABA] bg-white">
             <table className="w-full min-w-[980px] border-collapse text-left text-xs">
               <thead className="bg-[#FFF5F5] text-[10px] uppercase tracking-wide text-[#7A0808]">
-                <tr><th className="px-4 py-3">Course / Section</th>{showingActionableScheduleRequests && <th className="px-4 py-3">Requested by</th>}<th className="px-4 py-3">Days & Times</th><th className="px-4 py-3">Room / Approval</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                <tr>
+                  {canBulkDeleteScheduleRequests && (
+                    <th className="w-10 px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all approval records on this page"
+                        checked={paginatedScheduleRequests.length > 0 && paginatedScheduleRequests.every((request) => selectedScheduleRequestIds.includes(request.id))}
+                        onChange={() => {
+                          const pageIds = paginatedScheduleRequests.map((request) => request.id);
+                          const allSelected = pageIds.every((id) => selectedScheduleRequestIds.includes(id));
+                          setSelectedScheduleRequestIds((current) => allSelected
+                            ? current.filter((id) => !pageIds.includes(id))
+                            : [...new Set([...current, ...pageIds])]);
+                        }}
+                        className="h-4 w-4 accent-[#7A0808]"
+                      />
+                    </th>
+                  )}
+                  <th className="px-4 py-3">Course / Section</th>{showingActionableScheduleRequests && <th className="px-4 py-3">Requested by</th>}<th className="px-4 py-3">Days & Times</th><th className="px-4 py-3">Room / Approval</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3 text-right">Actions</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-[#F0DADA]">
                 {paginatedScheduleRequests.map((request) => {
                   const slots = request.scheduleSlots?.length ? request.scheduleSlots : [{ day: request.day, startHour: request.startHour, endHour: request.endHour }];
                   return (
                     <tr key={request.id} className="align-top hover:bg-[#FFF9F9]">
+                      {canBulkDeleteScheduleRequests && (
+                        <td className="px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${request.courseCode || 'schedule approval'}`}
+                            checked={selectedScheduleRequestIds.includes(request.id)}
+                            onChange={() => setSelectedScheduleRequestIds((current) => current.includes(request.id)
+                              ? current.filter((id) => id !== request.id)
+                              : [...current, request.id])}
+                            className="h-4 w-4 accent-[#7A0808]"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3"><p className="font-black text-gray-950">{request.courseCode}</p><p className="text-gray-600">{(request.sections || [request.section]).filter(Boolean).join(', ')}</p><p className="mt-1 text-[10px] text-gray-500">Teacher: {request.teacher || 'TBA'}</p></td>
                       {showingActionableScheduleRequests && <td className="px-4 py-3 font-semibold text-gray-700">{request.deanName || 'Dean'}</td>}
                       <td className="px-4 py-3"><div className="space-y-1">{slots.map((slot, index) => <p key={`${slot.day}-${slot.startHour}-${index}`} className="whitespace-nowrap text-gray-700"><b>{SCHEDULE_DAYS?.[slot.day] || `Day ${Number(slot.day) + 1}`}:</b>{' '}{formatReadableTimeRange(`${Math.floor(slot.startHour)}:${slot.startHour % 1 ? '30' : '00'}`, `${Math.floor(slot.endHour)}:${slot.endHour % 1 ? '30' : '00'}`)}</p>)}</div></td>
@@ -584,7 +659,7 @@ export default function ApprovalManagement() {
                   );
                 })}
                 {paginatedScheduleRequests.length === 0 && (
-                  <tr><td colSpan={showingActionableScheduleRequests ? 6 : 5} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">No course schedule requests match the selected filters.</td></tr>
+                  <tr><td colSpan={(showingActionableScheduleRequests ? 6 : 5) + (canBulkDeleteScheduleRequests ? 1 : 0)} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">No course schedule requests match the selected filters.</td></tr>
                 )}
               </tbody>
             </table>

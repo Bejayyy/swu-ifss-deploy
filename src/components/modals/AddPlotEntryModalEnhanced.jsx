@@ -182,9 +182,22 @@ export default function AddPlotEntryModalEnhanced({
   schoolYearId = null,
   isServiceCollegeMode = false,
   serviceComponent = null,
+  serviceCourse = null,
   serviceCollegeCode = null,
 }) {
   const { showConfirm, confirmState, notificationState } = useModal();
+
+  // Keep the underlying scheduling page completely inactive while this modal is open.
+  // The modal must be dismissed through one of its explicit close controls.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   // Multi-step form state
   const isEditingExisting = Boolean(initial?.id || initial?.entryId || initial?.courseCode);
   const [step, setStep] = useState(() => (isEditingExisting ? 6 : 1)); // Course → Type (when needed) → Preferred Time → Teacher → Room → Summary
@@ -265,7 +278,9 @@ export default function AddPlotEntryModalEnhanced({
   const [selectedDays, setSelectedDays] = useState(() => {
     if (initial?.days && Array.isArray(initial.days) && initial.days.length > 0) return initial.days;
     if (initial?.day !== undefined && initial.day !== null && Number(initial.day) >= 0 && Number(initial.day) <= 6) return [Number(initial.day)];
-    if (dayIndex !== undefined && dayIndex !== null && Number(dayIndex) >= 0 && Number(dayIndex) <= 6) return [Number(dayIndex)];
+    // The normal Add Schedule button should not choose Monday (or any day)
+    // automatically. Keep preselection only when opened from a grid slot.
+    if (lockTimes && dayIndex !== undefined && dayIndex !== null && Number(dayIndex) >= 0 && Number(dayIndex) <= 6) return [Number(dayIndex)];
     return [];
   });
   const [timeMode, setTimeMode] = useState(() => (
@@ -414,6 +429,14 @@ export default function AddPlotEntryModalEnhanced({
 
   // Subscribe to courses for the Dean's college
   useEffect(() => {
+    // A service-college dean must select from the released mother-college
+    // assignment, not from the service college's own curriculum inventory.
+    if (isServiceCollegeMode && serviceCourse) {
+      setCourses([serviceCourse]);
+      setLoadingCourses(false);
+      return undefined;
+    }
+
     if (!deanCollege) {
       setCourses([]);
       setLoadingCourses(false);
@@ -475,7 +498,7 @@ export default function AddPlotEntryModalEnhanced({
         setLoadingCourses(false);
       }
     );
-  }, [deanCollege, semester, activeYearLevel, programCode, selectedSection, deanSections]);
+  }, [deanCollege, semester, activeYearLevel, programCode, selectedSection, deanSections, isServiceCollegeMode, serviceCourse]);
 
   // Pre-select course and enter edit mode if initial course is passed on mount
   useEffect(() => {
@@ -501,7 +524,9 @@ export default function AddPlotEntryModalEnhanced({
         }
         const initDays = (initial?.days && initial.days.length > 0)
           ? initial.days
-          : (initial?.day !== undefined ? [Number(initial.day)] : (dayIndex !== undefined && dayIndex >= 0 ? [Number(dayIndex)] : []));
+          : (initial?.day !== undefined
+            ? [Number(initial.day)]
+            : (lockTimes && dayIndex !== undefined && dayIndex >= 0 ? [Number(dayIndex)] : []));
         if (initDays.length > 0) {
           setSelectedDays(initDays);
         }
@@ -515,7 +540,7 @@ export default function AddPlotEntryModalEnhanced({
         }
       }
     }
-  }, [courses, initial, dayIndex]);
+  }, [courses, initial, dayIndex, lockTimes]);
 
   // Subscribe to buildings
   useEffect(() => {
@@ -1431,6 +1456,10 @@ export default function AddPlotEntryModalEnhanced({
   // Auto-adjust start & end times when room, days, or occupied intervals change so current selection doesn't sit on an occupied slot
   useEffect(() => {
     if (!selectedDays || selectedDays.length === 0) return;
+    // Editing must preserve the saved day/time until the user explicitly
+    // changes it. Auto-selecting the first available slot makes an unchanged
+    // schedule appear as a new selection and produces incorrect hour totals.
+    if (isEditMode) return;
 
     if (timeMode === 'combined') {
       const startOpts = getStartTimeOptions(selectedDays);
@@ -1536,6 +1565,7 @@ export default function AddPlotEntryModalEnhanced({
     if (!t || !t.name || t.name === 'TBA (To Be Assigned)') {
       return { hasConflict: false, conflicts: [], allTeacherClasses: [] };
     }
+    const tUid = String(t.uid || '').trim();
     const tName = String(t.name || '').trim().toLowerCase();
     const tEmail = String(t.email || '').trim().toLowerCase();
 
@@ -1555,11 +1585,13 @@ export default function AddPlotEntryModalEnhanced({
       
       const inst = String(e.instructor || '').trim().toLowerCase();
       const instEmail = String(e.instructorEmail || '').trim().toLowerCase();
-      if (!inst || inst.includes('tba') || inst.includes('to be assigned')) return false;
+      const instUid = String(e.instructorUid || '').trim();
+      if ((!inst && !instUid) || inst.includes('tba') || inst.includes('to be assigned')) return false;
 
+      const matchesUid = tUid && instUid && instUid === tUid;
       const matchesName = tName && (inst === tName || inst.includes(tName) || tName.includes(inst));
       const matchesEmail = tEmail && (instEmail === tEmail || inst.includes(tEmail));
-      return matchesName || matchesEmail;
+      return matchesUid || matchesName || matchesEmail;
     });
 
     if (!selectedDaySlots || selectedDaySlots.length === 0) {
@@ -1569,10 +1601,10 @@ export default function AddPlotEntryModalEnhanced({
     const tConflicts = [];
     selectedDaySlots.forEach((slot) => {
       teacherDocs.forEach((doc) => {
-        const docDay = typeof doc.day === 'number' ? doc.day : 0;
+        const docDay = parseDayIndex(doc.day, doc.date, doc.dayLabel);
         if (docDay === slot.day) {
-          const dStart = Number(doc.startHour) || 0;
-          const dEnd = Number(doc.endHour) || 0;
+          const dStart = Number(doc.startHour) || parseTimeToHour(doc.startTime || doc.start) || 0;
+          const dEnd = Number(doc.endHour) || parseTimeToHour(doc.endTime || doc.end) || 0;
           if (dStart < slot.endHour && dEnd > slot.startHour) {
             tConflicts.push({
               ...doc,
@@ -2082,7 +2114,8 @@ export default function AddPlotEntryModalEnhanced({
   return (
     <div
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
     >
       <LoadingModal
         isOpen={saving}
@@ -2090,7 +2123,6 @@ export default function AddPlotEntryModalEnhanced({
       />
       <div
         className="bg-white rounded-2xl w-full max-w-[1400px] max-h-[90vh] shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
@@ -2245,7 +2277,7 @@ export default function AddPlotEntryModalEnhanced({
                           <Users size={13} className="text-[#7A0808]" /> Section Merging in {activeYearLevel} (Capacity Optimization)
                         </span>
                         {selectedCombinedSections.length > 1 && (
-                          <span className="text-[10px] font-black uppercase text-purple-800 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200">
+                          <span className="rounded-md border border-[#E7BABA] bg-[#FFF0F0] px-2 py-0.5 text-[10px] font-black uppercase text-[#7A0808]">
                             Merged ({selectedCombinedSections.length} Sections)
                           </span>
                         )}
@@ -2276,7 +2308,7 @@ export default function AddPlotEntryModalEnhanced({
                                 isPrimary
                                   ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs cursor-default'
                                   : isChecked
-                                  ? 'bg-purple-700 text-white border-purple-700 shadow-2xs cursor-pointer'
+                                  ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs cursor-pointer'
                                   : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 cursor-pointer'
                               }`}
                             >
@@ -3075,21 +3107,21 @@ export default function AddPlotEntryModalEnhanced({
                   return (
                     <div
                       key={teacher.uid}
-                      onClick={() => setSelectedTeacher(teacher)}
-                      className={`text-left px-3.5 py-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
-                        isSelected
-                          ? teacherStatus.hasConflict
-                            ? 'border-2 border-red-500 bg-red-50/90 shadow-md ring-2 ring-red-100'
-                            : 'border-2 border-[#7A0808] bg-red-50/90 shadow-md ring-2 ring-red-100'
-                          : teacherStatus.hasConflict
-                          ? 'border-red-200/80 bg-red-50/40 hover:border-red-400'
-                          : 'border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
+                      onClick={teacherStatus.hasConflict ? undefined : () => setSelectedTeacher(teacher)}
+                      aria-disabled={teacherStatus.hasConflict}
+                      title={teacherStatus.hasConflict ? `${teacher.name} is unavailable during the selected time.` : `Select ${teacher.name}`}
+                      className={`text-left px-3.5 py-3 rounded-xl border transition-all flex flex-col justify-between ${
+                        teacherStatus.hasConflict
+                          ? 'cursor-not-allowed border-gray-300 bg-gray-100 opacity-60 grayscale'
+                          : isSelected
+                            ? 'cursor-pointer border-2 border-[#7A0808] bg-red-50/90 shadow-md ring-2 ring-red-100'
+                            : 'cursor-pointer border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-                          style={{ background: teacherStatus.hasConflict ? '#DC2626' : '#7A0808' }}
+                          style={{ background: teacherStatus.hasConflict ? '#9CA3AF' : '#7A0808' }}
                         >
                           {teacher.name?.charAt(0)?.toUpperCase() || 'T'}
                         </div>
@@ -3097,7 +3129,7 @@ export default function AddPlotEntryModalEnhanced({
                           <div className="flex items-center justify-between gap-1 flex-wrap">
                             <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
                             <div className="flex items-center gap-1">
-                              {isSelected && (
+                              {isSelected && !teacherStatus.hasConflict && (
                                 <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-[#7A0808] text-white flex items-center gap-0.5 shadow-2xs">
                                   <Check size={10} /> Selected
                                 </span>

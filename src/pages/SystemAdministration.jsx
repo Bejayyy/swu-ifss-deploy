@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Filter, Plus, Shield, UserCog, Users, KeyRound, Trash2, Search, ChevronLeft, ChevronRight, Eye, SendHorizonal } from 'lucide-react';
+import { Filter, Plus, Shield, UserCog, Users, KeyRound, Trash2, Search, ChevronLeft, ChevronRight, Eye, SendHorizonal, Pencil } from 'lucide-react';
 import Layout from '../components/Layout';
 import ProgressStatCards from '../components/ProgressStatCards';
 import AddUserModal from '../components/modals/AddUserModal';
@@ -28,6 +28,7 @@ import {
   saveRoleDefinition,
 } from '../services/roleDefinitionService';
 import { formatCollegeName } from '../constants/colleges';
+import { compareNewestFirst } from '../utils/recordSort';
 
 const roleStyle = (role) => {
   const r = (role || '').toLowerCase();
@@ -409,7 +410,7 @@ export default function SystemAdministration() {
         }
       }
       return true;
-    });
+    }).sort(compareNewestFirst);
   }, [users, filter, searchQuery]);
 
   const totalItems = filteredUsers.length;

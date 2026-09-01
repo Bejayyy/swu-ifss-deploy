@@ -31,6 +31,7 @@ import { PERMISSIONS } from '../constants/rolePermissions';
 import { subscribeStaffUsers } from '../services/systemUserService';
 import { subscribeCollegeCourses, assignTeacherToCourse, unassignTeacherFromCourse } from '../services/courseService';
 import { formatCollegeName } from '../constants/colleges';
+import { compareNewestFirst } from '../utils/recordSort';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -200,7 +201,7 @@ export default function TeachersDirectory() {
         dept.toLowerCase().includes(q) ||
         matchesCourse
       );
-    });
+    }).sort(compareNewestFirst);
   }, [teachers, searchQuery, deptFilter, courses]);
 
   // Reset pagination when search query or department filter changes

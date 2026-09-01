@@ -36,6 +36,7 @@ import {
   generateSectionNames,
   getYearLabel,
 } from '../services/sectionService';
+import { compareNewestFirst } from '../utils/recordSort';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -159,14 +160,14 @@ export default function CollegeInventory() {
 
   // Filtered & Paginated Colleges
   const filteredColleges = useMemo(() => {
-    if (!searchQuery.trim()) return colleges;
+    if (!searchQuery.trim()) return [...colleges].sort(compareNewestFirst);
     const q = searchQuery.toLowerCase().trim();
     return colleges.filter(
       (c) =>
         (c.code && c.code.toLowerCase().includes(q)) ||
         (c.name && c.name.toLowerCase().includes(q)) ||
         (c.programs && c.programs.some((p) => p.code?.toLowerCase().includes(q) || p.name?.toLowerCase().includes(q)))
-    );
+    ).sort(compareNewestFirst);
   }, [colleges, searchQuery]);
 
   const totalCollegePages = Math.max(1, Math.ceil(filteredColleges.length / itemsPerPage));
@@ -195,7 +196,7 @@ export default function CollegeInventory() {
         (c.title && c.title.toLowerCase().includes(q)) ||
         (c.programCode && c.programCode.toLowerCase().includes(q))
       );
-    });
+    }).sort(compareNewestFirst);
   }, [collegeCourses, courseProgramFilter, yearFilter, semesterFilter, courseSearchQuery, viewingCollegeCourses]);
 
   const totalCoursePages = Math.max(1, Math.ceil(filteredCourses.length / courseItemsPerPage));

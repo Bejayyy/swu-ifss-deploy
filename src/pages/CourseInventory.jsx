@@ -95,7 +95,7 @@ export default function CourseInventory() {
     });
   }, [courses, searchTerm, collegeFilter, programFilter, yearFilter, semesterFilter, sortOrder]);
 
-  const displayedCourses = isRegistrar ? filteredCourses : courses;
+  const displayedCourses = filteredCourses;
   const totalPages = Math.max(1, Math.ceil(displayedCourses.length / coursesPerPage));
   const pageStartIndex = (currentPage - 1) * coursesPerPage;
   const paginatedCourses = displayedCourses.slice(pageStartIndex, pageStartIndex + coursesPerPage);

@@ -20,6 +20,7 @@ import { formatScheduleHour, SCHEDULE_DAYS } from '../../constants/scheduleGrid'
 
 export default function ViewScheduleDetailsModal({
   block,
+  scheduleEntries = [],
   onClose,
   onEdit,
   onDelete,
@@ -69,6 +70,34 @@ export default function ViewScheduleDetailsModal({
   // Type badge styling
   const isLab = String(type).toLowerCase().includes('lab');
   const isExam = String(type).toLowerCase().includes('exam') || scheduleMode === 'exam';
+
+  // A course component may be matched across multiple days (for example,
+  // one lecture hour on Monday and one on Wednesday). Compliance must use
+  // the combined weekly duration, not only the block currently being viewed.
+  const normalize = (value) => String(value || '').trim().toLowerCase();
+  const componentKind = isLab ? 'lab' : isExam ? 'exam' : 'lecture';
+  const matchingEntries = scheduleEntries.filter((entry) => {
+    const entryType = normalize(entry.type);
+    const entryKind = entryType.includes('lab')
+      ? 'lab'
+      : entryType.includes('exam') || normalize(entry.scheduleMode) === 'exam'
+        ? 'exam'
+        : 'lecture';
+    const entryCode = entry.courseCode || entry.course || entry.code;
+    const entrySection = entry.section || entry.sectionName;
+    const modeMatches = normalize(entry.scheduleMode || 'regular') === normalize(scheduleMode || 'regular');
+
+    return normalize(entryCode) === normalize(courseCode)
+      && normalize(entrySection) === normalize(section)
+      && entryKind === componentKind
+      && modeMatches;
+  });
+  const weeklyDurationHours = matchingEntries.length > 0
+    ? matchingEntries.reduce(
+      (total, entry) => total + Math.max(0, Number(entry.endHour ?? entry.end ?? 0) - Number(entry.startHour ?? entry.start ?? 0)),
+      0,
+    )
+    : durationHours;
 
   return (
     <div
@@ -264,7 +293,7 @@ export default function ViewScheduleDetailsModal({
               ? Number(raw.labHours || block.labHours || (Number(raw.labUnits || block.labUnits || 1) * 3))
               : Number(raw.lecHours || block.lecHours || (Number(raw.lecUnits || block.lecUnits || raw.units || block.units || 2) * 1));
             
-            const roundedDuration = Math.round(durationHours * 10) / 10;
+            const roundedDuration = Math.round(weeklyDurationHours * 10) / 10;
             const roundedReq = Math.round(reqHours * 10) / 10;
             const diffHours = Math.round(Math.abs(roundedDuration - roundedReq) * 10) / 10;
 
@@ -274,7 +303,7 @@ export default function ViewScheduleDetailsModal({
                   <div className="flex items-center gap-2">
                     <CheckCircle size={15} className="text-emerald-600 flex-shrink-0" />
                     <p className="text-xs font-semibold">
-                      Exact Match: Duration (<strong>{roundedDuration} hrs</strong>) matches the required <strong>{roundedReq} hrs/week</strong> for {type}.
+                      Exact Match: Weekly plotted time (<strong>{roundedDuration} hrs</strong>) matches the required <strong>{roundedReq} hrs/week</strong> for {type}.
                     </p>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-600 text-white whitespace-nowrap">
@@ -288,7 +317,7 @@ export default function ViewScheduleDetailsModal({
                   <div className="flex items-center gap-2">
                     <Clock size={15} className="text-red-600 flex-shrink-0" />
                     <p className="text-xs font-bold">
-                      Overlapping / Exceeding Time: Duration (<strong>{roundedDuration} hrs</strong>) exceeds the required <strong>{roundedReq} hrs/week</strong> by <strong>{diffHours} hr(s)</strong>.
+                      Overlapping / Exceeding Time: Weekly plotted time (<strong>{roundedDuration} hrs</strong>) exceeds the required <strong>{roundedReq} hrs/week</strong> by <strong>{diffHours} hr(s)</strong>.
                     </p>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-600 text-white whitespace-nowrap">
@@ -302,7 +331,7 @@ export default function ViewScheduleDetailsModal({
                   <div className="flex items-center gap-2">
                     <Clock size={15} className="text-red-600 flex-shrink-0" />
                     <p className="text-xs font-bold">
-                      Lacking Time: Duration (<strong>{roundedDuration} hrs</strong>) is lacking <strong>{diffHours} hr(s)</strong> to meet the required <strong>{roundedReq} hrs/week</strong>.
+                      Lacking Time: Weekly plotted time (<strong>{roundedDuration} hrs</strong>) is lacking <strong>{diffHours} hr(s)</strong> to meet the required <strong>{roundedReq} hrs/week</strong>.
                     </p>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-600 text-white whitespace-nowrap">

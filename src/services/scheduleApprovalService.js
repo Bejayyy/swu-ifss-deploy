@@ -64,6 +64,75 @@ export function subscribeScheduleApprovalRequests(onData, onError) {
   }, onError);
 }
 
+/**
+ * Remove approval records whose underlying plotted schedules were reset.
+ * Filtering is performed client-side to support existing records without
+ * requiring a new composite Firestore index.
+ */
+export async function deleteScheduleApprovalRequestsForReset({
+  deanUids = [],
+  semester,
+  schoolYearId = null,
+}) {
+  const resetDeanUids = new Set(deanUids.map(String));
+  if (resetDeanUids.size === 0) return 0;
+
+  const snapshot = await getDocs(collection(db, REQUESTS));
+  const matchingDocs = snapshot.docs.filter((requestDoc) => {
+    const request = requestDoc.data();
+    const entryBelongsToResetDean = (request.entryPaths || []).some((path) => {
+      const pathParts = String(path).split('/');
+      return pathParts[0] === 'users' && resetDeanUids.has(String(pathParts[1]));
+    });
+    const targetDeanMatches = request.targetDeanUid != null
+      && resetDeanUids.has(String(request.targetDeanUid));
+    const semesterMatches = semester == null
+      || request.semester == null
+      || String(request.semester) === String(semester);
+    const schoolYearMatches = !schoolYearId
+      || !request.schoolYearId
+      || String(request.schoolYearId) === String(schoolYearId);
+
+    return (entryBelongsToResetDean || targetDeanMatches)
+      && semesterMatches
+      && schoolYearMatches;
+  });
+
+  // Stay below Firestore's 500-operation batch limit.
+  for (let index = 0; index < matchingDocs.length; index += 450) {
+    const batch = writeBatch(db);
+    matchingDocs.slice(index, index + 450).forEach((requestDoc) => batch.delete(requestDoc.ref));
+    await batch.commit();
+  }
+
+  return matchingDocs.length;
+}
+
+export async function deleteScheduleApprovalRequests(requests = []) {
+  const validRequests = requests.filter((request) => request?.id);
+  if (validRequests.length === 0) return { deletedRequests: 0, deletedPendingEntries: 0 };
+
+  const refsToDelete = new Map();
+  validRequests.forEach((request) => {
+    refsToDelete.set(`request:${request.id}`, doc(db, REQUESTS, request.id));
+    if (String(request.status || 'pending').toLowerCase() === 'pending') {
+      (request.entryPaths || []).forEach((path) => {
+        if (path) refsToDelete.set(`entry:${path}`, doc(db, path));
+      });
+    }
+  });
+
+  const refs = [...refsToDelete.values()];
+  for (let index = 0; index < refs.length; index += 450) {
+    const batch = writeBatch(db);
+    refs.slice(index, index + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  const deletedPendingEntries = [...refsToDelete.keys()].filter((key) => key.startsWith('entry:')).length;
+  return { deletedRequests: validRequests.length, deletedPendingEntries };
+}
+
 export async function decideScheduleApproval(request, decision, reviewer, rejectionReason = '') {
   if (!request?.id || !['approved', 'rejected'].includes(decision)) throw new Error('Invalid schedule approval decision.');
   const batch = writeBatch(db);
