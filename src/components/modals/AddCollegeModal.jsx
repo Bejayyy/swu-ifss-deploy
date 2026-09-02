@@ -42,6 +42,7 @@ import {
 import CustomSelect from '../ui/CustomSelect';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
+import LoadingModal from './LoadingModal';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
@@ -137,11 +138,12 @@ const createEmptyProgram = () => ({
 });
 
 export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [], editingCollege = null }) {
-  const { showConfirm, confirmState, notificationState } = useModal();
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [form, setForm] = useState({
     code: editingCollege?.code || '',
     name: editingCollege?.name || '',
     managesGeneralEducationCourses: Boolean(editingCollege?.managesGeneralEducationCourses),
+    allowsParallelClasses: Boolean(editingCollege?.allowsParallelClasses),
     noOwnSections: Boolean(editingCollege?.noOwnSections ?? editingCollege?.doesNotHandleSections),
     programs: editingCollege?.programs?.length
       ? editingCollege.programs.map((p) => ({
@@ -158,6 +160,8 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [closeAfterSuccess, setCloseAfterSuccess] = useState(false);
+  const [savedCollegeCode, setSavedCollegeCode] = useState('');
   const [serviceGuidePosition, setServiceGuidePosition] = useState(null);
 
   const showServiceGuide = (event) => {
@@ -684,6 +688,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           code,
           name,
           managesGeneralEducationCourses: form.managesGeneralEducationCourses,
+          allowsParallelClasses: form.allowsParallelClasses,
           noOwnSections,
           programs: cleanPrograms,
         });
@@ -692,6 +697,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           code,
           name,
           managesGeneralEducationCourses: form.managesGeneralEducationCourses,
+          allowsParallelClasses: form.allowsParallelClasses,
           noOwnSections,
           programs: cleanPrograms,
         });
@@ -810,12 +816,24 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         }
       }
 
-      if (onSaveSuccess) {
-        onSaveSuccess(code);
-      }
-      onClose();
+      setLoading(false);
+      setSavedCollegeCode(code);
+      setCloseAfterSuccess(true);
+      showNotification({
+        type: 'success',
+        title: editingCollege ? 'College Updated!' : 'College Added!',
+        message: `College ${code} and its programs, courses, and sections were saved successfully.`,
+        autoCloseMs: 0,
+      });
     } catch (err) {
-      setError(err.message || 'Failed to save college.');
+      const message = err.message || 'Failed to save college.';
+      setError(message);
+      showNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message,
+        autoCloseMs: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -913,6 +931,28 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   <span className="block text-xs font-black text-gray-800">General Education / Minor Subject Provider</span>
                   <span className="mt-1 block text-[10px] font-medium leading-relaxed text-gray-500">
                     Enable when this college centrally manages minor subjects for multiple colleges and programs. It will be highlighted for first scheduling access and centralized course assignment.
+                  </span>
+                </span>
+              </label>
+
+              <label className={`flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
+                form.allowsParallelClasses
+                  ? 'border-[#7A0808]/30 bg-red-50/60'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={form.allowsParallelClasses}
+                  onChange={(event) => setForm((prev) => ({
+                    ...prev,
+                    allowsParallelClasses: event.target.checked,
+                  }))}
+                  className="mt-0.5 h-4 w-4 accent-[#7A0808]"
+                />
+                <span>
+                  <span className="block text-xs font-black text-gray-800">Allow Parallel Classes</span>
+                  <span className="mt-1 block text-[10px] font-medium leading-relaxed text-gray-500">
+                    Allow one course and teacher to handle up to four selected sections in the same class schedule. Teacher conflicts created only by those selected parallel sections are ignored.
                   </span>
                 </span>
               </label>
@@ -1675,8 +1715,24 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       </div>
     </div>
     <ServiceArrangementGuideCloud position={serviceGuidePosition} />
+    <LoadingModal
+      isOpen={loading}
+      message={editingCollege ? 'Saving college changes...' : 'Saving college and programs...'}
+    />
     {/* Global Confirmation & Notification Modal */}
-    <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
+    <ModalRenderer
+      confirmState={confirmState}
+      notificationState={{
+        ...notificationState,
+        onClose: () => {
+          notificationState.onClose();
+          if (closeAfterSuccess) {
+            onSaveSuccess?.(savedCollegeCode);
+            onClose();
+          }
+        },
+      }}
+    />
     </>
   );
 }

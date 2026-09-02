@@ -19,7 +19,6 @@ import {
   ArrowRight,
   Pencil,
   RefreshCw,
-  Users,
   Plus,
 } from 'lucide-react';
 import {
@@ -167,6 +166,7 @@ export default function AddPlotEntryModalEnhanced({
   semester = '1', // Current semester
   sectionYearLevel = '1st Year', // Selected section's year level
   allowOjtRotation = false, // Registrar-controlled OJT alternating flag for this section/year
+  allowParallelClasses = false, // College-controlled multi-section parallel class permission
   dayIndex, // 0-6 for Mon-Sun
   fromDrag = false,
   initialBuildingId,
@@ -307,6 +307,22 @@ export default function AddPlotEntryModalEnhanced({
   const [rotationCycle, setRotationCycle] = useState(initial?.rotationCycle || initial?.weekCycle || 'all'); // 'all' | 'week_a' | 'week_b'
   const [partnerSection, setPartnerSection] = useState(initial?.partnerSection || '');
   const [autoMirrorPartner, setAutoMirrorPartner] = useState(true);
+  const [sectionCombinationMode, setSectionCombinationMode] = useState(() => {
+    if (initial?.sectionCombinationMode) return initial.sectionCombinationMode;
+    return Array.isArray(initial?.combinedSections) && initial.combinedSections.length > 1 ? 'merge' : 'none';
+  });
+  const [selectedMergedSections, setSelectedMergedSections] = useState(() => {
+    if (Array.isArray(initial?.mergedSections) && initial.mergedSections.length > 0) return initial.mergedSections;
+    if (initial?.sectionCombinationMode === 'merge' && Array.isArray(initial?.combinedSections)) return initial.combinedSections;
+    return [initialSection || selectedSection || ''];
+  });
+  const [selectedParallelSections, setSelectedParallelSections] = useState(() => {
+    if (Array.isArray(initial?.parallelSections) && initial.parallelSections.length > 0) return initial.parallelSections.slice(0, 4);
+    if (String(initial?.sectionCombinationMode || '').includes('parallel') && Array.isArray(initial?.combinedSections)) {
+      return initial.combinedSections.slice(0, 4);
+    }
+    return [initialSection || selectedSection || ''];
+  });
   const [selectedCombinedSections, setSelectedCombinedSections] = useState(() => {
     if (initial?.combinedSections && Array.isArray(initial.combinedSections) && initial.combinedSections.length > 0) {
       return initial.combinedSections;
@@ -328,10 +344,50 @@ export default function AddPlotEntryModalEnhanced({
       setSelectedCombinedSections((prev) => {
         const validNames = new Set(mergeableSections.map((s) => s.name));
         const filtered = prev.filter((name) => validNames.has(name) && name !== selectedSection);
-        return [selectedSection, ...filtered];
+        const next = [selectedSection, ...filtered];
+        return sectionCombinationMode.includes('parallel') ? next.slice(0, 4) : next;
       });
     }
+  }, [selectedSection, mergeableSections, sectionCombinationMode]);
+
+  useEffect(() => {
+    if (sectionCombinationMode === 'none' && selectedSection) {
+      setSelectedCombinedSections([selectedSection]);
+    }
+  }, [sectionCombinationMode, selectedSection]);
+
+  useEffect(() => {
+    if (!selectedSection) return;
+    const validNames = new Set(mergeableSections.map((section) => section.name));
+    setSelectedMergedSections((current) => [
+      selectedSection,
+      ...current.filter((name) => name !== selectedSection && validNames.has(name)),
+    ]);
+    setSelectedParallelSections((current) => [
+      selectedSection,
+      ...current.filter((name) => name !== selectedSection && validNames.has(name)),
+    ].slice(0, 4));
   }, [selectedSection, mergeableSections]);
+
+  useEffect(() => {
+    if (!selectedSection) return;
+    if (sectionCombinationMode === 'merge') {
+      setSelectedCombinedSections(selectedMergedSections);
+    } else if (sectionCombinationMode === 'parallel') {
+      setSelectedCombinedSections(selectedParallelSections.slice(0, 4));
+    } else if (sectionCombinationMode === 'merge_parallel') {
+      setSelectedCombinedSections(Array.from(new Set([
+        ...selectedMergedSections,
+        ...selectedParallelSections.slice(0, 4),
+      ])));
+    }
+  }, [sectionCombinationMode, selectedMergedSections, selectedParallelSections, selectedSection]);
+
+  useEffect(() => {
+    if (!allowParallelClasses && sectionCombinationMode.includes('parallel')) {
+      setSectionCombinationMode(selectedCombinedSections.length > 1 ? 'merge' : 'none');
+    }
+  }, [allowParallelClasses, sectionCombinationMode, selectedCombinedSections.length]);
 
   const [roomConflicts, setRoomConflicts] = useState([]); // Track conflicting schedules for selected room/day/time
   const [completedTypes, setCompletedTypes] = useState([]); // Tracks saved components (e.g. ['Laboratory']) for combined courses
@@ -1582,6 +1638,24 @@ export default function AddPlotEntryModalEnhanced({
           return false;
         }
       }
+
+      // A permitted parallel class intentionally places the same teacher, course,
+      // and selected sections in one shared time slot. Those companion section
+      // records must not make the teacher appear unavailable.
+      if (sectionCombinationMode.includes('parallel') && selectedParallelSections.length > 1 && selectedCourse?.code) {
+        const selectedSectionNames = new Set(
+          selectedParallelSections.map((name) => String(name).trim().toUpperCase())
+        );
+        const entryCourseCode = String(e.courseCode || e.title || '').trim().toUpperCase();
+        const selectedCourseCode = String(selectedCourse.code).trim().toUpperCase();
+        const entrySectionNames = [
+          e.section || e.sectionName,
+          ...(Array.isArray(e.combinedSections) ? e.combinedSections : []),
+        ].map((name) => String(name || '').trim().toUpperCase());
+        const belongsToParallelGroup = entrySectionNames.some((name) => selectedSectionNames.has(name));
+
+        if (entryCourseCode === selectedCourseCode && belongsToParallelGroup) return false;
+      }
       
       const inst = String(e.instructor || '').trim().toLowerCase();
       const instEmail = String(e.instructorEmail || '').trim().toLowerCase();
@@ -1632,7 +1706,7 @@ export default function AddPlotEntryModalEnhanced({
 
   const selectedTeacherConflict = useMemo(() => {
     return getTeacherConflictStatus(selectedTeacher);
-  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, dayIndex]);
+  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, selectedCombinedSections, selectedParallelSections, selectedCourse, sectionCombinationMode, dayIndex]);
 
   const getRoomConflictStatus = useCallback((room) => {
     const roomCode = String(room?.roomCode || room?.name || room?.id || '').replace(/[\s\-_]/g, '').toUpperCase();
@@ -1976,7 +2050,7 @@ export default function AddPlotEntryModalEnhanced({
     });
     if (!confirmed) return;
 
-    setSaving(true);
+      setSaving(true);
     try {
       const isCombined = selectedCombinedSections.length > 1;
       const combinedSecList = isCombined ? selectedCombinedSections : [selectedSection || 'Section 1'];
@@ -2009,6 +2083,9 @@ export default function AddPlotEntryModalEnhanced({
           floorId: selectedRoom.effectiveFloorId || selectedRoom.floorId || null,
           floor: selectedRoom.effectiveFloorNumber || selectedRoom.floorNumber || selectedRoom.floor || null,
           section: selectedSection || 'Section 1',
+          sectionCombinationMode: isCombined ? sectionCombinationMode : 'none',
+          mergedSections: sectionCombinationMode.includes('merge') ? selectedMergedSections : [],
+          parallelSections: sectionCombinationMode.includes('parallel') ? selectedParallelSections.slice(0, 4) : [],
           partnerSection: partnerSection || null,
           rotationCycle: allowOjtRotation ? (rotationCycle || 'all') : 'all',
           isCombinedSection: isCombined,
@@ -2269,66 +2346,165 @@ export default function AddPlotEntryModalEnhanced({
                     </div>
                   )}
 
-                  {/* Multi-Section Merging / Combination Selector (Scoped to SAME Year Level & Program) */}
+                  {/* Optional class arrangement: merge, parallel, or both. */}
                   {mergeableSections.length > 1 && (
-                    <div className="mt-3 p-3 bg-gray-50/90 rounded-2xl border border-gray-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                          <Users size={13} className="text-[#7A0808]" /> Section Merging in {activeYearLevel} (Capacity Optimization)
-                        </span>
-                        {selectedCombinedSections.length > 1 && (
-                          <span className="rounded-md border border-[#E7BABA] bg-[#FFF0F0] px-2 py-0.5 text-[10px] font-black uppercase text-[#7A0808]">
-                            Merged ({selectedCombinedSections.length} Sections)
+                    <div className="mt-3 space-y-3 rounded-2xl border border-gray-200 bg-gray-50/90 p-3">
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-gray-800">
+                            Section Class Arrangement
                           </span>
-                        )}
+                          {sectionCombinationMode !== 'none' && selectedCombinedSections.length > 1 && (
+                            <span className="rounded-md border border-[#E7BABA] bg-[#FFF0F0] px-2 py-0.5 text-[10px] font-black uppercase text-[#7A0808]">
+                              {sectionCombinationMode === 'merge'
+                                ? `Merged (${selectedCombinedSections.length} sections)`
+                                : sectionCombinationMode === 'parallel'
+                                  ? `Parallel (${selectedCombinedSections.length}/4 sections)`
+                                  : `Merged ${selectedMergedSections.length} + Parallel ${selectedParallelSections.length}/4`}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[10px] text-gray-500">
+                          Choose an arrangement only when needed. Merge combines smaller classes; parallel permits the selected sections to share one teacher and time.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-gray-500">
-                        Merge other {activeYearLevel} sections into this classroom schedule block to maximize room capacity.
-                      </p>
 
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {mergeableSections.map((sec) => {
-                          const isPrimary = sec.name === selectedSection;
-                          const isChecked = selectedCombinedSections.includes(sec.name);
+                      <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-4">
+                        {[
+                          { value: 'none', label: 'Normal Class', allowed: true },
+                          { value: 'merge', label: 'Enable Merge', allowed: true },
+                          { value: 'parallel', label: 'Enable Parallel', allowed: allowParallelClasses },
+                          { value: 'merge_parallel', label: 'Enable Merge + Parallel', allowed: allowParallelClasses },
+                        ].map((option) => {
+                          const active = sectionCombinationMode === option.value;
                           return (
                             <button
-                              key={sec.name}
+                              key={option.value}
                               type="button"
-                              disabled={isPrimary}
+                              disabled={!option.allowed}
                               onClick={() => {
-                                if (isPrimary) return;
-                                if (isChecked) {
-                                  setSelectedCombinedSections(selectedCombinedSections.filter((s) => s !== sec.name));
-                                } else {
-                                  setSelectedCombinedSections([...selectedCombinedSections, sec.name]);
-                                }
+                                if (!option.allowed) return;
+                                setSectionCombinationMode(option.value);
+                                setSelectedCombinedSections([selectedSection]);
+                                setSelectedMergedSections([selectedSection]);
+                                setSelectedParallelSections([selectedSection]);
                               }}
-                              title={isPrimary ? 'Primary Active Section (Cannot be deselected)' : 'Click to toggle combine/merge'}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all ${
-                                isPrimary
-                                  ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs cursor-default'
-                                  : isChecked
-                                  ? 'bg-[#7A0808] text-white border-[#7A0808] shadow-2xs cursor-pointer'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 cursor-pointer'
+                              title={!option.allowed ? 'Enable Allow Parallel Classes in College Inventory first.' : option.label}
+                              className={`rounded-lg border px-3 py-2 text-[10px] font-black transition-all ${
+                                active
+                                  ? 'border-[#7A0808] bg-[#7A0808] text-white shadow-2xs'
+                                  : option.allowed
+                                    ? 'cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-[#7A0808] hover:text-[#7A0808]'
+                                    : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60'
                               }`}
                             >
-                              <span>{sec.name}</span>
-                              {isPrimary ? (
-                                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded font-black uppercase">
-                                  Active
-                                </span>
-                              ) : isChecked ? (
-                                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded font-black uppercase">
-                                  Merged
-                                </span>
-                              ) : null}
-                              <span className={`text-[9px] ${isPrimary || isChecked ? 'text-white/80' : 'text-gray-400'} font-normal`}>
-                                ({sec.studentCount || sec.studentsPerSection || 40} stds)
-                              </span>
+                              {option.label}
                             </button>
                           );
                         })}
                       </div>
+
+                      {!allowParallelClasses && (
+                        <p className="text-[9px] font-semibold text-gray-400">
+                          Parallel modes are disabled for this college. A Registrar can enable them in College Inventory.
+                        </p>
+                      )}
+
+                      {sectionCombinationMode !== 'none' && (
+                        <div className="space-y-3 border-t border-gray-200 pt-2.5">
+                          {(sectionCombinationMode === 'merge_parallel'
+                            ? [
+                                {
+                                  key: 'merge',
+                                  title: '1. Select Sections to Merge',
+                                  help: `Combine smaller ${activeYearLevel} sections into one class.`,
+                                  selected: selectedMergedSections,
+                                  setSelected: setSelectedMergedSections,
+                                },
+                                {
+                                  key: 'parallel',
+                                  title: '2. Select Sections for Parallel Class',
+                                  help: 'Choose up to four sections that share the teacher and time with the merged class.',
+                                  selected: selectedParallelSections,
+                                  setSelected: setSelectedParallelSections,
+                                },
+                              ]
+                            : sectionCombinationMode === 'merge'
+                              ? [{
+                                  key: 'merge',
+                                  title: 'Select Sections to Merge',
+                                  help: `Combine any applicable ${activeYearLevel} sections into one class.`,
+                                  selected: selectedMergedSections,
+                                  setSelected: setSelectedMergedSections,
+                                }]
+                              : [{
+                                  key: 'parallel',
+                                  title: 'Select Sections for Parallel Class',
+                                  help: 'Choose up to four sections. Conflicts within this parallel group are ignored.',
+                                  selected: selectedParallelSections,
+                                  setSelected: setSelectedParallelSections,
+                                }]
+                          ).map((group) => (
+                            <div key={group.key} className="space-y-2 rounded-xl border border-gray-200 bg-white p-2.5">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-wide text-[#7A0808]">{group.title}</p>
+                                <p className="mt-0.5 text-[9px] text-gray-500">{group.help}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {mergeableSections.map((sec) => {
+                                  const isPrimary = sec.name === selectedSection;
+                                  const isChecked = group.selected.includes(sec.name);
+                                  const reachedLimit = group.key === 'parallel' && !isChecked && group.selected.length >= 4;
+                                  const belongsToOtherGroup = sectionCombinationMode === 'merge_parallel'
+                                    && !isPrimary
+                                    && (group.key === 'merge'
+                                      ? selectedParallelSections.includes(sec.name)
+                                      : selectedMergedSections.includes(sec.name));
+                                  const isDisabled = isPrimary || reachedLimit || belongsToOtherGroup;
+                                  return (
+                                    <button
+                                      key={`${group.key}-${sec.name}`}
+                                      type="button"
+                                      disabled={isDisabled}
+                                      onClick={() => {
+                                        if (isDisabled) return;
+                                        group.setSelected((current) => (
+                                          isChecked
+                                            ? current.filter((name) => name !== sec.name)
+                                            : group.key === 'parallel'
+                                              ? [...current, sec.name].slice(0, 4)
+                                              : [...current, sec.name]
+                                        ));
+                                      }}
+                                      title={isPrimary
+                                        ? 'Primary active section (cannot be deselected)'
+                                        : belongsToOtherGroup
+                                          ? 'This section is already selected in the other arrangement group'
+                                          : reachedLimit
+                                            ? 'Maximum of four parallel sections reached'
+                                            : 'Add or remove this section'}
+                                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-all ${
+                                        isPrimary
+                                          ? 'cursor-default border-[#7A0808] bg-[#7A0808] text-white shadow-2xs'
+                                          : isChecked
+                                            ? 'cursor-pointer border-[#7A0808] bg-[#7A0808] text-white shadow-2xs'
+                                            : isDisabled
+                                              ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60'
+                                              : 'cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      <span>{sec.name}</span>
+                                      <span className={`text-[9px] font-normal ${isPrimary || isChecked ? 'text-white/80' : 'text-gray-400'}`}>
+                                        ({sec.studentCount || sec.studentsPerSection || 40} stds)
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2632,7 +2808,9 @@ export default function AddPlotEntryModalEnhanced({
                     <h3 className="font-bold text-base text-[#2B3235]">Select Preferred Section Time</h3>
                   </div>
                   <p className="mt-1 text-xs text-gray-500">
-                    Choose a conflict-free time for {selectedCombinedSections.length > 1 ? `all merged sections (${selectedCombinedSections.join(', ')})` : selectedSection}. Teacher and room availability will be checked next.
+                    Choose a conflict-free time for {selectedCombinedSections.length > 1
+                      ? `all ${sectionCombinationMode === 'merge' ? 'merged' : sectionCombinationMode === 'parallel' ? 'parallel' : 'merged-parallel'} sections (${selectedCombinedSections.join(', ')})`
+                      : selectedSection}. Teacher and room availability will be checked next.
                   </p>
                 </div>
                 <span className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-[#7A0808]">

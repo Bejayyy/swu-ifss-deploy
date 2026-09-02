@@ -28,6 +28,7 @@ const TYPE_COLORS = {
 
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const EMPTY_BUILDING_LIST = [];
 
 function Chip({ label, active, onClick, count }) {
   return (
@@ -85,7 +86,9 @@ function EquipChip({ label, active, onClick }) {
 
 export default function RoomFinder() {
   const navigate = useNavigate();
-  const { buildingList, loading: appLoading } = useApp();
+  const appContext = useApp();
+  const buildingList = Array.isArray(appContext?.buildingList) ? appContext.buildingList : EMPTY_BUILDING_LIST;
+  const appLoading = appContext?.buildingsLoading ?? false;
   const { canSubmitReservation } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
 
@@ -108,8 +111,8 @@ export default function RoomFinder() {
   const allRooms = useMemo(() => {
     const out = [];
     buildingList.forEach((b) => {
-      b.floorData.forEach((f) => {
-        f.rooms.forEach((r) => {
+      (Array.isArray(b.floorData) ? b.floorData : []).forEach((f) => {
+        (Array.isArray(f.rooms) ? f.rooms : []).forEach((r) => {
           out.push({
             ...r,
             buildingName: b.name,

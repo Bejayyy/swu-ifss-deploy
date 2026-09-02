@@ -1108,6 +1108,9 @@ export default function CourseSchedulingNew() {
         rotationCycle: block.rotationCycle || 'all',
         isCombinedSection: block.isCombinedSection || false,
         combinedSections: block.combinedSections || [],
+        sectionCombinationMode: block.sectionCombinationMode || (block.isCombinedSection ? 'merge' : 'none'),
+        mergedSections: block.mergedSections || [],
+        parallelSections: block.parallelSections || [],
       },
       fromDrag: false,
       isServiceCollegeMode: Boolean(activeServiceAssignment),
@@ -1613,9 +1616,9 @@ export default function CourseSchedulingNew() {
 
       {/* Dean Access Status Banner - First College */}
       {isDean && accessStatus.hasAccess && accessStatus.isFirst && (
-        <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4 mb-5">
-          <p className="text-sm font-bold text-blue-900">
-            🎯 You are the first college to schedule. Other colleges will schedule after you complete.
+        <div className="mb-5 rounded-2xl border-2 border-[#7A0808]/30 bg-red-50 p-4">
+          <p className="text-sm font-bold text-[#7A0808]">
+            You are the first college to schedule. Other colleges will schedule after you complete.
           </p>
         </div>
       )}
@@ -2538,6 +2541,7 @@ export default function CourseSchedulingNew() {
           schoolYearId={activeSchoolYearId}
           sectionYearLevel={currentSectionObj?.yearLevel || '1st Year'}
           allowOjtRotation={Boolean(currentSectionObj?.hasOjtAlternatingModality)}
+          allowParallelClasses={Boolean(activeCollegeObj?.allowsParallelClasses)}
           dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
           isServiceCollegeMode={entryModal.isServiceCollegeMode || Boolean(activeServiceAssignment)}
           serviceComponent={entryModal.serviceComponent || activeServiceAssignment?.component || null}

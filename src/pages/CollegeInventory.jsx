@@ -1296,14 +1296,6 @@ export default function CollegeInventory() {
             setShowAddModal(false);
             setEditingCollege(null);
           }}
-          onSaveSuccess={(code) => {
-            setNotification({
-              type: 'success',
-              title: editingCollege ? 'College Updated!' : 'College Added!',
-              message: `College ${code} and its programs/courses have been saved successfully.`,
-            });
-            setEditingCollege(null);
-          }}
           colleges={colleges}
           editingCollege={editingCollege}
         />
