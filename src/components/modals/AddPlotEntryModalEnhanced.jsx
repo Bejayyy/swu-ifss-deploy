@@ -45,6 +45,28 @@ import LoadingModal from './LoadingModal';
 
 const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
 
+// Parallel/merged schedules are intentionally copied into each participating
+// section. Count those copies once when calculating a course's weekly hours.
+const dedupeLogicalScheduleEntries = (entries = []) => {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const logicalId = entry.combinedGroupId || entry.originalId || entry.id;
+    const fallbackId = [
+      entry.courseCode || entry.course,
+      entry.type,
+      entry.day ?? entry.date,
+      entry.startHour ?? entry.startTime,
+      entry.endHour ?? entry.endTime,
+      entry.roomId || entry.roomCode,
+      [...(entry.combinedSections || [])].sort().join('|'),
+    ].join('::');
+    const key = String(logicalId || fallbackId);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export const DAY_PAIR_PRESETS = [
   { label: 'Mon & Thu', days: [0, 3] },
   { label: 'Tue & Fri', days: [1, 4] },
@@ -636,11 +658,11 @@ export default function AddPlotEntryModalEnhanced({
     const codeNorm = String(course.code || '').trim().toUpperCase();
     const titleNorm = String(course.title || '').trim().toUpperCase();
 
-    const matchingEntries = (sectionPlotEntries || []).filter((e) => {
+    const matchingEntries = dedupeLogicalScheduleEntries((sectionPlotEntries || []).filter((e) => {
       const eCode = String(e.courseCode || '').trim().toUpperCase();
       const eTitle = String(e.title || '').trim().toUpperCase();
       return (codeNorm && eCode === codeNorm) || (titleNorm && eTitle === titleNorm);
-    });
+    }));
 
     let plottedLecHours = 0;
     let plottedLabHours = 0;
@@ -2070,6 +2092,11 @@ export default function AddPlotEntryModalEnhanced({
           dayLabel: finalDayLabel,
           title: selectedCourse.title,
           courseCode: selectedCourse.code,
+          units: selectedCourse.units ?? null,
+          lecUnits: selectedCourse.lecUnits ?? null,
+          labUnits: selectedCourse.labUnits ?? null,
+          lecHours: courseUnits.targetLecHours,
+          labHours: courseUnits.targetLabHours,
           instructor: selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? selectedTeacher.name : 'TBA',
           instructorUid: selectedTeacher?.uid || null,
           instructorEmail: selectedTeacher?.email || null,
@@ -4251,6 +4278,31 @@ export default function AddPlotEntryModalEnhanced({
                   <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
                     <span className="text-gray-500">Required Hours:</span>
                     <span className="font-bold text-gray-900">{targetHours} hrs/week</span>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100 text-xs space-y-1.5">
+                    <span className="text-gray-500">Sections:</span>
+                    {sectionCombinationMode === 'merge_parallel' ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-gray-600">Merged</span>
+                          {selectedMergedSections.map((sec) => (
+                            <span key={`merged-${sec}`} className="px-2 py-0.5 rounded-md border border-[#7A0808]/20 bg-red-50 text-[#7A0808] font-bold text-[10px]">{sec}</span>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-gray-600">Parallel</span>
+                          {selectedParallelSections.map((sec) => (
+                            <span key={`parallel-${sec}`} className="px-2 py-0.5 rounded-md border border-[#7A0808]/20 bg-red-50 text-[#7A0808] font-bold text-[10px]">{sec}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(selectedCombinedSections.length ? selectedCombinedSections : [selectedSection]).filter(Boolean).map((sec) => (
+                          <span key={sec} className="px-2 py-0.5 rounded-md border border-[#7A0808]/20 bg-red-50 text-[#7A0808] font-bold text-[10px]">{sec}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

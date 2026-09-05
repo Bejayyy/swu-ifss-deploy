@@ -152,8 +152,20 @@ export default function BuildingDetails() {
         />
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h2 className="font-bold text-base mb-4" style={{ color: '#2B3235' }}>Rooms by Floor</h2>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-gray-100 bg-gradient-to-r from-[#FFF8F8] to-white px-5 py-5 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-lg text-[#2B3235]">Rooms by Floor</h2>
+              <p className="mt-1 text-xs text-gray-500">Select a floor to view its rooms, capacity, and availability.</p>
+            </div>
+            {canManageBuilding && (
+              <button type="button" className="btn-outline-maroon flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold" onClick={() => setShowAddFloor(true)}>
+                <Plus size={14} /> Add Floor
+              </button>
+            )}
+          </div>
+        </div>
 
         {building.floorData.length === 0 ? (
           <div className="text-center py-8">
@@ -162,7 +174,7 @@ export default function BuildingDetails() {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 p-1.5 mb-6 overflow-x-auto scrollbar-thin bg-gray-100/80 rounded-2xl border border-gray-200/60 max-w-full">
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin max-w-full">
               {building.floorData.map((f) => {
                 const isSelected = activeFloor === f.floor;
                 return (
@@ -173,7 +185,7 @@ export default function BuildingDetails() {
                     className={`px-4 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                       isSelected
                         ? 'bg-[#7A0808] text-white shadow-xs scale-[1.02]'
-                        : 'bg-white text-[#2B3235] hover:bg-gray-50 hover:text-[#7A0808] border border-gray-200/80'
+                        : 'bg-white text-[#2B3235] hover:bg-[#FFF0F0] hover:text-[#7A0808] border border-gray-200'
                     }`}
                   >
                     Floor {f.floor}
@@ -182,9 +194,9 @@ export default function BuildingDetails() {
               })}
             </div>
 
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>
+            <div className="p-5 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-base" style={{ color: '#2B3235' }}>
                   Floor {activeFloor} Overview
                 </h3>
                 {canManageBuilding && (
@@ -205,15 +217,14 @@ export default function BuildingDetails() {
                   { label: 'Occupied', value: floorStats.occupied, color: '#DC2626' },
                   { label: 'Total Capacity', value: floorStats.capacity, color: '#2563EB' },
                 ].map(({ label, value, color }) => (
-                  <div key={label} className="border border-gray-100 rounded-xl p-4 text-center">
+                  <div key={label} className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 text-center">
                     <p className="text-2xl font-black mb-1" style={{ color }}>{value}</p>
                     <p className="text-xs font-semibold text-gray-400">{label}</p>
                   </div>
                 ))}
               </div>
-            </div>
-
-            <h3 className="font-bold text-sm mb-4" style={{ color: '#2B3235' }}>Room Details</h3>
+              <div className="my-6 border-t border-gray-100" />
+              <h3 className="font-bold text-base mb-4" style={{ color: '#2B3235' }}>Room Details</h3>
             {floorData.rooms.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">
                 No rooms on this floor yet.
@@ -222,7 +233,7 @@ export default function BuildingDetails() {
                 </button>}
               </div>
             ) : (
-              <div className="space-y-3">
+              <div>
                 {(() => {
                   const totalFloorRooms = floorData.rooms.length;
                   const totalRoomPages = Math.max(1, Math.ceil(totalFloorRooms / roomItemsPerPage));
@@ -232,20 +243,21 @@ export default function BuildingDetails() {
 
                   return (
                     <>
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                       {paginatedRooms.map((room) => {
                         const isUnderMaintenance = room.maintenanceStatus === 'under-maintenance';
                         
                         return (
                           <div 
                             key={room.docId || room.id} 
-                            className={`border border-gray-100 rounded-xl p-5 transition-all ${
+                            className={`border border-gray-200 rounded-xl p-4 transition-all ${
                               isUnderMaintenance 
                                 ? 'bg-gray-50 opacity-60' 
                                 : 'hover:shadow-sm'
                             }`}
                             style={isUnderMaintenance ? { filter: 'blur(0.5px)' } : {}}
                           >
-                            <div className="flex items-center justify-between gap-3">
+                            <div className="flex h-full flex-col justify-between gap-4 sm:flex-row sm:items-center">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-3 mb-2 flex-wrap">
                                   <h4 className="font-black text-base text-dark">{room.id || room.name}</h4>
@@ -263,7 +275,7 @@ export default function BuildingDetails() {
                                   </p>
                                 )}
                               </div>
-                              <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                              <div className="flex gap-2 flex-shrink-0 flex-wrap sm:justify-end">
                                 {canSubmitReservation() && !isUnderMaintenance && (
                                   <button
                                     type="button"
@@ -313,6 +325,7 @@ export default function BuildingDetails() {
                           </div>
                         );
                       })}
+                      </div>
 
                       {totalFloorRooms > 0 && (
                         <div className="flex items-center justify-between p-3 bg-gray-50/60 border border-gray-100 rounded-xl flex-wrap gap-3 mt-4">
@@ -387,6 +400,7 @@ export default function BuildingDetails() {
                 <Plus size={16} /> Add Room to this floor
               </button>
             )}
+            </div>
           </>
         )}
       </div>

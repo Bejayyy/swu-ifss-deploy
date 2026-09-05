@@ -1,4 +1,50 @@
 import * as XLSX from 'xlsx';
+import * as CFB from 'cfb';
+import { requiresCollege } from '../constants/colleges';
+
+const escapeXml = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+// SheetJS Community Edition reads validation rules but does not serialize
+// worksheet data validations. Inject the standard OOXML nodes into sheet1 so
+// the downloaded workbook contains real Excel dropdown controls.
+const writeWorkbookWithValidations = (workbook, filename, validations) => {
+  const workbookBytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  // XLSX returns an ArrayBuffer in browsers, while CFB expects an indexed byte
+  // array. Passing the ArrayBuffer directly causes CFB's header parser to fail.
+  const archive = CFB.read(new Uint8Array(workbookBytes), { type: 'array' });
+  const sheetIndex = archive.FullPaths.findIndex((path) =>
+    String(path || '').replace(/\\/g, '/').endsWith('/xl/worksheets/sheet1.xml')
+  );
+  if (sheetIndex < 0) throw new Error('Unable to prepare Excel dropdown validation.');
+  const sheetPath = archive.FullPaths[sheetIndex];
+  const sheetFile = archive.FileIndex[sheetIndex];
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let xml = decoder.decode(sheetFile.content);
+  const validationXml = `<dataValidations count="${validations.length}">${validations.map((validation) =>
+    `<dataValidation type="list" allowBlank="1" showErrorMessage="1" errorTitle="${escapeXml(validation.errorTitle)}" error="${escapeXml(validation.error)}" sqref="${escapeXml(validation.sqref)}"><formula1>${escapeXml(validation.formula1)}</formula1></dataValidation>`
+  ).join('')}</dataValidations>`;
+  const insertionPoint = /(<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<drawing\b|<legacyDrawing\b|<tableParts\b|<extLst\b|<\/worksheet>)/;
+  xml = xml.replace(insertionPoint, `${validationXml}$1`);
+  // Do not use `unsafe` here: it appends a second ZIP entry with the same path,
+  // which makes Excel repair the workbook and discard the validation rules.
+  CFB.utils.cfb_add(archive, sheetPath, encoder.encode(xml));
+
+  const output = CFB.write(archive, { fileType: 'zip', type: 'array', compression: true });
+  const url = URL.createObjectURL(new Blob([output], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 
 /**
  * Smart Title Case Formatter: Capitalizes the first letter of each word.
@@ -142,14 +188,29 @@ const getAiCourseColumnMap = async (headers, sampleRows) => {
 /**
  * Generates an Excel template file (.xlsx) for bulk importing users.
  */
-export function downloadBulkUserTemplate() {
+export function downloadBulkUserTemplate(roles = [], colleges = []) {
+  const roleOptions = (roles || [])
+    .map((role) => typeof role === 'string'
+      ? { value: role, label: role }
+      : { value: role.value || role.key || role.id, label: role.label || role.name || role.value })
+    .filter((role) => role.value);
+  const collegeOptions = [
+    { code: 'None', name: 'No College / Department Required' },
+    ...(colleges || [])
+    .map((college) => ({
+      code: String(college.code || college.value || college.id || '').trim(),
+      name: String(college.name || college.label || college.code || '').trim(),
+    }))
+    .filter((college) => college.code),
+  ];
+
   const headers = [
     'First Name *',
     'Middle Name (Optional)',
     'Last Name *',
     'Role *',
     'Email Address *',
-    'College Code (Req for Registrar/Teacher/Student)',
+    'College / Department (Select None if N/A)',
   ];
 
   const sampleRows = [
@@ -157,9 +218,9 @@ export function downloadBulkUserTemplate() {
       'Juan',
       'Dela',
       'Cruz',
-      'student',
+      roleOptions[0]?.value || 'student',
       'juan.cruz@swu.edu.ph',
-      'CEIT',
+      collegeOptions[0]?.code || '',
     ],
   ];
 
@@ -175,46 +236,64 @@ export function downloadBulkUserTemplate() {
     { wch: 45 },
   ];
 
-  const validRoles = [
-    'super_admin',
-    'asset_manager',
-    'department_head',
-    'working_scholar',
-    'custodian',
-    'registrar',
-    'teacher',
-    'student',
-  ];
-
   const optionsData = [
-    ['Valid Roles'],
-    ...validRoles.map((role) => [role]),
+    ['Role Value', 'Role Name', 'College Code', 'College Name'],
+    ...Array.from({ length: Math.max(roleOptions.length, collegeOptions.length, 1) }, (_, index) => [
+      roleOptions[index]?.value || '',
+      roleOptions[index]?.label || '',
+      collegeOptions[index]?.code || '',
+      collegeOptions[index]?.name || '',
+    ]),
   ];
   const optionsWorksheet = XLSX.utils.aoa_to_sheet(optionsData);
+  optionsWorksheet['!cols'] = [{ wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 42 }];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'User Import Template');
   XLSX.utils.book_append_sheet(workbook, optionsWorksheet, 'Reference Options');
 
-  worksheet['!dataValidation'] = [
+  // Desktop Excel does not allow a data-validation list to directly reference
+  // another worksheet. Workbook-level names are the compatible bridge.
+  workbook.Workbook = workbook.Workbook || {};
+  workbook.Workbook.Names = [
+    {
+      Name: 'UserRoleOptions',
+      Ref: `'Reference Options'!$A$2:$A$${Math.max(2, roleOptions.length + 1)}`,
+    },
+    {
+      Name: 'UserCollegeOptions',
+      Ref: `'Reference Options'!$C$2:$C$${Math.max(2, collegeOptions.length + 1)}`,
+    },
+  ];
+
+  const validations = [
     {
       sqref: 'D2:D1000',
       type: 'list',
       operator: 'equal',
-      formula1: "'Reference Options'!$A$2:$A$9",
+      formula1: 'UserRoleOptions',
       showErrorMessage: true,
       errorTitle: 'Invalid Role',
       error: 'Please select a valid role from the dropdown list.',
     },
+    {
+      sqref: 'F2:F1000',
+      type: 'list',
+      operator: 'equal',
+      formula1: 'UserCollegeOptions',
+      showErrorMessage: true,
+      errorTitle: 'Invalid College',
+      error: 'Please select a valid college code from the dropdown list.',
+    },
   ];
 
-  XLSX.writeFile(workbook, 'swu_bulk_user_import_template.xlsx');
+  writeWorkbookWithValidations(workbook, 'swu_bulk_user_import_template.xlsx', validations);
 }
 
 /**
  * Parses and validates an uploaded Excel/CSV file containing users.
  */
-export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = [], existingUsers = []) {
+export function parseBulkUserSpreadsheet(file, roles = [], roleDefinitions = {}, colleges = [], existingUsers = []) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -249,16 +328,22 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
         const parsedRows = [];
         const seenEmails = new Set();
 
-        const validRoleValues = [
-          'super_admin',
-          'asset_manager',
-          'department_head',
-          'working_scholar',
-          'custodian',
-          'registrar',
-          'teacher',
-          'student',
-        ];
+        const roleOptions = (roles || []).map((role) => typeof role === 'string'
+          ? { value: role, label: role }
+          : { value: role.value || role.key || role.id, label: role.label || role.name || role.value });
+        const roleLookup = new Map();
+        roleOptions.forEach((role) => {
+          if (!role.value) return;
+          roleLookup.set(String(role.value).trim().toLowerCase(), role.value);
+          if (role.label) roleLookup.set(String(role.label).trim().toLowerCase(), role.value);
+        });
+        const collegeLookup = new Map();
+        (colleges || []).forEach((college) => {
+          const code = String(college.code || college.value || college.id || '').trim();
+          const name = String(college.name || college.label || '').trim();
+          if (code) collegeLookup.set(code.toLowerCase(), code);
+          if (name && code) collegeLookup.set(name.toLowerCase(), code);
+        });
 
         dataRows.forEach((row, rowIdx) => {
           if (!row || row.length === 0 || row.every((cell) => String(cell).trim() === '')) {
@@ -268,9 +353,12 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
           const rawFirstName = String(row[0] || '').trim();
           const rawMiddleName = String(row[1] || '').trim();
           const rawLastName = String(row[2] || '').trim();
-          const rawRole = String(row[3] || '').trim().toLowerCase();
+          const rawRole = String(row[3] || '').trim();
           const rawEmail = String(row[4] || '').trim().toLowerCase();
-          const rawCollegeCode = String(row[5] || '').trim().toUpperCase();
+          const rawCollege = String(row[5] || '').trim();
+          const resolvedRole = roleLookup.get(rawRole.toLowerCase()) || '';
+          const resolvedCollege = collegeLookup.get(rawCollege.toLowerCase()) || '';
+          const isNoCollege = rawCollege.toLowerCase() === 'none';
 
           // Exclude sample row ("Juan", "Dela", "Cruz", "student", "juan.cruz@swu.edu.ph")
           if (rawEmail === 'juan.cruz@swu.edu.ph' && rawFirstName.toLowerCase() === 'juan') {
@@ -285,7 +373,7 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
 
           if (!rawRole) {
             rowErrors.push('Role is required');
-          } else if (!validRoleValues.includes(rawRole)) {
+          } else if (!resolvedRole) {
             rowErrors.push(`Invalid role "${rawRole}"`);
           }
 
@@ -301,9 +389,11 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
             seenEmails.add(rawEmail);
           }
 
-          const requiresCol = ['registrar', 'teacher', 'student'].includes(rawRole);
-          if (requiresCol && !rawCollegeCode) {
+          const requiresCol = resolvedRole ? requiresCollege(resolvedRole, roleDefinitions) : false;
+          if (requiresCol && (!rawCollege || isNoCollege)) {
             rowErrors.push(`College code required for role "${rawRole}"`);
+          } else if (rawCollege && !isNoCollege && !resolvedCollege) {
+            rowErrors.push(`Invalid college "${rawCollege}"`);
           }
 
           parsedRows.push({
@@ -311,9 +401,9 @@ export function parseBulkUserSpreadsheet(file, roleDefinitions = {}, colleges = 
             firstName: toTitleCase(rawFirstName),
             middleName: rawMiddleName ? toTitleCase(rawMiddleName) : '',
             lastName: toTitleCase(rawLastName),
-            role: validRoleValues.includes(rawRole) ? rawRole : 'student',
+            role: resolvedRole || roleOptions[0]?.value || 'student',
             email: rawEmail,
-            collegeCode: rawCollegeCode,
+            college: isNoCollege ? '' : resolvedCollege,
             isValid: rowErrors.length === 0,
             errors: rowErrors,
           });

@@ -75,6 +75,7 @@ const createEmptyCourse = () => ({
   serviceMode: SERVICE_MODES.INTERNAL,
   lecServiceCollege: '',
   labServiceCollege: '',
+  targetCollegeCodes: [],
 });
 
 function inferServiceMode(course = {}) {
@@ -250,6 +251,9 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   serviceMode: inferServiceMode(crs),
                   lecServiceCollege: crs.lecServiceCollege || crs.rememberedLecServiceCollege || '',
                   labServiceCollege: crs.labServiceCollege || crs.rememberedLabServiceCollege || '',
+                  targetCollegeCodes: Array.isArray(crs.targetCollegeAssignments)
+                    ? crs.targetCollegeAssignments.map((assignment) => assignment.collegeCode).filter(Boolean)
+                    : (crs.targetCollegeCodes || []),
                 };
                 if (
                   updatedPrograms[targetIdx].courses.length === 1 &&
@@ -440,6 +444,24 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       currentCourse.serviceMode = mode;
       currentCourse.requiresServiceCollege = mode !== SERVICE_MODES.INTERNAL;
 
+      updatedCourses[cIdx] = currentCourse;
+      updatedPrograms[pIdx] = { ...updatedPrograms[pIdx], courses: updatedCourses };
+      return { ...prev, programs: updatedPrograms };
+    });
+  };
+
+  const toggleCourseTargetCollege = (pIdx, cIdx, collegeCode) => {
+    setForm((prev) => {
+      const updatedPrograms = [...prev.programs];
+      const updatedCourses = [...updatedPrograms[pIdx].courses];
+      const currentCourse = { ...updatedCourses[cIdx] };
+      const normalizedCode = String(collegeCode || '').trim().toUpperCase();
+      const selectedCodes = new Set(
+        (currentCourse.targetCollegeCodes || []).map((value) => String(value).trim().toUpperCase())
+      );
+      if (selectedCodes.has(normalizedCode)) selectedCodes.delete(normalizedCode);
+      else selectedCodes.add(normalizedCode);
+      currentCourse.targetCollegeCodes = [...selectedCodes];
       updatedCourses[cIdx] = currentCourse;
       updatedPrograms[pIdx] = { ...updatedPrograms[pIdx], courses: updatedCourses };
       return { ...prev, programs: updatedPrograms };
@@ -637,6 +659,13 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           setError(`Complete both the subject code and subject title for ${courseCode || courseTitle}, or leave both blank to add courses later.`);
           return;
         }
+        if (
+          form.managesGeneralEducationCourses &&
+          (!Array.isArray(course.targetCollegeCodes) || course.targetCollegeCodes.length === 0)
+        ) {
+          setError(`Select at least one target college for ${courseCode || courseTitle}.`);
+          return;
+        }
         const serviceMode = inferServiceMode(course);
         const needsLectureCollege = serviceMode === SERVICE_MODES.LECTURE || serviceMode === SERVICE_MODES.BOTH;
         const needsLaboratoryCollege = serviceMode === SERVICE_MODES.LABORATORY || serviceMode === SERVICE_MODES.BOTH;
@@ -746,6 +775,22 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               rememberedLecServiceCollege: crs.lecServiceCollege ? String(crs.lecServiceCollege).trim().toUpperCase() : null,
               rememberedLabServiceCollege: crs.labServiceCollege ? String(crs.labServiceCollege).trim().toUpperCase() : null,
               serviceStatus: crs.serviceStatus || 'pending',
+              generalEducationProviderCode: form.managesGeneralEducationCourses ? code : null,
+              targetCollegeAssignments: form.managesGeneralEducationCourses
+                ? (crs.targetCollegeCodes || []).map((targetCode) => {
+                    const targetCollege = allColleges.find(
+                      (college) => String(college.code || '').trim().toUpperCase() === String(targetCode).trim().toUpperCase()
+                    );
+                    return {
+                      collegeCode: String(targetCode).trim().toUpperCase(),
+                      collegeName: targetCollege?.name || String(targetCode).trim().toUpperCase(),
+                      programCodes: (targetCollege?.programs || [])
+                        .map((program) => String(program.code || '').trim().toUpperCase())
+                        .filter(Boolean),
+                      yearLevel: crs.yearLevel || '1st Year',
+                    };
+                  })
+                : [],
             };
 
             if (crs.id && !crs.id.startsWith('crs_')) {
@@ -1159,7 +1204,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                 <div className="sm:col-span-1 text-center" title="Total Credit Units">Total Units</div>
                               </div>
 
-                              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                              <div className="space-y-2 overflow-visible pr-1">
                                 {visibleCourseEntries.length === 0 && (
                                   <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center">
                                     <p className="text-[11px] font-bold text-gray-600">
@@ -1362,6 +1407,77 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                           <span className="sm:hidden">Remove</span>
                                         </button>
                                       </div>
+
+                                      {/* General Education target colleges */}
+                                      {form.managesGeneralEducationCourses && (
+                                        <div className="sm:col-span-12 mt-1.5 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+                                          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_220px] lg:items-start">
+                                            <div>
+                                              <label className="mb-1 block text-[10px] font-extrabold text-blue-950">
+                                                Colleges that will receive this subject <span className="text-red-500">*</span>
+                                              </label>
+                                              <details className="group relative">
+                                                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-blue-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700">
+                                                  <span>
+                                                    {(crs.targetCollegeCodes || []).length > 0
+                                                      ? `${crs.targetCollegeCodes.length} college(s) selected`
+                                                      : 'Select target colleges...'}
+                                                  </span>
+                                                  <span className="text-blue-800 transition-transform group-open:rotate-180">⌄</span>
+                                                </summary>
+                                                <div className="mt-1 max-h-44 overflow-y-auto rounded-lg border border-blue-200 bg-white p-2 shadow-lg">
+                                                  {allColleges
+                                                    .filter((college) => {
+                                                      const collegeCode = String(college.code || '').trim().toUpperCase();
+                                                      return collegeCode && collegeCode !== String(form.code || '').trim().toUpperCase();
+                                                    })
+                                                    .map((college) => {
+                                                      const collegeCode = String(college.code || '').trim().toUpperCase();
+                                                      const checked = (crs.targetCollegeCodes || []).some(
+                                                        (value) => String(value).trim().toUpperCase() === collegeCode
+                                                      );
+                                                      return (
+                                                        <label key={college.id || collegeCode} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-blue-50">
+                                                          <input
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            onChange={() => toggleCourseTargetCollege(pIdx, cIdx, collegeCode)}
+                                                            className="mt-0.5 h-4 w-4 accent-[#7A0808]"
+                                                          />
+                                                          <span className="text-[11px] font-semibold text-gray-800">
+                                                            {collegeCode} - {college.name}
+                                                            <span className="mt-0.5 block text-[9px] font-medium text-gray-500">
+                                                              {(college.programs || []).length} program(s)
+                                                            </span>
+                                                          </span>
+                                                        </label>
+                                                      );
+                                                    })}
+                                                  {allColleges.filter((college) => String(college.code || '').trim().toUpperCase() !== String(form.code || '').trim().toUpperCase()).length === 0 && (
+                                                    <p className="px-2 py-3 text-[10px] font-semibold text-gray-500">No other colleges are available yet.</p>
+                                                  )}
+                                                </div>
+                                              </details>
+                                            </div>
+                                            <div>
+                                              <label className="mb-1 block text-[10px] font-extrabold text-blue-950">
+                                                Target year level <span className="text-red-500">*</span>
+                                              </label>
+                                              <select
+                                                value={crs.yearLevel || '1st Year'}
+                                                onChange={(event) => updateCourseField(pIdx, cIdx, 'yearLevel', event.target.value)}
+                                                className="form-input w-full rounded-lg border border-blue-200 bg-white px-2.5 py-2 text-xs font-semibold focus:border-[#7A0808]"
+                                                required
+                                              >
+                                                {YEAR_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+                                              </select>
+                                            </div>
+                                          </div>
+                                          <p className="mt-2 text-[9px] font-medium leading-relaxed text-blue-800">
+                                            This subject will be available to every program and section at the selected year level in the chosen colleges.
+                                          </p>
+                                        </div>
+                                      )}
 
                                       {/* Sub-row: Conditional Service College Assignment */}
                                       {(hasLecture || hasLaboratory) && (

@@ -9,8 +9,7 @@ import CustomSelect from '../ui/CustomSelect';
 const MAROON = '#7A0808';
 
 const TYPE_COLORS = {
-  'Lecture Room': { bg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-blue-700' },
-  Classroom: { bg: 'bg-amber-50 text-amber-800 border-amber-200', text: 'text-amber-800' },
+  Lecture: { bg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-blue-700' },
   Laboratory: { bg: 'bg-purple-50 text-purple-700 border-purple-200', text: 'text-purple-700' },
   'Seminar Room': { bg: 'bg-teal-50 text-teal-700 border-teal-200', text: 'text-teal-700' },
   'Conference Room': { bg: 'bg-slate-100 text-slate-700 border-slate-200', text: 'text-slate-700' },
@@ -299,7 +298,7 @@ export default function SelectRoomModal({ isOpen, onClose, onSelectRoom }) {
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-black text-sm text-[#2B3235]">{room.name || room.id}</h3>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${typeStyle.bg}`}>
-                              {room.type || 'Classroom'}
+                              {room.type || 'Lecture'}
                             </span>
                           </div>
                           <p className="text-xs font-semibold text-gray-500 mt-1 flex items-center gap-1.5">

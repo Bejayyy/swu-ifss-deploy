@@ -55,6 +55,12 @@ function mapStaffUserDoc(u, roleDefinitions = {}) {
     permissions: u.permissions || [],
     navKeys: u.navKeys || [],
     useCustomAccess: Boolean(u.permissions?.length || u.navKeys?.length),
+    mustSetPassword: Boolean(u.mustSetPassword),
+    passwordEnabled: u.passwordEnabled !== false,
+    lastLoginAt: u.lastLoginAt || null,
+    passwordSetAt: u.passwordSetAt || null,
+    createdAt: u.createdAt || null,
+    updatedAt: u.updatedAt || null,
   };
 }
 
@@ -199,6 +205,7 @@ export async function createStaffUserByEmailInvite({
     authProviders: ['password'],
     mustSetPassword: true,
     passwordEnabled: true,
+    passwordSetAt: null,
     createdBy: createdBy || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

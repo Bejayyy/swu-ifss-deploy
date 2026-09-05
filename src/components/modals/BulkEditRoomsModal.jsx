@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRoleConfig } from '../../context/RoleConfigContext';
 import { subscribeStaffUsers } from '../../services/systemUserService';
 import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
-import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES } from '../../services/roomTypeService';
+import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES, normalizeRoomType } from '../../services/roomTypeService';
 import { canManageBuildings, canManageAssignedRooms } from '../../constants/rolePermissions';
 import ConfirmModal from './ConfirmModal';
 import CustomSelect from '../ui/CustomSelect';
@@ -72,8 +72,8 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
     const unsub = subscribeRoomTypes(
       (types) => {
         setRoomTypeChoices((prev) => {
-          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev]);
-          if (form.type) merged.add(form.type);
+          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev].map(normalizeRoomType));
+          if (form.type) merged.add(normalizeRoomType(form.type));
           return Array.from(merged);
         });
       },
@@ -118,7 +118,7 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
   };
 
   const handleAddCustomType = async () => {
-    const t = newRoomType.trim();
+    const t = normalizeRoomType(newRoomType);
     if (!t) return;
 
     try {
@@ -186,7 +186,7 @@ export default function BulkEditRoomsModal({ selectedRooms, buildingId, floorId,
 
     try {
       const patch = {};
-      if (form.changeType) patch.type = form.type;
+      if (form.changeType) patch.type = normalizeRoomType(form.type);
       if (form.changeCapacity) patch.capacity = Number(form.capacity) || 0;
       if (form.changeStatus) patch.status = form.status;
       if (form.changeEquipment) patch.equipment = form.equipment;

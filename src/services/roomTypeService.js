@@ -5,6 +5,13 @@ const ROOM_TYPES_COLLECTION = 'roomTypes';
 
 export const DEFAULT_ROOM_TYPES = ['Lecture', 'Laboratory'];
 
+export function normalizeRoomType(value) {
+  const cleanValue = String(value || '').trim();
+  if (!cleanValue) return 'Lecture';
+  const normalized = cleanValue.toLowerCase().replace(/[\s_-]+/g, ' ');
+  return normalized === 'classroom' || normalized === 'lecture room' ? 'Lecture' : cleanValue;
+}
+
 /**
  * Real-time subscription to room types in Firestore database.
  * Merges Firestore saved items with DEFAULT_ROOM_TYPES.
@@ -18,7 +25,7 @@ export function subscribeRoomTypes(onData, onError) {
       const dbRoomTypes = snapshot.docs
         .map((doc) => {
           const data = doc.data();
-          return (data.name || '').trim();
+          return normalizeRoomType(data.name);
         })
         .filter(Boolean);
 
@@ -38,7 +45,7 @@ export function subscribeRoomTypes(onData, onError) {
  * Add a new room type to Firestore database permanently
  */
 export async function addRoomType(name) {
-  const cleanName = (name || '').trim();
+  const cleanName = normalizeRoomType(name);
   if (!cleanName) return null;
 
   try {

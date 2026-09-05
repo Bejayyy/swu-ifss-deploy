@@ -1,6 +1,7 @@
 export const SCHEDULE_TYPE_COLORS = {
   Lecture: { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
   Laboratory: { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
+  ServiceCollege: { bg: '#DBEAFE', text: '#172554', border: '#1E3A8A' },
   Reservation: { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
   'Reservation (Academic)': { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
   'Reservation (Non-Academic)': { bg: '#E0E7FF', text: '#3730A3', border: '#A5B4FC' },

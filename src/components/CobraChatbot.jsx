@@ -192,7 +192,74 @@ export default function CobraChatbot() {
   ]);
 
   const messagesEndRef = useRef(null);
+  const launcherRef = useRef(null);
+  const launcherDragRef = useRef(null);
+  const suppressLauncherClickRef = useRef(false);
+  const [launcherPosition, setLauncherPosition] = useState(() => {
+    try {
+      const saved = localStorage.getItem('swu_ifss_chatbot_launcher_position');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const storageKey = `swu_ifss_cobra_chat_${profile?.uid || 'user'}`;
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const drag = launcherDragRef.current;
+      if (!drag) return;
+      const deltaX = event.clientX - drag.startX;
+      const deltaY = event.clientY - drag.startY;
+      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) drag.moved = true;
+
+      const size = 56;
+      const edge = 8;
+      setLauncherPosition({
+        left: Math.max(edge, Math.min(window.innerWidth - size - edge, drag.left + deltaX)),
+        top: Math.max(edge, Math.min(window.innerHeight - size - edge, drag.top + deltaY)),
+      });
+    };
+
+    const handlePointerEnd = () => {
+      const drag = launcherDragRef.current;
+      if (!drag) return;
+      launcherDragRef.current = null;
+      if (drag.moved) {
+        suppressLauncherClickRef.current = true;
+        setLauncherPosition((position) => {
+          if (position) localStorage.setItem('swu_ifss_chatbot_launcher_position', JSON.stringify(position));
+          return position;
+        });
+        window.setTimeout(() => { suppressLauncherClickRef.current = false; }, 100);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+    window.addEventListener('blur', handlePointerEnd);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+      window.removeEventListener('blur', handlePointerEnd);
+    };
+  }, []);
+
+  const handleLauncherPointerDown = (event) => {
+    event.preventDefault();
+    const rect = launcherRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    launcherDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      moved: false,
+    };
+  };
 
   // Flatten all rooms from AppContext building data
   const allRoomsList = useMemo(() => {
@@ -417,18 +484,25 @@ export default function CobraChatbot() {
     <>
       {/* Floating Chat Trigger Button */}
       <button
+        ref={launcherRef}
         type="button"
+        onPointerDown={handleLauncherPointerDown}
+        onDragStart={(event) => event.preventDefault()}
         onClick={() => {
+          if (suppressLauncherClickRef.current) return;
           setOpen(true);
           setUnreadCount(0);
         }}
-        className="fixed bottom-6 right-6 z-[70] w-16 h-16 rounded-full shadow-2xl flex items-center justify-center border-2 border-white print:hidden transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer bg-[#7A0808]"
-        title={`Open ${BOT_NAME}`}
+        className={`fixed z-[70] w-14 h-14 rounded-full shadow-xl flex items-center justify-center border-2 border-white print:hidden transition-[transform,box-shadow] duration-200 hover:scale-105 active:scale-95 group cursor-grab active:cursor-grabbing touch-none bg-[#7A0808] ${launcherPosition ? '' : 'bottom-24 right-5'}`}
+        style={launcherPosition ? { left: launcherPosition.left, top: launcherPosition.top } : undefined}
+        title={`Open ${BOT_NAME} · Drag to move it away from content`}
+        aria-label={`Open ${BOT_NAME}. Drag this button to move it away from content.`}
       >
         <div className="relative w-full h-full rounded-full overflow-hidden p-1.5 bg-[#7A0808] flex items-center justify-center">
           <img
             src={chatbotFace}
             alt="COBRA AI Assistant"
+            draggable="false"
             className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-300"
           />
         </div>

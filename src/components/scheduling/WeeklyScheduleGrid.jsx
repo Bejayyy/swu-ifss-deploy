@@ -132,6 +132,7 @@ export default function WeeklyScheduleGrid({
   };
 
   const [typeFilter, setTypeFilter] = useState('All');
+  const hasServiceCollegeSchedules = blocks.some((block) => block.isServiceCollegeSchedule);
 
   const legendItems = React.useMemo(() => {
     const hasDisabledDays = dayStatuses.some((d) => d?.disabled);
@@ -146,6 +147,14 @@ export default function WeeklyScheduleGrid({
           { type: 'Laboratory', label: 'Laboratory', colors: SCHEDULE_TYPE_COLORS.Laboratory },
         ];
 
+    if (hasServiceCollegeSchedules) {
+      baseItems.push({
+        type: 'ServiceCollege',
+        label: 'Service College / Minor Subject',
+        colors: SCHEDULE_TYPE_COLORS.ServiceCollege,
+      });
+    }
+
     if (hasDisabledDays) {
       baseItems.push({
         type: 'NoClass',
@@ -155,7 +164,7 @@ export default function WeeklyScheduleGrid({
     }
 
     return baseItems;
-  }, [roomType, dayStatuses]);
+  }, [roomType, dayStatuses, hasServiceCollegeSchedules]);
 
   const dropdownOptions = React.useMemo(() => {
     if (roomType) {
@@ -176,11 +185,16 @@ export default function WeeklyScheduleGrid({
         { value: 'Maintenance', label: `Maintenance (${maintCount})` },
       ];
     }
-    return [
+    const options = [
       { value: 'All', label: `All Types (${blocks.length})` },
       { value: 'Lecture', label: `Lecture (${blocks.filter((b) => b.type === 'Lecture').length})` },
       { value: 'Laboratory', label: `Laboratory (${blocks.filter((b) => b.type === 'Laboratory').length})` },
     ];
+    const serviceCount = blocks.filter((block) => block.isServiceCollegeSchedule).length;
+    if (serviceCount > 0) {
+      options.push({ value: 'ServiceCollege', label: `Service College (${serviceCount})` });
+    }
+    return options;
   }, [roomType, blocks]);
 
   const filteredBlocks = React.useMemo(() => {
@@ -195,6 +209,7 @@ export default function WeeklyScheduleGrid({
       if (typeFilter === 'Maintenance') {
         return b.isMaintenance || b.type === 'Maintenance';
       }
+      if (typeFilter === 'ServiceCollege') return b.isServiceCollegeSchedule;
       return b.type === typeFilter;
     });
   }, [blocks, typeFilter]);
@@ -586,7 +601,8 @@ export default function WeeklyScheduleGrid({
 
                     {dayBlocks.map((sched) => {
                       const isLabRoom = roomType ? roomType.toLowerCase().includes('lab') : false;
-                      const colors = SCHEDULE_TYPE_COLORS[sched.type] ||
+                      const colors = (sched.isServiceCollegeSchedule ? SCHEDULE_TYPE_COLORS.ServiceCollege : null) ||
+                        SCHEDULE_TYPE_COLORS[sched.type] ||
                         (sched.isCourseSchedule ? (isLabRoom ? SCHEDULE_TYPE_COLORS.Laboratory : SCHEDULE_TYPE_COLORS.Lecture) : null) ||
                         (sched.isReservation || sched.type?.startsWith?.('Reservation') ? SCHEDULE_TYPE_COLORS.Reservation : null) ||
                         (sched.isMaintenance || sched.type === 'Maintenance' ? SCHEDULE_TYPE_COLORS.Maintenance : null) ||
@@ -640,14 +656,45 @@ export default function WeeklyScheduleGrid({
                             {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                           </p>
                           {!hideSectionNameInBlocks && (sched.section || sched.sectionName || sched.program) && (
-                            <p className="text-[9px] font-bold truncate opacity-90 print:text-[7px] print:leading-tight flex items-center gap-1" style={{ color: colors.text }}>
-                              <span>Sec: {sched.section || sched.sectionName || sched.program}</span>
-                              {sched.isCombinedSection && (
-                                <span className="text-[8px] font-black uppercase px-1 rounded bg-purple-100 text-purple-800 border border-purple-300">
-                                  Merged
-                                </span>
-                              )}
-                            </p>
+                            <div className="text-[9px] font-bold opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="truncate">Sec: {sched.section || sched.sectionName || sched.program}</span>
+                                {sched.isCombinedSection && (() => {
+                                  const mode = sched.sectionCombinationMode || 'merge';
+                                  const label = mode === 'parallel'
+                                    ? 'Parallel'
+                                    : mode === 'merge_parallel'
+                                      ? 'Merged + Parallel'
+                                      : 'Merged';
+                                  return (
+                                    <span className="text-[8px] font-black uppercase px-1 rounded bg-purple-100 text-purple-800 border border-purple-300 shrink-0">
+                                      {label}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              {sched.isCombinedSection && (() => {
+                                const mode = sched.sectionCombinationMode || 'merge';
+                                const combined = sched.combinedSections || [];
+                                const merged = sched.mergedSections?.length ? sched.mergedSections : combined;
+                                const parallel = sched.parallelSections?.length ? sched.parallelSections : combined;
+                                if (mode === 'merge_parallel') {
+                                  return (
+                                    <div className="mt-0.5 text-[8px] leading-tight print:text-[6px]">
+                                      <div className="truncate" title={`Merged: ${merged.join(', ')}`}>Merged: {merged.join(', ')}</div>
+                                      <div className="truncate" title={`Parallel: ${parallel.join(', ')}`}>Parallel: {parallel.join(', ')}</div>
+                                    </div>
+                                  );
+                                }
+                                const label = mode === 'parallel' ? 'Parallel' : 'Merged';
+                                const sections = mode === 'parallel' ? parallel : merged;
+                                return sections.length > 0 ? (
+                                  <div className="mt-0.5 text-[8px] leading-tight truncate print:text-[6px]" title={`${label}: ${sections.join(', ')}`}>
+                                    {label}: {sections.join(', ')}
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
                           )}
                           {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}
                           <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>

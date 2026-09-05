@@ -51,6 +51,7 @@ export default function AddUserModal({
 }) {
   const [activeTab, setActiveTab] = useState('individual'); // 'individual' | 'bulk'
   const [colleges, setColleges] = useState([]);
+  const [loadingColleges, setLoadingColleges] = useState(true);
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
   const [showAddCollegeModal, setShowAddCollegeModal] = useState(false);
   const [activeRoleModalUserIndex, setActiveRoleModalUserIndex] = useState(null);
@@ -58,6 +59,7 @@ export default function AddUserModal({
 
   const fileInputRef = useRef(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const [processingMsg, setProcessingMsg] = useState('');
   const [bulkRows, setBulkRows] = useState([]);
   const [uploadedFileName, setUploadedFileName] = useState('');
@@ -73,8 +75,14 @@ export default function AddUserModal({
   // Subscribe to colleges from Firestore
   useEffect(() => {
     return subscribeColleges(
-      (data) => setColleges(data),
-      (err) => console.error('Error loading colleges:', err)
+      (data) => {
+        setColleges(data);
+        setLoadingColleges(false);
+      },
+      (err) => {
+        console.error('Error loading colleges:', err);
+        setLoadingColleges(false);
+      }
     );
   }, []);
 
@@ -171,8 +179,20 @@ export default function AddUserModal({
   };
 
   // BULK FILE LOGIC
-  const handleDownloadTemplate = () => {
-    downloadBulkUserTemplate(roles, colleges);
+  const handleDownloadTemplate = async () => {
+    if (isDownloadingTemplate) return;
+    setError('');
+    setIsDownloadingTemplate(true);
+    try {
+      // Yield once so the preparing state is painted before workbook creation.
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      downloadBulkUserTemplate(roles, colleges);
+    } catch (err) {
+      console.error('Unable to download bulk user template:', err);
+      setError(err.message || 'Unable to prepare the Excel template. Please try again.');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
   };
 
   const handleFileUpload = async (file) => {
@@ -686,10 +706,11 @@ export default function AddUserModal({
                       <button
                         type="button"
                         onClick={handleDownloadTemplate}
-                        className="btn-maroon text-xs py-2.5 px-4 font-bold flex items-center gap-2 flex-shrink-0 shadow-sm"
+                        disabled={isDownloadingTemplate || loadingColleges || roles.length === 0 || colleges.length === 0}
+                        className="btn-maroon text-xs py-2.5 px-4 font-bold flex items-center gap-2 flex-shrink-0 shadow-sm disabled:cursor-wait disabled:opacity-60"
                       >
-                        <Download size={15} />
-                        Download Template (.xlsx)
+                        {(isDownloadingTemplate || loadingColleges) ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                        {loadingColleges ? 'Loading Options...' : isDownloadingTemplate ? 'Preparing Template...' : 'Download Template (.xlsx)'}
                       </button>
                     </div>
 

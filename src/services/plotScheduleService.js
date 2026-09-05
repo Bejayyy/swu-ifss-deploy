@@ -358,6 +358,9 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         program: e.program || e.programCode || '',
         programCode: e.programCode || e.program || '',
         approvalStatus: e.approvalStatus || (e.approved === false ? 'pending' : 'approved'),
+        serviceCollege: e.serviceCollege || e.serviceCollegeCode || null,
+        plottedBy: e.plottedBy || null,
+        plottedByEmail: e.plottedByEmail || null,
         usedNonBudgetedRoom: Boolean(e.usedNonBudgetedRoom),
         nonBudgetedRoomReason: e.nonBudgetedRoomReason || null,
       };

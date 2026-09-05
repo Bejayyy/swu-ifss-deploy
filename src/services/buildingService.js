@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
+import { normalizeRoomType } from './roomTypeService';
 
 function generateBuildingCode(name) {
   const words = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -33,7 +34,7 @@ function mapRoomDoc(roomDoc) {
     id: roomCode,
     name: data.name || roomCode,
     roomCode,
-    type: data.type || 'Lecture',
+    type: normalizeRoomType(data.type),
     status: data.status || 'Available',
     capacity: data.capacity ?? 0,
     equipment: data.equipment || [],
@@ -449,7 +450,7 @@ export async function addRoomToFloor(buildingId, floorId, floorNumber, room) {
     floorNumber,
     roomCode,
     name: room.name.trim(),
-    type: room.type,
+    type: normalizeRoomType(room.type),
     status: room.status || 'Available',
     capacity: Number(room.capacity) || 0,
     equipment: room.equipment || [],

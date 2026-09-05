@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRoleConfig } from '../../context/RoleConfigContext';
 import { subscribeStaffUsers } from '../../services/systemUserService';
 import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
-import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES } from '../../services/roomTypeService';
+import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES, normalizeRoomType } from '../../services/roomTypeService';
 import { canManageBuildings, canManageAssignedRooms } from '../../constants/rolePermissions';
 import ConfirmModal from './ConfirmModal';
 import CustomSelect from '../ui/CustomSelect';
@@ -19,7 +19,7 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
   
   const [form, setForm] = useState({
     name: room?.name || room?.id || '',
-    type: room?.type || '',
+    type: normalizeRoomType(room?.type),
     capacity: room?.capacity ?? '',
     status: room?.status || 'Available',
     equipment: room?.equipment || [],
@@ -29,8 +29,9 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
 
   const [roomTypeChoices, setRoomTypeChoices] = useState(() => {
     const initial = [...DEFAULT_ROOM_TYPES];
-    if (room?.type && !initial.includes(room.type)) {
-      initial.push(room.type);
+    const currentType = normalizeRoomType(room?.type);
+    if (currentType && !initial.includes(currentType)) {
+      initial.push(currentType);
     }
     return initial;
   });
@@ -85,8 +86,8 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
     const unsub = subscribeRoomTypes(
       (types) => {
         setRoomTypeChoices((prev) => {
-          const currentType = form.type || room?.type;
-          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev]);
+          const currentType = normalizeRoomType(form.type || room?.type);
+          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev].map(normalizeRoomType));
           if (currentType) merged.add(currentType);
           return Array.from(merged);
         });
@@ -139,7 +140,7 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
   };
 
   const handleAddCustomType = async () => {
-    const t = newRoomType.trim();
+    const t = normalizeRoomType(newRoomType);
     if (!t) return;
 
     try {
@@ -200,7 +201,7 @@ export default function EditRoomModal({ room, buildingId, floorId, floorManagedB
     try {
       await updateRoom(buildingId, floorId, room.docId, {
         name: form.name,
-        type: form.type,
+        type: normalizeRoomType(form.type),
         status: form.status,
         capacity: form.capacity,
         equipment: form.equipment,

@@ -5,10 +5,34 @@ import { isCollegeMatch } from './scheduleAccessService';
 
 const COURSES_COLLECTION = 'courses';
 
+function expandGeneralEducationAssignments(course) {
+  const assignments = Array.isArray(course.targetCollegeAssignments)
+    ? course.targetCollegeAssignments
+    : [];
+  if (!course.generalEducationProviderCode || assignments.length === 0) return [];
+
+  return assignments.flatMap((assignment) => {
+    const collegeCode = String(assignment.collegeCode || '').trim().toUpperCase();
+    const programCodes = Array.isArray(assignment.programCodes) ? assignment.programCodes : [];
+    return programCodes.filter(Boolean).map((programCode) => ({
+      ...course,
+      id: `${course.id}__ge__${collegeCode}__${String(programCode).trim().toUpperCase()}`,
+      sourceCourseId: course.id,
+      collegeCode,
+      programCode: String(programCode).trim().toUpperCase(),
+      yearLevel: assignment.yearLevel || course.yearLevel || '1st Year',
+      requiresServiceCollege: true,
+      lecServiceCollege: Number(course.lecUnits || 0) > 0 ? course.generalEducationProviderCode : null,
+      labServiceCollege: Number(course.labUnits || 0) > 0 ? course.generalEducationProviderCode : null,
+      isGeneralEducationAssignment: true,
+    }));
+  });
+}
+
 /**
  * Subscribe to courses for a specific college (matches acronyms, names, and program codes)
  */
-export function subscribeCollegeCourses(collegeCode, onData, onError) {
+export function subscribeCollegeCourses(collegeCode, onData, onError, options = {}) {
   if (!collegeCode) {
     onData([]);
     return () => {};
@@ -24,10 +48,14 @@ export function subscribeCollegeCourses(collegeCode, onData, onError) {
         ...doc.data(),
       }));
 
-      const filtered = allCourses.filter((c) => {
+      const expandedCourses = allCourses.flatMap((course) => [
+        course,
+        ...expandGeneralEducationAssignments(course),
+      ]);
+      const filtered = expandedCourses.reduce((result, c) => {
         const cCode = c.collegeCode || c.college || '';
         const pCode = c.programCode || '';
-        return (
+        const isOwnedCourse = (
           isCollegeMatch(collegeCode, cCode) ||
           isCollegeMatch(collegeCode, pCode) ||
           (cCode && String(collegeCode).toUpperCase().includes(String(cCode).toUpperCase())) ||
@@ -35,7 +63,26 @@ export function subscribeCollegeCourses(collegeCode, onData, onError) {
           (cCode && String(cCode).toUpperCase().includes(String(collegeCode).toUpperCase())) ||
           (pCode && String(pCode).toUpperCase().includes(String(collegeCode).toUpperCase()))
         );
-      });
+        const isServiceAssignment = Boolean(
+          options.includeServiceAssignments &&
+          (
+            (c.lecServiceCollege && isCollegeMatch(collegeCode, c.lecServiceCollege)) ||
+            (c.labServiceCollege && isCollegeMatch(collegeCode, c.labServiceCollege))
+          )
+        );
+
+        if (isOwnedCourse || isServiceAssignment) {
+          result.push({
+            ...c,
+            isServiceAssignment: isServiceAssignment && !isOwnedCourse,
+            handledComponents: [
+              c.lecServiceCollege && isCollegeMatch(collegeCode, c.lecServiceCollege) ? 'Lecture' : null,
+              c.labServiceCollege && isCollegeMatch(collegeCode, c.labServiceCollege) ? 'Laboratory' : null,
+            ].filter(Boolean),
+          });
+        }
+        return result;
+      }, []);
 
       filtered.sort((a, b) => {
         const yA = a.yearLevel || '';
@@ -108,7 +155,11 @@ export function subscribeServiceCollegeCourses(serviceCollegeCode, onData, onErr
         ...doc.data(),
       }));
 
-      const serviceCourses = allCourses.filter((c) => {
+      const expandedCourses = allCourses.flatMap((course) => [
+        course,
+        ...expandGeneralEducationAssignments(course),
+      ]);
+      const serviceCourses = expandedCourses.filter((c) => {
         const lecSvc = c.lecServiceCollege || '';
         const labSvc = c.labServiceCollege || '';
         return (
@@ -170,6 +221,12 @@ export async function addCourse(courseData) {
     assignedTeacherUid: courseData.assignedTeacherUid || null,
     assignedTeacherName: courseData.assignedTeacherName || null,
     assignedTeacherEmail: courseData.assignedTeacherEmail || null,
+    generalEducationProviderCode: courseData.generalEducationProviderCode
+      ? String(courseData.generalEducationProviderCode).trim().toUpperCase()
+      : null,
+    targetCollegeAssignments: Array.isArray(courseData.targetCollegeAssignments)
+      ? courseData.targetCollegeAssignments
+      : [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };

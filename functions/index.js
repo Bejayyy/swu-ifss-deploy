@@ -137,7 +137,8 @@ exports.setUserPasswordAdmin = functions.https.onCall(async (data, context) => {
   try {
     await admin.auth().updateUser(uid, { password: newPassword });
   } catch (err) {
-    console.warn('Admin updateUser for UID failed:', err);
+    console.error('Admin updateUser for UID failed:', err);
+    throw new functions.https.HttpsError('internal', 'Unable to update the account password. Please try again.');
   }
 
   // 2. Also check if there was another Auth account by email (e.g. if Google created a separate UID from the email/pass user)
@@ -157,6 +158,7 @@ exports.setUserPasswordAdmin = functions.https.onCall(async (data, context) => {
     {
       mustSetPassword: false,
       passwordEnabled: true,
+      passwordSetAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
@@ -169,7 +171,7 @@ exports.setUserPasswordAdmin = functions.https.onCall(async (data, context) => {
       if (!userQuery.empty) {
         const batch = admin.firestore().batch();
         userQuery.docs.forEach((d) => {
-          batch.set(d.ref, { mustSetPassword: false, passwordEnabled: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          batch.set(d.ref, { mustSetPassword: false, passwordEnabled: true, passwordSetAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
         });
         await batch.commit();
       }
@@ -427,6 +429,7 @@ exports.resendStaffTempPassword = functions.https.onCall(async (data, context) =
     {
       mustSetPassword: true,
       passwordEnabled: true,
+      passwordSetAt: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }

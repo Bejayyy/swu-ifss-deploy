@@ -406,25 +406,24 @@ export default function LeftNav({
             </div>
           </div>}
 
-          {buildingList.map((building) => {
+          {isCompact ? (
+            <button
+              type="button"
+              title={`Buildings (${buildingList.length}) — hover to show the building list`}
+              aria-label={`Buildings, ${buildingList.length} available. Hover to expand the navigation.`}
+              onClick={() => navigate('/building-management')}
+              className={`group mx-auto mb-0.5 flex h-9 w-10 items-center justify-center rounded-lg transition-colors ${
+                location.pathname.includes('/building/') || location.pathname.includes('/room/') || location.pathname === '/building-management'
+                  ? 'bg-[#FFF0F0] text-[#7A0808]'
+                  : 'text-[#2B3235] hover:bg-gray-100 hover:text-[#7A0808]'
+              }`}
+            >
+              <Building2 size={18} />
+              <span className="sr-only">Buildings</span>
+            </button>
+          ) : buildingList.map((building) => {
             const isExpanded = expandedBuildings[building.id];
             const buildingActive = location.pathname.includes(`/building/${building.id}`);
-
-            if (isCompact) {
-              return (
-                <button
-                  key={building.id}
-                  type="button"
-                  title={building.name}
-                  onClick={() => navigate(`/building/${building.id}`)}
-                  className={`mx-auto mb-0.5 flex h-9 w-10 items-center justify-center rounded-lg transition-colors ${
-                    buildingActive ? 'bg-[#FFF0F0] text-[#7A0808]' : 'text-[#2B3235] hover:bg-gray-100 hover:text-[#7A0808]'
-                  }`}
-                >
-                  <Building2 size={17} />
-                </button>
-              );
-            }
 
             return (
               <div key={building.id}>
@@ -463,7 +462,6 @@ export default function LeftNav({
                     <div key={floorKey}>
                       <div
                         className="flex items-center gap-1.5 py-1 pl-8 pr-2 rounded-lg cursor-pointer group transition-colors"
-                        style={{ }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                         onClick={() => toggleFloor(floorKey)}

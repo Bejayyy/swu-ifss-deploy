@@ -272,9 +272,12 @@ export function AuthProvider({ children }) {
     const uid = auth.currentUser.uid;
     const userEmail = (auth.currentUser.email || '').trim().toLowerCase();
 
-    // 1. Update password in Firebase Auth & Admin SDK
+    // 1. Replace the temporary password in Firebase Auth. Do not mark setup as
+    // complete unless either the client or trusted Admin update succeeds.
+    let passwordUpdated = false;
     try {
       await updatePassword(auth.currentUser, newPassword);
+      passwordUpdated = true;
     } catch (authError) {
       console.warn('Client updatePassword note, calling admin service:', authError);
     }
@@ -285,9 +288,15 @@ export function AuthProvider({ children }) {
       const { functions } = await import('../firebase/firebase');
       const setUserPasswordAdmin = httpsCallable(functions, 'setUserPasswordAdmin');
       await setUserPasswordAdmin({ newPassword });
+      passwordUpdated = true;
     } catch (cloudErr) {
       console.warn('setUserPasswordAdmin cloud call note:', cloudErr);
+      if (!passwordUpdated) {
+        throw new Error('Your password could not be updated. Your temporary password is still active; please try again.');
+      }
     }
+
+    if (!passwordUpdated) throw new Error('Your password could not be updated. Please try again.');
 
     if (uid) {
       try {
@@ -302,6 +311,7 @@ export function AuthProvider({ children }) {
         await upsertUserProfile(uid, {
           mustSetPassword: false,
           passwordEnabled: true,
+          passwordSetAt: serverTimestamp(),
           authProviders: updatedProviders,
         });
 
@@ -314,7 +324,7 @@ export function AuthProvider({ children }) {
             if (!snap.empty) {
               const b = writeBatch(db);
               snap.docs.forEach((d) => {
-                b.set(d.ref, { mustSetPassword: false, passwordEnabled: true, updatedAt: serverTimestamp() }, { merge: true });
+                b.set(d.ref, { mustSetPassword: false, passwordEnabled: true, passwordSetAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
               });
               await b.commit();
             }

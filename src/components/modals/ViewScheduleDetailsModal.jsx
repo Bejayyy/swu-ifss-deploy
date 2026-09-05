@@ -18,8 +18,29 @@ import {
 } from 'lucide-react';
 import { formatScheduleHour, SCHEDULE_DAYS } from '../../constants/scheduleGrid';
 
+const dedupeLogicalScheduleEntries = (entries = []) => {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const logicalId = entry.combinedGroupId || entry.originalId || entry.id;
+    const fallbackId = [
+      entry.courseCode || entry.course,
+      entry.type,
+      entry.day ?? entry.date,
+      entry.startHour ?? entry.startTime,
+      entry.endHour ?? entry.endTime,
+      entry.roomId || entry.roomCode,
+      [...(entry.combinedSections || [])].sort().join('|'),
+    ].join('::');
+    const key = String(logicalId || fallbackId);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export default function ViewScheduleDetailsModal({
   block,
+  courseDefinition = null,
   scheduleEntries = [],
   onClose,
   onEdit,
@@ -27,6 +48,7 @@ export default function ViewScheduleDetailsModal({
   canEdit = false,
   schoolYearLabel,
   semesterLabel,
+  zIndex = 50,
 }) {
   if (!block) return null;
 
@@ -76,7 +98,7 @@ export default function ViewScheduleDetailsModal({
   // the combined weekly duration, not only the block currently being viewed.
   const normalize = (value) => String(value || '').trim().toLowerCase();
   const componentKind = isLab ? 'lab' : isExam ? 'exam' : 'lecture';
-  const matchingEntries = scheduleEntries.filter((entry) => {
+  const matchingEntries = dedupeLogicalScheduleEntries(scheduleEntries.filter((entry) => {
     const entryType = normalize(entry.type);
     const entryKind = entryType.includes('lab')
       ? 'lab'
@@ -91,7 +113,7 @@ export default function ViewScheduleDetailsModal({
       && normalize(entrySection) === normalize(section)
       && entryKind === componentKind
       && modeMatches;
-  });
+  }));
   const weeklyDurationHours = matchingEntries.length > 0
     ? matchingEntries.reduce(
       (total, entry) => total + Math.max(0, Number(entry.endHour ?? entry.end ?? 0) - Number(entry.startHour ?? entry.start ?? 0)),
@@ -101,8 +123,8 @@ export default function ViewScheduleDetailsModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+      style={{ zIndex }}
     >
       <div
         className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150"
@@ -272,26 +294,35 @@ export default function ViewScheduleDetailsModal({
                 </p>
               )}
 
-              {(block.isCombinedSection || raw.isCombinedSection) && (
-                <div className="pt-1.5 border-t border-blue-200/60 flex items-center gap-1.5 flex-wrap">
-                  <span className="font-bold text-purple-900 flex items-center gap-1">
-                    <Users size={12} /> Combined Sections:
-                  </span>
-                  {(block.combinedSections || raw.combinedSections || []).map((sec) => (
-                    <span key={sec} className="bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-800 font-bold text-[10px] shadow-2xs">
-                      {sec}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {(block.isCombinedSection || raw.isCombinedSection) && (() => {
+                const mode = block.sectionCombinationMode || raw.sectionCombinationMode || 'merge';
+                const merged = block.mergedSections || raw.mergedSections || [];
+                const parallel = block.parallelSections || raw.parallelSections || [];
+                const combined = block.combinedSections || raw.combinedSections || [];
+                const groups = mode === 'merge_parallel'
+                  ? [{ label: 'Merged Sections', values: merged }, { label: 'Parallel Sections', values: parallel }]
+                  : [{ label: mode === 'parallel' ? 'Parallel Sections' : 'Merged Sections', values: mode === 'parallel' ? (parallel.length ? parallel : combined) : (merged.length ? merged : combined) }];
+                return (
+                  <div className="pt-1.5 border-t border-blue-200/60 space-y-1.5">
+                    {groups.map((group) => group.values.length > 0 && (
+                      <div key={group.label} className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-purple-900 flex items-center gap-1"><Users size={12} /> {group.label}:</span>
+                        {group.values.map((sec) => (
+                          <span key={`${group.label}-${sec}`} className="bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-800 font-bold text-[10px] shadow-2xs">{sec}</span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
           {/* Required Hours & Time Compliance Status */}
           {(() => {
             const reqHours = isLab
-              ? Number(raw.labHours || block.labHours || (Number(raw.labUnits || block.labUnits || 1) * 3))
-              : Number(raw.lecHours || block.lecHours || (Number(raw.lecUnits || block.lecUnits || raw.units || block.units || 2) * 1));
+              ? Number(raw.labHours ?? block.labHours ?? courseDefinition?.labHours ?? (Number(raw.labUnits ?? block.labUnits ?? courseDefinition?.labUnits ?? 1) * 3))
+              : Number(raw.lecHours ?? block.lecHours ?? courseDefinition?.lecHours ?? (Number(raw.lecUnits ?? block.lecUnits ?? courseDefinition?.lecUnits ?? raw.units ?? block.units ?? courseDefinition?.units ?? 2) * 1));
             
             const roundedDuration = Math.round(weeklyDurationHours * 10) / 10;
             const roundedReq = Math.round(reqHours * 10) / 10;

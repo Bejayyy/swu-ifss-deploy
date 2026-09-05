@@ -72,6 +72,7 @@ export default function CollegeInventory() {
   const [editingCourse, setEditingCourse] = useState(null);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [courseProgramFilter, setCourseProgramFilter] = useState('All');
+  const [courseCollegeFilter, setCourseCollegeFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [semesterFilter, setSemesterFilter] = useState('All');
   const [courseCurrentPage, setCourseCurrentPage] = useState(1);
@@ -122,12 +123,34 @@ export default function CollegeInventory() {
       return () => {};
     }
 
+    const liveCollege = colleges.find(
+      (college) => college.id === viewingCollegeCourses.id || college.code === viewingCollegeCourses.code
+    ) || viewingCollegeCourses;
+    const includeServiceAssignments = Boolean(
+      liveCollege.managesGeneralEducationCourses ||
+      liveCollege.noOwnSections ||
+      liveCollege.doesNotHandleSections
+    );
+
     return subscribeCollegeCourses(
       viewingCollegeCourses.code,
       (data) => setCollegeCourses(data),
-      (err) => console.error('Error loading courses:', err)
+      (err) => console.error('Error loading courses:', err),
+      { includeServiceAssignments }
     );
-  }, [viewingCollegeCourses]);
+  }, [viewingCollegeCourses, colleges]);
+
+  const viewingCollegeIsServiceProvider = useMemo(() => {
+    if (!viewingCollegeCourses) return false;
+    const liveCollege = colleges.find(
+      (college) => college.id === viewingCollegeCourses.id || college.code === viewingCollegeCourses.code
+    ) || viewingCollegeCourses;
+    return Boolean(
+      liveCollege.managesGeneralEducationCourses ||
+      liveCollege.noOwnSections ||
+      liveCollege.doesNotHandleSections
+    );
+  }, [viewingCollegeCourses, colleges]);
 
   // Match Dean to College
   const getDeanForCollege = (college) => {
@@ -156,7 +179,7 @@ export default function CollegeInventory() {
 
   useEffect(() => {
     setCourseCurrentPage(1);
-  }, [courseSearchQuery, courseProgramFilter, yearFilter, semesterFilter, courseItemsPerPage]);
+  }, [courseSearchQuery, courseProgramFilter, courseCollegeFilter, yearFilter, semesterFilter, courseItemsPerPage]);
 
   // Filtered & Paginated Colleges
   const filteredColleges = useMemo(() => {
@@ -177,8 +200,25 @@ export default function CollegeInventory() {
   }, [filteredColleges, currentPage, itemsPerPage]);
 
   // Filtered & Paginated Courses
+  const sourceCollegeOptions = useMemo(() => {
+    const sources = new Map();
+    collegeCourses.forEach((course) => {
+      const code = String(course.collegeCode || course.college || '').trim().toUpperCase();
+      if (!code) return;
+      const college = colleges.find((item) => String(item.code || '').trim().toUpperCase() === code);
+      if (!sources.has(code)) {
+        sources.set(code, { code, name: college?.name || code, count: 0 });
+      }
+      sources.get(code).count += 1;
+    });
+    return [...sources.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [collegeCourses, colleges]);
+
   const filteredCourses = useMemo(() => {
     return collegeCourses.filter((c) => {
+      const sourceCollegeCode = String(c.collegeCode || c.college || '').trim().toUpperCase();
+      if (courseCollegeFilter !== 'All' && sourceCollegeCode !== courseCollegeFilter) return false;
+
       const matchesProg =
         courseProgramFilter === 'All' ||
         String(c.programCode || '').trim().toUpperCase() === courseProgramFilter.toUpperCase() ||
@@ -197,7 +237,7 @@ export default function CollegeInventory() {
         (c.programCode && c.programCode.toLowerCase().includes(q))
       );
     }).sort(compareNewestFirst);
-  }, [collegeCourses, courseProgramFilter, yearFilter, semesterFilter, courseSearchQuery, viewingCollegeCourses]);
+  }, [collegeCourses, courseProgramFilter, courseCollegeFilter, yearFilter, semesterFilter, courseSearchQuery, viewingCollegeCourses]);
 
   const totalCoursePages = Math.max(1, Math.ceil(filteredCourses.length / courseItemsPerPage));
   const paginatedCourses = useMemo(() => {
@@ -252,6 +292,7 @@ export default function CollegeInventory() {
     setActiveCollegeTab('courses');
     setCourseSearchQuery('');
     setCourseProgramFilter('All');
+    setCourseCollegeFilter('All');
     setYearFilter('All');
     setSemesterFilter('All');
     // Reset sections state
@@ -718,9 +759,23 @@ export default function CollegeInventory() {
                     <BookOpen size={20} className="text-[#7A0808]" /> {viewingCollegeCourses.name} ({viewingCollegeCourses.code})
                   </h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Manage course list, semester offerings, year levels, credit units, and course types.
+                    {viewingCollegeIsServiceProvider
+                      ? 'View this college’s own courses and subjects assigned to it by the Registrar as a service provider.'
+                      : 'Manage course list, semester offerings, year levels, credit units, and course types.'}
                   </p>
                 </div>
+
+                {viewingCollegeIsServiceProvider && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-xs text-blue-950">
+                    <BookOpen size={16} className="mt-0.5 shrink-0 text-blue-900" />
+                    <div>
+                      <p className="font-black">Service-provider course catalogue</p>
+                      <p className="mt-0.5 font-medium text-blue-800">
+                        Assigned minor subjects from other colleges are included automatically from Course Inventory and College Inventory assignments.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Program Filter Bar (if college has programs) */}
                 {viewingCollegeCourses.programs?.length > 0 && (
@@ -819,6 +874,26 @@ export default function CollegeInventory() {
                     )}
                   </div>
 
+                  {viewingCollegeIsServiceProvider && sourceCollegeOptions.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                      <span>Source College:</span>
+                      <div className="w-[220px]">
+                        <CustomSelect
+                          value={courseCollegeFilter}
+                          onChange={(e) => setCourseCollegeFilter(e.target.value)}
+                          options={[
+                            { value: 'All', label: `All Colleges (${collegeCourses.length})` },
+                            ...sourceCollegeOptions.map((college) => ({
+                              value: college.code,
+                              label: `${college.name} (${college.count})`,
+                            })),
+                          ]}
+                          placeholder="All Colleges"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Year Filter Pills */}
                   <div className="flex items-center gap-1 overflow-x-auto pb-1">
                     <button
@@ -898,21 +973,22 @@ export default function CollegeInventory() {
                   <div className="p-12 text-center">
                     <BookOpen size={48} className="mx-auto mb-3 text-gray-300" />
                     <p className="text-sm font-semibold text-gray-500 mb-1">
-                      {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
+                      {courseSearchQuery || courseProgramFilter !== 'All' || courseCollegeFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
                         ? 'No courses match your filter criteria'
                         : 'No courses added yet'}
                     </p>
                     <p className="text-xs text-gray-400 mb-4">
-                      {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
+                      {courseSearchQuery || courseProgramFilter !== 'All' || courseCollegeFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All'
                         ? 'Try resetting search or filters'
                         : 'Start by adding your first course for this college'}
                     </p>
-                    {courseSearchQuery || courseProgramFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All' ? (
+                    {courseSearchQuery || courseProgramFilter !== 'All' || courseCollegeFilter !== 'All' || yearFilter !== 'All' || semesterFilter !== 'All' ? (
                       <button
                         type="button"
                         onClick={() => {
                           setCourseSearchQuery('');
                           setCourseProgramFilter('All');
+                          setCourseCollegeFilter('All');
                           setYearFilter('All');
                           setSemesterFilter('All');
                         }}
@@ -967,7 +1043,12 @@ export default function CollegeInventory() {
                                 </span>
                               </td>
                               <td className="p-3.5 font-bold text-[#2B3235]">
-                                {course.title}
+                                <div>{course.title}</div>
+                                {course.isServiceAssignment && (
+                                  <span className="mt-1 inline-flex rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-blue-900">
+                                    Assigned to {viewingCollegeCourses.code} · {course.handledComponents?.join(' & ') || 'Service course'}
+                                  </span>
+                                )}
                               </td>
                               <td className="p-3.5 font-bold">
                                 <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-black">

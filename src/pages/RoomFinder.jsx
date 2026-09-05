@@ -17,8 +17,7 @@ const TEXT = '#2B3235';
 const R = 10;
 
 const TYPE_COLORS = {
-  'Lecture Room': { bg: '#DBEAFE', text: '#1E40AF' },
-  Classroom: { bg: '#FEF3C7', text: '#92400E' },
+  Lecture: { bg: '#DBEAFE', text: '#1E40AF' },
   Laboratory: { bg: '#EDE9FE', text: '#6D28D9' },
   'Seminar Room': { bg: '#CCFBF1', text: '#0F766E' },
   'Conference Room': { bg: '#E2E8F0', text: '#334155' },

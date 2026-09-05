@@ -157,6 +157,7 @@ export default function CourseSchedulingNew() {
   const [selectedProgram, setSelectedProgram] = useState('ALL'); // 'ALL' or specific programCode like 'BSMT', 'BSN'
   const [selectedSection, setSelectedSection] = useState(null);
   const [deanSections, setDeanSections] = useState([]); // Dynamic sections from Firestore
+  const [loadingDeanSections, setLoadingDeanSections] = useState(false);
   const [expandedYearLevels, setExpandedYearLevels] = useState({});
   const [sectionSearchQuery, setSectionSearchQuery] = useState('');
 
@@ -168,6 +169,7 @@ export default function CourseSchedulingNew() {
   // Service College (Cross-College Teaching Assignments) State
   const [serviceCourses, setServiceCourses] = useState([]);
   const [serviceSectionsMap, setServiceSectionsMap] = useState({}); // { [courseId]: [ { name, programCode, yearNumber, motherCollege } ] }
+  const [loadingServiceSections, setLoadingServiceSections] = useState(false);
   const [expandedServiceCourses, setExpandedServiceCourses] = useState({});
   const [expandedServiceMothers, setExpandedServiceMothers] = useState({});
   const [activeServiceAssignment, setActiveServiceAssignment] = useState(null);
@@ -623,8 +625,11 @@ export default function CourseSchedulingNew() {
   useEffect(() => {
     if (!selectedDeanUid) {
       setDeanSections([]);
+      setLoadingDeanSections(false);
       return undefined;
     }
+
+    setLoadingDeanSections(true);
 
     const deanCollegeCode = selectedDean?.college || selectedDean?.department || (isDean ? (profile?.college || profile?.department) : '') || '';
     const programCodes = activeProgramCodesKey ? activeProgramCodesKey.split(',') : [];
@@ -633,6 +638,7 @@ export default function CourseSchedulingNew() {
       selectedDeanUid,
       (sections) => {
         setDeanSections(sections);
+        setLoadingDeanSections(false);
         // Auto-expand year level dropdowns that contain sections so they are open by default
         setExpandedYearLevels((prev) => {
           let hasNew = false;
@@ -646,7 +652,10 @@ export default function CourseSchedulingNew() {
           return hasNew ? next : prev;
         });
       },
-      (err) => console.error('Error loading sections:', err),
+      (err) => {
+        console.error('Error loading sections:', err);
+        setLoadingDeanSections(false);
+      },
       deanCollegeCode || activeCollegeCodeStr,
       programCodes
     );
@@ -712,8 +721,11 @@ export default function CourseSchedulingNew() {
       : (selectedDean?.college || selectedDean?.department || '');
     if (!myCol) {
       setServiceCourses([]);
+      setServiceSectionsMap({});
+      setLoadingServiceSections(false);
       return;
     }
+    setLoadingServiceSections(true);
     return subscribeServiceCollegeCourses(
       myCol,
       async (courses) => {
@@ -749,8 +761,12 @@ export default function CourseSchedulingNew() {
           }
         }
         setServiceSectionsMap(secMap);
+        setLoadingServiceSections(false);
       },
-      (err) => console.error('Error loading service courses:', err)
+      (err) => {
+        console.error('Error loading service courses:', err);
+        setLoadingServiceSections(false);
+      }
     );
   }, [isDean, profile, selectedDean]);
 
@@ -784,6 +800,51 @@ export default function CourseSchedulingNew() {
     });
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [serviceCourses, serviceSectionsMap, colleges]);
+
+  // Colleges configured without their own sections only schedule assigned minor subjects.
+  // When one is selected, open its first handled section instead of showing an empty workspace.
+  useEffect(() => {
+    if (!isGENoSections || activeServiceAssignment || loadingServiceSections || serviceCourses.length === 0) return;
+
+    const firstCourse = serviceCourses.find((course) => (serviceSectionsMap[course.id] || []).length > 0);
+    if (!firstCourse) return;
+    const firstSection = (serviceSectionsMap[firstCourse.id] || [])[0];
+    if (!firstSection) return;
+
+    const providerCode = String(activeCollegeObj?.code || activeCollegeCode || '').trim().toUpperCase();
+    const handlesLecture = String(firstCourse.lecServiceCollege || '').trim().toUpperCase() === providerCode;
+    const handlesLaboratory = String(firstCourse.labServiceCollege || '').trim().toUpperCase() === providerCode;
+    const component = handlesLecture && handlesLaboratory
+      ? 'Lecture & Laboratory'
+      : handlesLaboratory ? 'Laboratory' : 'Lecture';
+    const motherCollegeCode = firstCourse.collegeCode || firstSection.motherCollege || '';
+    const motherDean = staffUsers.find(
+      (user) =>
+        (user.roleValue === 'dean' || String(user.role || '').toLowerCase() === 'dean') &&
+        (
+          String(user.college || user.department || '').toUpperCase().includes(String(motherCollegeCode).toUpperCase()) ||
+          String(motherCollegeCode).toUpperCase().includes(String(user.college || user.department || '').toUpperCase())
+        )
+    );
+
+    setSelectedSection(firstSection.name);
+    setActiveServiceAssignment({
+      course: firstCourse,
+      motherCollege: motherCollegeCode,
+      component,
+      motherDeanUid: motherDean?.uid || selectedDeanUid,
+    });
+  }, [
+    isGENoSections,
+    activeServiceAssignment,
+    loadingServiceSections,
+    serviceCourses,
+    serviceSectionsMap,
+    activeCollegeObj,
+    activeCollegeCode,
+    selectedDeanUid,
+    staffUsers,
+  ]);
 
   const selectedSectionCourseChecklist = useMemo(() => {
     if (!selectedSection || scheduleTab !== 'regular') return [];
@@ -979,9 +1040,25 @@ export default function CourseSchedulingNew() {
     [plotEntries, scheduleTab, cycleViewTab]
   );
 
+  const sectionlessProviderCodes = useMemo(() => {
+    const codes = new Set();
+    colleges.forEach((college) => {
+      if (!(college.noOwnSections || college.doesNotHandleSections)) return;
+      if (college.code) codes.add(String(college.code).trim().toUpperCase());
+      if (college.name) codes.add(String(college.name).trim().toUpperCase());
+    });
+    return codes;
+  }, [colleges]);
+
   const gridBlocks = useMemo(
-    () => entriesToGridBlocks(filteredEntries, weekDates),
-    [filteredEntries, weekDates]
+    () => entriesToGridBlocks(filteredEntries, weekDates).map((block) => {
+      const provider = String(block.serviceCollege || '').trim().toUpperCase();
+      return {
+        ...block,
+        isServiceCollegeSchedule: Boolean(provider && sectionlessProviderCodes.has(provider)),
+      };
+    }),
+    [filteredEntries, weekDates, sectionlessProviderCodes]
   );
 
   const schoolYearOptions = useMemo(
@@ -1803,7 +1880,22 @@ export default function CourseSchedulingNew() {
               </div>
 
               <div className="space-y-2.5">
-                {(() => {
+                {loadingDeanSections ? (
+                  <div className="space-y-2" aria-label="Loading sections">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="animate-pulse space-y-1.5">
+                        <div className="h-9 rounded-xl border border-gray-100 bg-gray-100" />
+                        {item === 0 && (
+                          <div className="ml-4 space-y-1.5 border-l-2 border-red-100 pl-2">
+                            <div className="h-8 rounded-lg bg-red-50" />
+                            <div className="h-8 rounded-lg bg-gray-100" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <p className="pt-1 text-center text-[10px] font-semibold text-gray-400">Loading sections...</p>
+                  </div>
+                ) : (() => {
                   const isSearching = Boolean(sectionSearchQuery.trim());
                   const searchTerm = sectionSearchQuery.toLowerCase().trim();
 
@@ -1936,17 +2028,31 @@ export default function CourseSchedulingNew() {
               </div>
 
               <div className="space-y-2">
-                {servicedMotherColleges.map((college) => (
-                  <section key={college.code} className="rounded-xl border border-gray-200 bg-gray-50/50 p-2">
-                    <div className="mb-2 flex items-center justify-between gap-2 border-b border-[#F0DADA] pb-2">
+                {servicedMotherColleges.map((college) => {
+                  const isMotherExpanded = expandedServiceMothers[college.code] !== false;
+                  return (
+                  <section key={college.code} className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/50 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedServiceMothers((prev) => ({
+                        ...prev,
+                        [college.code]: prev[college.code] === false,
+                      }))}
+                      className={`flex w-full items-center justify-between gap-2 text-left transition-colors hover:bg-[#FFF9F9] ${isMotherExpanded ? 'mb-2 border-b border-[#F0DADA] pb-2' : ''}`}
+                      aria-expanded={isMotherExpanded}
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-[11px] font-black text-[#7A0808]">{college.name}</p>
                         <p className="text-[9px] font-bold text-gray-500">{college.code}</p>
                       </div>
-                      <span className="shrink-0 rounded-full bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808]">
-                        {college.courseCount} course{college.courseCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-full bg-[#FFF0F0] px-2 py-0.5 text-[9px] font-black text-[#7A0808]">
+                          {college.courseCount} course{college.courseCount !== 1 ? 's' : ''}
+                        </span>
+                        <ChevronDown size={14} className={`text-[#7A0808] transition-transform duration-200 ${isMotherExpanded ? '' : '-rotate-90'}`} />
+                      </div>
+                    </button>
+                    {isMotherExpanded && (
                     <div className="space-y-2">
                 {[...YEAR_LEVELS, 'Unspecified Year'].map((yearLevel) => {
                   const hasCoursesForYear = serviceCourses.some(
@@ -2025,7 +2131,14 @@ export default function CourseSchedulingNew() {
                                   </span>
                                 </div>
 
-                                {secList.length === 0 ? (
+                                {loadingServiceSections ? (
+                                  <div className="space-y-1.5 py-1" aria-label="Loading service college sections">
+                                    {[0, 1, 2].map((item) => (
+                                      <div key={item} className="h-8 animate-pulse rounded-lg border border-[#F0DADA] bg-red-50/70" />
+                                    ))}
+                                    <p className="text-center text-[10px] font-semibold text-gray-400">Loading sections...</p>
+                                  </div>
+                                ) : secList.length === 0 ? (
                                   <p className="text-[10px] text-gray-400 italic">No sections created yet</p>
                                 ) : (
                                   <div className="grid grid-cols-1 gap-1.5">
@@ -2105,8 +2218,10 @@ export default function CourseSchedulingNew() {
                   );
                 })}
                     </div>
+                    )}
                   </section>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2500,6 +2615,10 @@ export default function CourseSchedulingNew() {
       {viewingBlock && (
         <ViewScheduleDetailsModal
           block={viewingBlock}
+          courseDefinition={[...(curriculumCourses || []), ...(serviceCourses || [])].find((course) =>
+            String(course.code || course.courseCode || '').trim().toUpperCase()
+              === String(viewingBlock.courseCode || viewingBlock.course || viewingBlock.rawEntry?.courseCode || '').trim().toUpperCase()
+          ) || null}
           scheduleEntries={filteredEntries}
           onClose={() => setViewingBlock(null)}
           onEdit={(block) => {

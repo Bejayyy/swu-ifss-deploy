@@ -3,8 +3,35 @@ import { X, Calendar, User, Filter } from 'lucide-react';
 import WeeklyScheduleGrid from '../scheduling/WeeklyScheduleGrid';
 import { subscribePlotEntriesForTeacher } from '../../services/plotScheduleService';
 import { entriesToGridBlocks } from '../../services/plotScheduleService';
+import { subscribeAllCourses } from '../../services/courseService';
 import { useAcademicCalendar } from '../../hooks/useAcademicCalendar';
 import CustomSelect from '../ui/CustomSelect';
+import ViewScheduleDetailsModal from './ViewScheduleDetailsModal';
+
+const getArrangementLabel = (entry) => {
+  if (!entry?.isCombinedSection && !(entry?.combinedSections?.length > 1)) return null;
+  const mode = entry.sectionCombinationMode || 'merge';
+  if (mode === 'parallel') return 'Parallel';
+  if (mode === 'merge_parallel') return 'Merged + Parallel';
+  return 'Merged';
+};
+
+const dedupeLogicalEntries = (scheduleEntries = []) => {
+  const seen = new Set();
+  return scheduleEntries.filter((entry) => {
+    const key = String(entry.combinedGroupId || entry.originalId || entry.id || [
+      entry.courseCode,
+      entry.type,
+      entry.day ?? entry.date,
+      entry.startHour,
+      entry.endHour,
+      [...(entry.combinedSections || [])].sort().join('|'),
+    ].join('::'));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 export default function TeacherScheduleModal({ teacher, onClose, initialSemester = '1', collegeCode }) {
   const { calendarData, activeSchoolYearId } = useAcademicCalendar();
@@ -12,6 +39,8 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
   const [loading, setLoading] = useState(true);
   const [semester, setSemester] = useState(initialSemester);
   const [selectedSection, setSelectedSection] = useState('all');
+  const [viewingBlock, setViewingBlock] = useState(null);
+  const [courseDefinitions, setCourseDefinitions] = useState([]);
 
   const teacherName = typeof teacher === 'object' ? (teacher?.name || teacher?.displayName || '') : String(teacher || '');
   const teacherCollege = collegeCode || (typeof teacher === 'object' ? (teacher?.department || teacher?.college || '') : '');
@@ -56,6 +85,13 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
     );
   }, [teacher, teacherName, semester, activeSchoolYearId]);
 
+  // Course definitions provide the authoritative required contact hours.
+  // This also supports older schedule records that did not save those fields.
+  useEffect(() => subscribeAllCourses(
+    (data) => setCourseDefinitions(data || []),
+    (err) => console.error('Error loading course definitions for teacher schedule:', err),
+  ), []);
+
   // Get unique sections from entries
   const sections = useMemo(() => {
     const uniqueSections = [...new Set(entries.map(e => e.section))].filter(Boolean).sort();
@@ -68,11 +104,15 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
     return entries.filter(e => e.section === selectedSection);
   }, [entries, selectedSection]);
 
+  // A merged/parallel class is stored under every participating section but
+  // remains one teaching event for the grid and workload totals.
+  const logicalEntries = useMemo(() => dedupeLogicalEntries(filteredEntries), [filteredEntries]);
+
   // Convert entries to grid blocks (use weekday format for regular schedule)
   const weekDates = Array.from({ length: 7 }, (_, i) => `weekday-${i}`);
   const gridBlocks = useMemo(
-    () => entriesToGridBlocks(filteredEntries, weekDates),
-    [filteredEntries]
+    () => entriesToGridBlocks(logicalEntries, weekDates),
+    [logicalEntries]
   );
 
   // Group blocks by section for summary
@@ -89,11 +129,11 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
   }, [filteredEntries]);
 
   const totalHours = useMemo(() => {
-    return filteredEntries.reduce((sum, entry) => {
+    return logicalEntries.reduce((sum, entry) => {
       const duration = (entry.endHour || 0) - (entry.startHour || 0);
       return sum + duration;
     }, 0);
-  }, [filteredEntries]);
+  }, [logicalEntries]);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[100] flex items-center justify-center p-4">
@@ -163,7 +203,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                   value={selectedSection}
                   onChange={(e) => setSelectedSection(e.target.value)}
                   options={[
-                    { value: 'all', label: `All Sections (${entries.length})` },
+                    { value: 'all', label: `All Sections (${sections.length})` },
                     ...sections.map((section) => ({
                       value: section,
                       label: `${section} (${entries.filter(e => e.section === section).length})`,
@@ -181,7 +221,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
               <div className="flex items-center gap-2">
                 <Calendar size={14} className="text-gray-400" />
                 <span className="text-xs font-semibold text-gray-600">
-                  {filteredEntries.length} {filteredEntries.length === 1 ? 'class' : 'classes'}
+                  {logicalEntries.length} {logicalEntries.length === 1 ? 'class' : 'classes'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -232,6 +272,7 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                 blocks={gridBlocks}
                 readOnly={true}
                 showLegend={true}
+                onBlockClick={(block) => setViewingBlock(block)}
                 stickyHeaderOffset={0}
                 emptyMessage="No classes scheduled for this week"
               />
@@ -266,7 +307,17 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
                               }`}>
                                 {entry.type}
                               </span>
+                              {getArrangementLabel(entry) && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full border border-purple-300 bg-purple-50 text-purple-800 uppercase">
+                                  {getArrangementLabel(entry)}
+                                </span>
+                              )}
                             </div>
+                            {getArrangementLabel(entry) && (
+                              <div className="text-[10px] font-semibold text-purple-800 mt-0.5">
+                                {getArrangementLabel(entry)} sections: {(entry.combinedSections || [entry.section]).join(', ')}
+                              </div>
+                            )}
                             <div className="text-[10px] text-gray-500 mt-0.5">
                               {entry.date || 'Day not set'} · {entry.startHour?.toFixed(2) || '0'}:00 - {entry.endHour?.toFixed(2) || '0'}:00
                               {entry.roomCode && ` · ${entry.roomCode}`}
@@ -293,6 +344,25 @@ export default function TeacherScheduleModal({ teacher, onClose, initialSemester
           </button>
         </div>
       </div>
+
+      {viewingBlock && (
+        <ViewScheduleDetailsModal
+          block={viewingBlock}
+          courseDefinition={courseDefinitions.find((course) => {
+            const courseCode = String(course.code || course.courseCode || '').trim().toUpperCase();
+            const blockCode = String(viewingBlock.courseCode || viewingBlock.course || viewingBlock.rawEntry?.courseCode || '').trim().toUpperCase();
+            if (!courseCode || courseCode !== blockCode) return false;
+            const blockProgram = String(viewingBlock.programCode || viewingBlock.program || viewingBlock.rawEntry?.programCode || '').trim().toUpperCase();
+            const courseProgram = String(course.programCode || '').trim().toUpperCase();
+            return !blockProgram || !courseProgram || blockProgram === courseProgram;
+          }) || null}
+          scheduleEntries={entries}
+          onClose={() => setViewingBlock(null)}
+          canEdit={false}
+          semesterLabel={semesterOptions.find((option) => option.value === semester)?.label || `Semester ${semester}`}
+          zIndex={120}
+        />
+      )}
     </div>
   );
 }

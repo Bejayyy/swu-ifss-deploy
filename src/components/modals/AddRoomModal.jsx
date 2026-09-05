@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRoleConfig } from '../../context/RoleConfigContext';
 import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
 import { subscribeEquipments, addEquipmentItem, DEFAULT_EQUIPMENT_OPTIONS } from '../../services/equipmentService';
-import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES } from '../../services/roomTypeService';
+import { subscribeRoomTypes, addRoomType, DEFAULT_ROOM_TYPES, normalizeRoomType } from '../../services/roomTypeService';
 import { canManageBuildings, canManageAssignedRooms } from '../../constants/rolePermissions';
 import CustomSelect from '../ui/CustomSelect';
 
@@ -71,8 +71,8 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
     return subscribeRoomTypes(
       (types) => {
         setRoomTypeChoices((prev) => {
-          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev]);
-          if (form.type) merged.add(form.type);
+          const merged = new Set([...DEFAULT_ROOM_TYPES, ...types, ...prev].map(normalizeRoomType));
+          if (form.type) merged.add(normalizeRoomType(form.type));
           return Array.from(merged);
         });
       },
@@ -104,7 +104,7 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
     }));
 
   const handleAddCustomType = async () => {
-    const t = newRoomType.trim();
+    const t = normalizeRoomType(newRoomType);
     if (!t) return;
 
     try {
@@ -163,6 +163,7 @@ export default function AddRoomModal({ buildingId, buildingPrefix, floorId, floo
     try {
       const roomData = {
         ...form,
+        type: normalizeRoomType(form.type),
         capacity: Number(form.capacity),
         managedBy: form.managedBy || null,
         managedByName: form.managedBy ? deans.find(d => d.uid === form.managedBy)?.name : null,

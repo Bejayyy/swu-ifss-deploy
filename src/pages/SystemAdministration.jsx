@@ -596,6 +596,7 @@ export default function SystemAdministration() {
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Email</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Role</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Access</th>
+                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Account Setup</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>College/Dept</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider text-center" style={{ color: '#2B3235' }}>Action</th>
                   </tr>
@@ -603,7 +604,7 @@ export default function SystemAdministration() {
                 <tbody>
                   {paginatedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-xs font-semibold text-gray-500">
+                      <td colSpan={8} className="py-8 text-center text-xs font-semibold text-gray-500">
                         No users found matching criteria.
                       </td>
                     </tr>
@@ -636,6 +637,21 @@ export default function SystemAdministration() {
                             <span className="text-[10px] font-bold px-2 py-1 rounded-full border border-gray-200" style={{ color: '#2B3235' }}>
                               {u.useCustomAccess ? 'Custom' : 'Role default'}
                             </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {!u.mustSetPassword ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700" title="The user completed password setup">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Password Set
+                              </span>
+                            ) : u.lastLoginAt ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800" title="The user opened the account but has not completed password setup">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Setup Pending
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-black text-gray-600" title="The invitation has been sent, but the user has not logged in yet">
+                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400" /> Not Opened
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>
                             {formatCollegeName(u.department || u.college) || '—'}
