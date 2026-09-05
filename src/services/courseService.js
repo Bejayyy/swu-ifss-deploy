@@ -21,6 +21,7 @@ function expandGeneralEducationAssignments(course) {
       collegeCode,
       programCode: String(programCode).trim().toUpperCase(),
       yearLevel: assignment.yearLevel || course.yearLevel || '1st Year',
+      semester: assignment.semester || course.semester || '1st Semester',
       requiresServiceCollege: true,
       lecServiceCollege: Number(course.lecUnits || 0) > 0 ? course.generalEducationProviderCode : null,
       labServiceCollege: Number(course.labUnits || 0) > 0 ? course.generalEducationProviderCode : null,

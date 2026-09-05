@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -10,7 +10,6 @@ import {
   Upload,
   Download,
   CheckCircle2,
-  AlertCircle,
   RefreshCw,
   Clock,
   Users,
@@ -39,7 +38,6 @@ import {
   parseBulkCourseSpreadsheet,
   toTitleCase,
 } from '../../utils/excelTemplate';
-import CustomSelect from '../ui/CustomSelect';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
@@ -52,12 +50,6 @@ const SERVICE_MODES = {
   LABORATORY: 'laboratory',
   BOTH: 'both',
 };
-const COURSE_TYPES = [
-  { value: 'lecture', label: 'Lecture Only' },
-  { value: 'laboratory', label: 'Laboratory Only' },
-  { value: 'both', label: 'Both (Lecture & Lab)' },
-];
-
 const createEmptyCourse = () => ({
   id: `crs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
   code: '',
@@ -76,6 +68,7 @@ const createEmptyCourse = () => ({
   lecServiceCollege: '',
   labServiceCollege: '',
   targetCollegeCodes: [],
+  targetCollegeAssignments: [],
 });
 
 function inferServiceMode(course = {}) {
@@ -187,6 +180,22 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
 
   const [allColleges, setAllColleges] = useState(colleges || []);
 
+  const resolveSystemCollege = (value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return null;
+    if (
+      normalized === String(form.code || '').trim().toLowerCase() ||
+      normalized === String(form.name || '').trim().toLowerCase()
+    ) {
+      return { code: String(form.code || '').trim().toUpperCase(), name: form.name, programs: form.programs };
+    }
+    return allColleges.find((college) =>
+      String(college.code || '').trim().toLowerCase() === normalized ||
+      String(college.name || '').trim().toLowerCase() === normalized ||
+      normalized.includes(String(college.code || '').trim().toLowerCase())
+    ) || null;
+  };
+
   useEffect(() => {
     if (colleges && colleges.length > 0) {
       setAllColleges(colleges);
@@ -221,6 +230,19 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
             if (updatedPrograms.length === 0) updatedPrograms.push(createEmptyProgram());
 
             existingCourses.forEach((crs) => {
+              const isProviderEdit = Boolean(
+                editingCollege.managesGeneralEducationCourses ||
+                editingCollege.noOwnSections ||
+                editingCollege.doesNotHandleSections
+              );
+              const legacyTargetAssignment = isProviderEdit && crs.isServiceAssignment && crs.collegeCode
+                ? {
+                    collegeCode: String(crs.collegeCode).trim().toUpperCase(),
+                    programCodes: crs.programCode ? [String(crs.programCode).trim().toUpperCase()] : [],
+                    yearLevel: crs.yearLevel || '1st Year',
+                    semester: crs.semester || '1st Semester',
+                  }
+                : null;
               const matchedPrgIdx = updatedPrograms.findIndex(
                 (p) => p.code && crs.programCode && p.code.toUpperCase() === crs.programCode.toUpperCase()
               );
@@ -228,6 +250,27 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               const existsInPrg = updatedPrograms[targetIdx].courses.some(
                 (c) => c.code && c.code.toUpperCase() === crs.code.toUpperCase()
               );
+              if (existsInPrg && legacyTargetAssignment) {
+                const existingIndex = updatedPrograms[targetIdx].courses.findIndex(
+                  (course) => course.code && course.code.toUpperCase() === crs.code.toUpperCase()
+                );
+                const existingCourse = { ...updatedPrograms[targetIdx].courses[existingIndex] };
+                const assignments = [
+                  ...(existingCourse.targetCollegeAssignments || []),
+                  legacyTargetAssignment,
+                ];
+                const uniqueAssignments = new Map(assignments.map((assignment) => [[
+                  assignment.collegeCode,
+                  assignment.programCodes?.join(','),
+                  assignment.yearLevel,
+                  assignment.semester,
+                ].join('|').toUpperCase(), assignment]));
+                existingCourse.targetCollegeAssignments = [...uniqueAssignments.values()];
+                existingCourse.targetCollegeCodes = [...new Set(
+                  existingCourse.targetCollegeAssignments.map((assignment) => assignment.collegeCode).filter(Boolean)
+                )];
+                updatedPrograms[targetIdx].courses[existingIndex] = existingCourse;
+              }
               if (!existsInPrg) {
                 const lecU = crs.lecUnits !== undefined ? Number(crs.lecUnits) : (crs.type === 'laboratory' ? 0 : Number(crs.units || 3));
                 const labU = crs.labUnits !== undefined ? Number(crs.labUnits) : (crs.type === 'laboratory' ? Number(crs.units || 3) : 0);
@@ -247,13 +290,17 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                   labHours: String(labH),
                   totalHours: String(totalH),
                   type: crs.type || (labU > 0 && lecU > 0 ? 'both' : (labU > 0 ? 'laboratory' : 'lecture')),
-                  requiresServiceCollege: Boolean(crs.requiresServiceCollege || crs.lecServiceCollege || crs.labServiceCollege),
-                  serviceMode: inferServiceMode(crs),
-                  lecServiceCollege: crs.lecServiceCollege || crs.rememberedLecServiceCollege || '',
-                  labServiceCollege: crs.labServiceCollege || crs.rememberedLabServiceCollege || '',
-                  targetCollegeCodes: Array.isArray(crs.targetCollegeAssignments)
+                  id: legacyTargetAssignment ? `crs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : crs.id,
+                  requiresServiceCollege: legacyTargetAssignment ? false : Boolean(crs.requiresServiceCollege || crs.lecServiceCollege || crs.labServiceCollege),
+                  serviceMode: legacyTargetAssignment ? SERVICE_MODES.INTERNAL : inferServiceMode(crs),
+                  lecServiceCollege: legacyTargetAssignment ? '' : (crs.lecServiceCollege || crs.rememberedLecServiceCollege || ''),
+                  labServiceCollege: legacyTargetAssignment ? '' : (crs.labServiceCollege || crs.rememberedLabServiceCollege || ''),
+                  targetCollegeCodes: Array.isArray(crs.targetCollegeAssignments) && crs.targetCollegeAssignments.length > 0
                     ? crs.targetCollegeAssignments.map((assignment) => assignment.collegeCode).filter(Boolean)
-                    : (crs.targetCollegeCodes || []),
+                    : (legacyTargetAssignment ? [legacyTargetAssignment.collegeCode] : (crs.targetCollegeCodes || [])),
+                  targetCollegeAssignments: Array.isArray(crs.targetCollegeAssignments) && crs.targetCollegeAssignments.length > 0
+                    ? crs.targetCollegeAssignments
+                    : (legacyTargetAssignment ? [legacyTargetAssignment] : []),
                 };
                 if (
                   updatedPrograms[targetIdx].courses.length === 1 &&
@@ -270,7 +317,14 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           });
         }
       },
-      (err) => console.error('Error loading existing courses for college edit:', err)
+      (err) => console.error('Error loading existing courses for college edit:', err),
+      {
+        includeServiceAssignments: Boolean(
+          editingCollege.managesGeneralEducationCourses ||
+          editingCollege.noOwnSections ||
+          editingCollege.doesNotHandleSections
+        ),
+      }
     );
 
     // Also fetch existing program sections if editing
@@ -462,6 +516,35 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       if (selectedCodes.has(normalizedCode)) selectedCodes.delete(normalizedCode);
       else selectedCodes.add(normalizedCode);
       currentCourse.targetCollegeCodes = [...selectedCodes];
+      const existingAssignments = Array.isArray(currentCourse.targetCollegeAssignments)
+        ? currentCourse.targetCollegeAssignments
+        : [];
+      currentCourse.targetCollegeAssignments = [...selectedCodes].map((code) => {
+        const existing = existingAssignments.find(
+          (assignment) => String(assignment.collegeCode || '').trim().toUpperCase() === code
+        );
+        return existing || {
+          collegeCode: code,
+          yearLevel: currentCourse.yearLevel || '1st Year',
+          semester: currentCourse.semester || '1st Semester',
+        };
+      });
+      updatedCourses[cIdx] = currentCourse;
+      updatedPrograms[pIdx] = { ...updatedPrograms[pIdx], courses: updatedCourses };
+      return { ...prev, programs: updatedPrograms };
+    });
+  };
+
+  const updateCourseTargetAssignment = (pIdx, cIdx, assignmentIndex, field, value) => {
+    setForm((prev) => {
+      const updatedPrograms = [...prev.programs];
+      const updatedCourses = [...updatedPrograms[pIdx].courses];
+      const currentCourse = { ...updatedCourses[cIdx] };
+      currentCourse.targetCollegeAssignments = (currentCourse.targetCollegeAssignments || []).map((assignment, index) =>
+        index === assignmentIndex
+          ? { ...assignment, [field]: value }
+          : assignment
+      );
       updatedCourses[cIdx] = currentCourse;
       updatedPrograms[pIdx] = { ...updatedPrograms[pIdx], courses: updatedCourses };
       return { ...prev, programs: updatedPrograms };
@@ -537,6 +620,31 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
       const result = await parseBulkCourseSpreadsheet(file);
       const validRows = result.rows.filter((r) => r.isValid);
 
+      const unresolvedReferences = result.rows.flatMap((row) => {
+        const issues = [];
+        if (row.collegeName && !resolveSystemCollege(row.collegeName)) {
+          issues.push(`${row.code || 'Course'}: college "${row.collegeName}" is not registered`);
+        }
+        if (row.lecServiceCollegeName && !resolveSystemCollege(row.lecServiceCollegeName)) {
+          issues.push(`${row.code || 'Course'}: lecture service college "${row.lecServiceCollegeName}" is not registered`);
+        }
+        if (row.labServiceCollegeName && !resolveSystemCollege(row.labServiceCollegeName)) {
+          issues.push(`${row.code || 'Course'}: laboratory service college "${row.labServiceCollegeName}" is not registered`);
+        }
+        if (form.managesGeneralEducationCourses && !row.collegeName) {
+          issues.push(`${row.code || 'Course'}: recipient college/department is required for a General Education provider`);
+        }
+        return issues;
+      });
+
+      if (unresolvedReferences.length > 0) {
+        setBulkError((prev) => ({
+          ...prev,
+          [pIdx]: `Fix these spreadsheet values: ${unresolvedReferences.slice(0, 5).join('; ')}${unresolvedReferences.length > 5 ? `; and ${unresolvedReferences.length - 5} more` : ''}. Use the latest system template dropdowns.`,
+        }));
+        return;
+      }
+
       if (validRows.length === 0) {
         setBulkError((prev) => ({
           ...prev,
@@ -546,12 +654,21 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
         return;
       }
 
-      const formattedNewCourses = validRows.map((r) => {
+      let formattedNewCourses = validRows.map((r) => {
         const lecU = r.lecUnits !== undefined ? Number(r.lecUnits) : (r.type === 'laboratory' ? 0 : Number(r.units || 3));
         const labU = r.labUnits !== undefined ? Number(r.labUnits) : (r.type === 'laboratory' ? Number(r.units || 3) : 0);
         const lecH = r.lecHours !== undefined ? Number(r.lecHours) : (lecU > 0 ? lecU * 1 : 0);
         const labH = r.labHours !== undefined ? Number(r.labHours) : (labU > 0 ? labU * 3 : 0);
         const totalH = r.totalHours !== undefined ? Number(r.totalHours) : (lecH + labH);
+
+        const owningCollege = resolveSystemCollege(r.collegeName);
+        const lectureServiceCollege = resolveSystemCollege(r.lecServiceCollegeName);
+        const laboratoryServiceCollege = resolveSystemCollege(r.labServiceCollegeName);
+        const isTargetCollege = Boolean(
+          form.managesGeneralEducationCourses &&
+          owningCollege?.code &&
+          String(owningCollege.code).trim().toUpperCase() !== String(form.code || '').trim().toUpperCase()
+        );
 
         return {
           id: `crs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -566,8 +683,54 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
           labHours: String(labH),
           totalHours: String(totalH),
           type: r.type,
+          requiresServiceCollege: !form.managesGeneralEducationCourses && Boolean(lectureServiceCollege || laboratoryServiceCollege),
+          serviceMode: form.managesGeneralEducationCourses
+            ? SERVICE_MODES.INTERNAL
+            : lectureServiceCollege && laboratoryServiceCollege
+            ? SERVICE_MODES.BOTH
+            : (lectureServiceCollege ? SERVICE_MODES.LECTURE : (laboratoryServiceCollege ? SERVICE_MODES.LABORATORY : SERVICE_MODES.INTERNAL)),
+          lecServiceCollege: form.managesGeneralEducationCourses ? '' : (lectureServiceCollege?.code || ''),
+          labServiceCollege: form.managesGeneralEducationCourses ? '' : (laboratoryServiceCollege?.code || ''),
+          targetCollegeCodes: isTargetCollege ? [String(owningCollege.code).trim().toUpperCase()] : [],
+          targetCollegeAssignments: isTargetCollege ? [{
+            collegeCode: String(owningCollege.code).trim().toUpperCase(),
+            programCodes: r.programCode ? [String(r.programCode).trim().toUpperCase()] : [],
+            yearLevel: r.yearLevel,
+            semester: r.semester,
+          }] : [],
         };
       });
+
+      if (form.managesGeneralEducationCourses) {
+        const groupedCourses = new Map();
+        formattedNewCourses.forEach((course) => {
+          const key = `${String(course.code || '').trim().toUpperCase()}|${String(course.title || '').trim().toUpperCase()}`;
+          const existing = groupedCourses.get(key);
+          if (!existing) {
+            groupedCourses.set(key, { ...course });
+            return;
+          }
+          const assignments = [
+            ...(existing.targetCollegeAssignments || []),
+            ...(course.targetCollegeAssignments || []),
+          ];
+          const uniqueAssignments = new Map();
+          assignments.forEach((assignment) => {
+            const assignmentKey = [
+              assignment.collegeCode,
+              assignment.programCodes?.join(','),
+              assignment.yearLevel,
+              assignment.semester,
+            ].join('|').toUpperCase();
+            uniqueAssignments.set(assignmentKey, assignment);
+          });
+          existing.targetCollegeAssignments = [...uniqueAssignments.values()];
+          existing.targetCollegeCodes = [...new Set(
+            existing.targetCollegeAssignments.map((assignment) => assignment.collegeCode).filter(Boolean)
+          )];
+        });
+        formattedNewCourses = [...groupedCourses.values()];
+      }
 
       // AUTOMATICALLY POPULATE INTO form.programs[pIdx].courses
       setForm((prev) => {
@@ -777,17 +940,21 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
               serviceStatus: crs.serviceStatus || 'pending',
               generalEducationProviderCode: form.managesGeneralEducationCourses ? code : null,
               targetCollegeAssignments: form.managesGeneralEducationCourses
-                ? (crs.targetCollegeCodes || []).map((targetCode) => {
+                ? (crs.targetCollegeAssignments || []).map((assignment) => {
+                    const targetCode = assignment.collegeCode;
                     const targetCollege = allColleges.find(
                       (college) => String(college.code || '').trim().toUpperCase() === String(targetCode).trim().toUpperCase()
                     );
                     return {
                       collegeCode: String(targetCode).trim().toUpperCase(),
                       collegeName: targetCollege?.name || String(targetCode).trim().toUpperCase(),
-                      programCodes: (targetCollege?.programs || [])
-                        .map((program) => String(program.code || '').trim().toUpperCase())
-                        .filter(Boolean),
-                      yearLevel: crs.yearLevel || '1st Year',
+                      programCodes: Array.isArray(assignment.programCodes) && assignment.programCodes.length > 0
+                        ? assignment.programCodes.map((programCode) => String(programCode).trim().toUpperCase()).filter(Boolean)
+                        : (targetCollege?.programs || [])
+                            .map((program) => String(program.code || '').trim().toUpperCase())
+                            .filter(Boolean),
+                      yearLevel: assignment.yearLevel || crs.yearLevel || '1st Year',
+                      semester: assignment.semester || crs.semester || '1st Semester',
                     };
                   })
                 : [],
@@ -1411,7 +1578,7 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                       {/* General Education target colleges */}
                                       {form.managesGeneralEducationCourses && (
                                         <div className="sm:col-span-12 mt-1.5 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
-                                          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_220px] lg:items-start">
+                                          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,0.8fr)_minmax(420px,1.2fr)] lg:items-start">
                                             <div>
                                               <label className="mb-1 block text-[10px] font-extrabold text-blue-950">
                                                 Colleges that will receive this subject <span className="text-red-500">*</span>
@@ -1461,20 +1628,42 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                                             </div>
                                             <div>
                                               <label className="mb-1 block text-[10px] font-extrabold text-blue-950">
-                                                Target year level <span className="text-red-500">*</span>
+                                                Year level and semester per college <span className="text-red-500">*</span>
                                               </label>
-                                              <select
-                                                value={crs.yearLevel || '1st Year'}
-                                                onChange={(event) => updateCourseField(pIdx, cIdx, 'yearLevel', event.target.value)}
-                                                className="form-input w-full rounded-lg border border-blue-200 bg-white px-2.5 py-2 text-xs font-semibold focus:border-[#7A0808]"
-                                                required
-                                              >
-                                                {YEAR_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
-                                              </select>
+                                              <div className="space-y-1.5">
+                                                {(crs.targetCollegeAssignments || []).map((assignment, assignmentIndex) => (
+                                                  <div key={`${assignment.collegeCode}-${assignment.yearLevel}-${assignment.semester}-${assignmentIndex}`} className="grid grid-cols-[minmax(90px,1fr)_130px_145px] items-center gap-1.5 rounded-lg border border-blue-100 bg-white p-1.5">
+                                                    <span className="truncate px-1 text-[10px] font-black text-blue-950" title={assignment.collegeCode}>
+                                                      {allColleges.find((college) =>
+                                                        String(college.code || '').trim().toUpperCase() === String(assignment.collegeCode || '').trim().toUpperCase()
+                                                      )?.name || assignment.collegeName || assignment.collegeCode}
+                                                    </span>
+                                                    <select
+                                                      value={assignment.yearLevel || crs.yearLevel || '1st Year'}
+                                                      onChange={(event) => updateCourseTargetAssignment(pIdx, cIdx, assignmentIndex, 'yearLevel', event.target.value)}
+                                                      className="form-input rounded-md border border-blue-200 bg-white px-1.5 py-1.5 text-[10px] font-semibold"
+                                                    >
+                                                      {YEAR_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+                                                    </select>
+                                                    <select
+                                                      value={assignment.semester || crs.semester || '1st Semester'}
+                                                      onChange={(event) => updateCourseTargetAssignment(pIdx, cIdx, assignmentIndex, 'semester', event.target.value)}
+                                                      className="form-input rounded-md border border-blue-200 bg-white px-1.5 py-1.5 text-[10px] font-semibold"
+                                                    >
+                                                      {SEMESTERS.map((semester) => <option key={semester} value={semester}>{semester}</option>)}
+                                                    </select>
+                                                  </div>
+                                                ))}
+                                                {(crs.targetCollegeAssignments || []).length === 0 && (
+                                                  <div className="rounded-lg border border-dashed border-blue-200 bg-white/70 px-3 py-2 text-[10px] font-semibold text-gray-500">
+                                                    Select a college to configure its year and semester.
+                                                  </div>
+                                                )}
+                                              </div>
                                             </div>
                                           </div>
                                           <p className="mt-2 text-[9px] font-medium leading-relaxed text-blue-800">
-                                            This subject will be available to every program and section at the selected year level in the chosen colleges.
+                                            Each college can receive the same subject in a different year level and semester. It will apply to that college's programs and matching sections.
                                           </p>
                                         </div>
                                       )}
@@ -1617,7 +1806,15 @@ export default function AddCollegeModal({ onClose, onSaveSuccess, colleges = [],
                               </p>
                               <button
                                 type="button"
-                                onClick={() => downloadBulkCourseTemplate(form.code || 'college')}
+                                onClick={() => downloadBulkCourseTemplate(
+                                  form.code || 'college',
+                                  form.code
+                                    ? [
+                                        ...allColleges.filter((college) => String(college.code || '').trim().toUpperCase() !== String(form.code).trim().toUpperCase()),
+                                        { code: form.code, name: form.name || form.code },
+                                      ]
+                                    : allColleges
+                                )}
                                 className="btn-outline-maroon text-xs py-1.5 px-3 w-full flex items-center justify-center gap-1.5 font-bold"
                               >
                                 <Download size={13} /> Download (.xlsx)

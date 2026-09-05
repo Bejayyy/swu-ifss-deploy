@@ -46,6 +46,14 @@ export default function AddCourseModal({
   const { showConfirm, confirmState, notificationState } = useModal();
   const [activeTab, setActiveTab] = useState(centralized ? 'bulk' : 'individual'); // 'individual' | 'bulk'
   const [allColleges, setAllColleges] = useState([]);
+  const activeCollegeConfig = useMemo(() => allColleges.find((college) =>
+    String(college.code || '').trim().toUpperCase() === String(collegeCode || '').trim().toUpperCase()
+  ), [allColleges, collegeCode]);
+  const isGeneralEducationProvider = Boolean(
+    activeCollegeConfig?.managesGeneralEducationCourses ||
+    activeCollegeConfig?.noOwnSections ||
+    activeCollegeConfig?.doesNotHandleSections
+  );
 
   const resolveCollegeCode = (value, programHint = '') => {
     const normalized = String(value || '').trim().toLowerCase();
@@ -146,6 +154,14 @@ export default function AddCourseModal({
     requiresServiceCollege: Boolean(editingCourse?.requiresServiceCollege || editingCourse?.lecServiceCollege || editingCourse?.labServiceCollege),
     lecServiceCollege: editingCourse?.lecServiceCollege || '',
     labServiceCollege: editingCourse?.labServiceCollege || '',
+    targetCollegeAssignments: Array.isArray(editingCourse?.targetCollegeAssignments) && editingCourse.targetCollegeAssignments.length > 0
+      ? editingCourse.targetCollegeAssignments
+      : (editingCourse?.isServiceAssignment && editingCourse?.collegeCode ? [{
+          collegeCode: String(editingCourse.collegeCode).trim().toUpperCase(),
+          programCodes: editingCourse.programCode ? [String(editingCourse.programCode).trim().toUpperCase()] : [],
+          yearLevel: editingCourse.yearLevel || '1st Year',
+          semester: editingCourse.semester || '1st Semester',
+        }] : []),
   });
   const [individualError, setIndividualError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -175,6 +191,14 @@ export default function AddCourseModal({
         requiresServiceCollege: Boolean(editingCourse.requiresServiceCollege || editingCourse.lecServiceCollege || editingCourse.labServiceCollege),
         lecServiceCollege: editingCourse.lecServiceCollege || '',
         labServiceCollege: editingCourse.labServiceCollege || '',
+        targetCollegeAssignments: Array.isArray(editingCourse.targetCollegeAssignments) && editingCourse.targetCollegeAssignments.length > 0
+          ? editingCourse.targetCollegeAssignments
+          : (editingCourse.isServiceAssignment && editingCourse.collegeCode ? [{
+              collegeCode: String(editingCourse.collegeCode).trim().toUpperCase(),
+              programCodes: editingCourse.programCode ? [String(editingCourse.programCode).trim().toUpperCase()] : [],
+              yearLevel: editingCourse.yearLevel || '1st Year',
+              semester: editingCourse.semester || '1st Semester',
+            }] : []),
       });
       setActiveTab('individual');
     } else if (defaultProgramCode) {
@@ -184,6 +208,35 @@ export default function AddCourseModal({
       }));
     }
   }, [editingCourse, defaultProgramCode]);
+
+  const toggleTargetCollege = (targetCollege) => {
+    const targetCode = String(targetCollege.code || '').trim().toUpperCase();
+    setIndividualForm((prev) => {
+      const assignments = prev.targetCollegeAssignments || [];
+      const exists = assignments.some((assignment) => assignment.collegeCode === targetCode);
+      return {
+        ...prev,
+        targetCollegeAssignments: exists
+          ? assignments.filter((assignment) => assignment.collegeCode !== targetCode)
+          : [...assignments, {
+              collegeCode: targetCode,
+              collegeName: targetCollege.name || targetCode,
+              programCodes: (targetCollege.programs || []).map((program) => String(program.code || '').trim().toUpperCase()).filter(Boolean),
+              yearLevel: prev.yearLevel || '1st Year',
+              semester: prev.semester || '1st Semester',
+            }],
+      };
+    });
+  };
+
+  const updateTargetAssignment = (index, field, value) => {
+    setIndividualForm((prev) => ({
+      ...prev,
+      targetCollegeAssignments: (prev.targetCollegeAssignments || []).map((assignment, assignmentIndex) =>
+        assignmentIndex === index ? { ...assignment, [field]: value } : assignment
+      ),
+    }));
+  };
 
   // Bulk Upload State
   const [isDragOver, setIsDragOver] = useState(false);
@@ -323,6 +376,10 @@ export default function AddCourseModal({
       setIndividualError('Total units must be a positive number greater than 0.');
       return;
     }
+    if (isGeneralEducationProvider && (individualForm.targetCollegeAssignments || []).length === 0) {
+      setIndividualError('Select at least one recipient college and configure its year level and semester.');
+      return;
+    }
 
     // Check duplicate code (excluding current course being edited)
     const duplicate = existingCourses.find(
@@ -348,7 +405,7 @@ export default function AddCourseModal({
 
     setIsSubmitting(true);
     try {
-      const reqSvc = Boolean(individualForm.lecServiceCollege || individualForm.labServiceCollege);
+      const reqSvc = !isGeneralEducationProvider && Boolean(individualForm.lecServiceCollege || individualForm.labServiceCollege);
       const coursePayload = {
         code,
         title,
@@ -364,13 +421,15 @@ export default function AddCourseModal({
         type: individualForm.type || (numLab > 0 && numLec > 0 ? 'both' : (numLab > 0 ? 'laboratory' : 'lecture')),
         collegeCode,
         requiresServiceCollege: reqSvc,
-        lecServiceCollege: individualForm.lecServiceCollege ? String(individualForm.lecServiceCollege).trim().toUpperCase() : null,
-        labServiceCollege: individualForm.labServiceCollege ? String(individualForm.labServiceCollege).trim().toUpperCase() : null,
+        lecServiceCollege: !isGeneralEducationProvider && individualForm.lecServiceCollege ? String(individualForm.lecServiceCollege).trim().toUpperCase() : null,
+        labServiceCollege: !isGeneralEducationProvider && individualForm.labServiceCollege ? String(individualForm.labServiceCollege).trim().toUpperCase() : null,
+        generalEducationProviderCode: isGeneralEducationProvider ? String(collegeCode).trim().toUpperCase() : null,
+        targetCollegeAssignments: isGeneralEducationProvider ? individualForm.targetCollegeAssignments : [],
         serviceStatus: editingCourse?.serviceStatus || 'pending',
       };
 
       if (editingCourse?.id) {
-        await updateCourse(editingCourse.id, coursePayload);
+        await updateCourse(editingCourse.sourceCourseId || editingCourse.id, coursePayload);
         if (onSaveSuccess) {
           onSaveSuccess(`Course ${code} updated successfully.`);
         }
@@ -382,7 +441,7 @@ export default function AddCourseModal({
       }
 
       // Send notification to Service College Dean(s)
-      if (individualForm.lecServiceCollege) {
+      if (!isGeneralEducationProvider && individualForm.lecServiceCollege) {
         notifyServiceCollegeDeans({
           serviceCollegeCode: individualForm.lecServiceCollege,
           motherCollege: collegeName || collegeCode,
@@ -392,7 +451,7 @@ export default function AddCourseModal({
           statusType: 'assigned',
         });
       }
-      if (individualForm.labServiceCollege) {
+      if (!isGeneralEducationProvider && individualForm.labServiceCollege) {
         notifyServiceCollegeDeans({
           serviceCollegeCode: individualForm.labServiceCollege,
           motherCollege: collegeName || collegeCode,
@@ -496,7 +555,7 @@ export default function AddCourseModal({
   };
 
   const handleDownloadTemplate = () => {
-    downloadBulkCourseTemplate(collegeCode);
+    downloadBulkCourseTemplate(collegeCode, allColleges);
   };
 
   // Execute Bulk Import
@@ -520,6 +579,63 @@ export default function AddCourseModal({
     setIsBulkImporting(true);
     setImportedProgress(0);
     let successCount = 0;
+
+    if (isGeneralEducationProvider) {
+      const groupedRows = new Map();
+      validRows.forEach((row) => {
+        const key = `${String(row.code || '').trim().toUpperCase()}|${String(row.title || '').trim().toUpperCase()}`;
+        if (!groupedRows.has(key)) groupedRows.set(key, []);
+        groupedRows.get(key).push(row);
+      });
+      const groups = [...groupedRows.values()];
+      for (let index = 0; index < groups.length; index++) {
+        const rows = groups[index];
+        const base = rows[0];
+        try {
+          const assignments = rows.map((row) => ({
+            collegeCode: String(row.collegeCode || '').trim().toUpperCase(),
+            collegeName: row.resolvedCollegeName || row.collegeName || row.collegeCode,
+            programCodes: row.programCode ? [String(row.programCode).trim().toUpperCase()] : [],
+            yearLevel: row.yearLevel || '1st Year',
+            semester: row.semester || '1st Semester',
+          })).filter((assignment) => assignment.collegeCode && assignment.collegeCode !== String(collegeCode).trim().toUpperCase());
+          if (assignments.length === 0) throw new Error(`No recipient college was found for ${base.code}.`);
+          const payload = {
+            code: String(base.code || '').trim().toUpperCase(),
+            title: toTitleCase(base.title),
+            programCode: defaultProgramCode || programs?.[0]?.code || '',
+            yearLevel: base.yearLevel,
+            semester: base.semester,
+            lecUnits: Number(base.lecUnits) || 0,
+            labUnits: Number(base.labUnits) || 0,
+            units: Number(base.units) || ((Number(base.lecUnits) || 0) + (Number(base.labUnits) || 0)),
+            lecHours: Number(base.lecHours) || 0,
+            labHours: Number(base.labHours) || 0,
+            totalHours: Number(base.totalHours) || 0,
+            type: base.type,
+            collegeCode,
+            requiresServiceCollege: false,
+            lecServiceCollege: null,
+            labServiceCollege: null,
+            generalEducationProviderCode: String(collegeCode).trim().toUpperCase(),
+            targetCollegeAssignments: assignments,
+          };
+          const existing = existingCourses.find((course) =>
+            !course.isServiceAssignment && String(course.code || '').trim().toUpperCase() === payload.code
+          );
+          if (existing?.id) await updateCourse(existing.sourceCourseId || existing.id, payload);
+          else await addCourse(payload);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to import General Education course ${base.code}:`, err);
+        }
+        setImportedProgress(Math.round(((index + 1) / groups.length) * 100));
+      }
+      setIsBulkImporting(false);
+      if (onSaveSuccess) onSaveSuccess(`${successCount} General Education course(s) imported successfully.`);
+      onClose();
+      return;
+    }
 
     for (let i = 0; i < validRows.length; i++) {
       const r = validRows[i];
@@ -733,6 +849,52 @@ export default function AddCourseModal({
                 </div>
               </div>
 
+              {isGeneralEducationProvider && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-wider text-blue-950">Recipient Colleges</span>
+                    <p className="mt-1 text-[11px] font-medium text-blue-800">
+                      Choose the colleges that receive this minor subject, then set the applicable year and semester for each college.
+                    </p>
+                  </div>
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-xs font-bold text-gray-700">
+                      <span>{(individualForm.targetCollegeAssignments || []).length > 0 ? `${individualForm.targetCollegeAssignments.length} college(s) selected` : 'Select recipient colleges...'}</span>
+                      <span className="transition-transform group-open:rotate-180">⌄</span>
+                    </summary>
+                    <div className="mt-1 max-h-44 overflow-y-auto rounded-lg border border-blue-200 bg-white p-2 shadow-lg">
+                      {allColleges.filter((college) => String(college.code || '').trim().toUpperCase() !== String(collegeCode || '').trim().toUpperCase()).map((college) => {
+                        const targetCode = String(college.code || '').trim().toUpperCase();
+                        const checked = (individualForm.targetCollegeAssignments || []).some((assignment) => assignment.collegeCode === targetCode);
+                        return (
+                          <label key={college.id || targetCode} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-blue-50">
+                            <input type="checkbox" checked={checked} onChange={() => toggleTargetCollege(college)} className="h-4 w-4 accent-[#7A0808]" />
+                            <span className="text-[11px] font-semibold text-gray-800">{targetCode} - {college.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </details>
+                  <div className="space-y-2">
+                    {(individualForm.targetCollegeAssignments || []).map((assignment, index) => (
+                      <div key={`${assignment.collegeCode}-${index}`} className="grid grid-cols-1 gap-2 rounded-lg border border-blue-100 bg-white p-2 sm:grid-cols-[minmax(150px,1fr)_150px_170px] sm:items-center">
+                        <span className="px-1 text-[11px] font-black text-blue-950">
+                          {allColleges.find((college) =>
+                            String(college.code || '').trim().toUpperCase() === String(assignment.collegeCode || '').trim().toUpperCase()
+                          )?.name || assignment.collegeName || assignment.collegeCode}
+                        </span>
+                        <select value={assignment.yearLevel || '1st Year'} onChange={(event) => updateTargetAssignment(index, 'yearLevel', event.target.value)} className="form-input border-blue-200 bg-white py-2 text-xs font-semibold">
+                          {YEAR_LEVELS.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                        <select value={assignment.semester || '1st Semester'} onChange={(event) => updateTargetAssignment(index, 'semester', event.target.value)} className="form-input border-blue-200 bg-white py-2 text-xs font-semibold">
+                          {SEMESTERS.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Section 1: Academic Units (Credit Breakdown) */}
               <div className="bg-gray-50/70 border border-gray-200/80 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -925,6 +1087,7 @@ export default function AddCourseModal({
               )}
 
               {/* Section 3: Service College (Inter-College Teaching Assignment) */}
+              {!isGeneralEducationProvider && (
               <div className="bg-indigo-50/50 border border-indigo-200/80 rounded-xl p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -989,6 +1152,7 @@ export default function AddCourseModal({
                   )}
                 </div>
               </div>
+              )}
 
               <div className="flex gap-3 pt-4 border-t border-gray-100 font-bold">
                 <button
@@ -1030,7 +1194,7 @@ export default function AddCourseModal({
                   </p>
                   <button
                     type="button"
-                    onClick={() => downloadBulkCourseTemplate(collegeCode)}
+                    onClick={() => downloadBulkCourseTemplate(collegeCode, allColleges)}
                     className="btn-outline-maroon font-bold text-xs py-2 px-3.5 w-full flex items-center justify-center gap-2"
                   >
                     <Download size={14} /> Download (.xlsx) Template

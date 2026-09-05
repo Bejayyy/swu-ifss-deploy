@@ -423,7 +423,7 @@ export function parseBulkUserSpreadsheet(file, roles = [], roleDefinitions = {},
 /**
  * Generates a dynamic Excel template file (.xlsx) for bulk importing courses/subjects.
  */
-export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
+export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE', colleges = []) {
   const headers = [
     'Course Code *',
     'Course Title *',
@@ -445,7 +445,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
     [
       'IT101',
       'Programming 1',
-      'College of IT',
+      String(collegeCode || 'COLLEGE').trim().toUpperCase(),
       'BSIT',
       '1st Year',
       '1st Semester',
@@ -456,7 +456,7 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
       3,
       'both',
       '',
-      'College of Engineering',
+      '',
     ],
   ];
 
@@ -483,6 +483,12 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
   const validYears = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
   const validSemesters = ['1st Semester', '2nd Semester', 'Summer'];
   const validTypes = ['lecture', 'laboratory', 'both'];
+  const collegeOptions = (colleges || [])
+    .map((college) => ({
+      code: String(college.code || '').trim().toUpperCase(),
+      name: String(college.name || '').trim(),
+    }))
+    .filter((college) => college.code);
 
   const optionsData = [
     ['Year Levels', 'Semesters', 'Course Types', 'Template Guidelines / Notes'],
@@ -493,18 +499,28 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
     ['5th Year', '', '', '• Lab Hours/Wk: Weekly contact time (Defaults to 3.0 hrs per Lab Unit).'],
   ];
   const optionsWorksheet = XLSX.utils.aoa_to_sheet(optionsData);
+  XLSX.utils.sheet_add_aoa(optionsWorksheet, [['College Codes', 'College Names']], { origin: 'E1' });
+  if (collegeOptions.length > 0) {
+    XLSX.utils.sheet_add_aoa(
+      optionsWorksheet,
+      collegeOptions.map((college) => [college.code, college.name]),
+      { origin: 'E2' }
+    );
+  }
   optionsWorksheet['!cols'] = [
     { wch: 16 },
     { wch: 18 },
     { wch: 16 },
     { wch: 60 },
+    { wch: 18 },
+    { wch: 42 },
   ];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Course Import Template');
   XLSX.utils.book_append_sheet(workbook, optionsWorksheet, 'Reference Options');
 
-  worksheet['!dataValidation'] = [
+  const validations = [
     {
       sqref: 'E2:E1000',
       type: 'list',
@@ -531,8 +547,28 @@ export function downloadBulkCourseTemplate(collegeCode = 'COLLEGE') {
     },
   ];
 
+  if (collegeOptions.length > 0) {
+    const collegeRange = `'Reference Options'!$E$2:$E$${collegeOptions.length + 1}`;
+    validations.push(
+      {
+        sqref: 'C2:C1000',
+        type: 'list',
+        formula1: collegeRange,
+        errorTitle: 'Invalid Owning College',
+        error: 'Select an owning college code from the system list.',
+      },
+      {
+        sqref: 'M2:N1000',
+        type: 'list',
+        formula1: collegeRange,
+        errorTitle: 'Invalid Service College',
+        error: 'Select a service college code from the system list.',
+      }
+    );
+  }
+
   const filename = `swu_bulk_courses_template_${collegeCode.toLowerCase()}.xlsx`;
-  XLSX.writeFile(workbook, filename);
+  writeWorkbookWithValidations(workbook, filename, validations);
 }
 
 /**
