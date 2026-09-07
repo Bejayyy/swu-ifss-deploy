@@ -258,6 +258,7 @@ export default function NonAcademicRequestModal({ onClose }) {
           requestor: resolvedRequestedBy,
           requestorEmail: profile?.email || '',
           createdByUid: profile?.uid || '',
+          requestorRole: profile?.role || '',
           ...form,
           buildingId: selectedBuilding?.id || null,
           roomId: selectedRoomObj?.docId || selectedRoomObj?.id || form.room || null,

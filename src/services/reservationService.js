@@ -42,6 +42,43 @@ function mapReservationDoc(d) {
   };
 }
 
+function normalizeReservationDate(value) {
+  if (!value) return '';
+  if (typeof value?.toDate === 'function') {
+    const date = value.toDate();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  const raw = String(value).trim();
+  const parts = raw.split(/[/-]/);
+  if (parts.length !== 3) return raw;
+  if (parts[0].length === 4) {
+    return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+  }
+  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+}
+
+function normalizeRoomKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isApprovedReservation(reservation) {
+  return String(reservation?.status || '').trim().toLowerCase() === 'approved';
+}
+
+function reservationMatchesRoom(reservation, roomId, roomCode = '') {
+  const targets = [roomId, roomCode].map(normalizeRoomKey).filter(Boolean);
+  if (!targets.length) return false;
+
+  const directValues = [reservation.roomId, reservation.roomDocId, reservation.room]
+    .map(normalizeRoomKey)
+    .filter(Boolean);
+  if (targets.some((target) => directValues.includes(target))) return true;
+
+  const venue = normalizeRoomKey(reservation.designatedVenue || reservation.venue);
+  return Boolean(venue && targets.some((target) => venue.includes(target)));
+}
+
 export function subscribeRoomReservations(onData, onError, userProfile = null) {
   // If no user profile provided, return empty subscription
   if (!userProfile) {
@@ -255,29 +292,59 @@ export async function fetchRoomReservation(reservationId) {
   return mapReservationDoc(snap);
 }
 
-function buildApprovalRecords(workflowSnapshot, submit = true) {
+function isDeanRole(role) {
+  const normalized = String(role || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  return normalized === 'dean'
+    || normalized === 'college-dean'
+    || normalized.endsWith('-dean');
+}
+
+function buildApprovalRecords(workflowSnapshot, submit = true, requestor = {}) {
   if (!workflowSnapshot?.length) {
     throw new Error('No approval workflow configured. Contact the Registrar to set up approval levels.');
   }
 
-  return workflowSnapshot.map((level, index) => ({
-    id: `lvl_${level.levelNumber}_${level.roleId}`,
-    workflowId: level.workflowId || null,
-    levelNumber: level.levelNumber,
-    roleId: level.roleId,
-    roleLabel: level.roleLabel,
-    customManagerUid: level.customManagerUid || null,
-    customManagerName: level.customManagerName || null,
-    status: submit
-      ? index === 0
-        ? APPROVAL_RECORD_STATUS.PENDING
-        : APPROVAL_RECORD_STATUS.WAITING
-      : APPROVAL_RECORD_STATUS.WAITING,
-    approvedByUid: null,
-    approvedByName: null,
-    approvedAt: null,
-    remarks: null,
-  }));
+  let pendingAssigned = false;
+  const requestorIsDean = isDeanRole(requestor.role);
+  const automaticApprovalTime = new Date().toISOString();
+
+  return workflowSnapshot.map((level) => {
+    const normalizedLevelRole = String(level.roleId || '').trim().toLowerCase().replace(/_/g, '-');
+    const isDeanApprovalStep = normalizedLevelRole !== 'room-manager-dean'
+      && (normalizedLevelRole === 'dean' || isDeanRole(level.roleLabel));
+    const isOwnDeanStep = requestorIsDean && isDeanApprovalStep;
+    const isOwnManagedRoomStep = requestor.uid
+      && normalizedLevelRole === 'room-manager-dean'
+      && level.customManagerUid === requestor.uid;
+    const autoApprove = submit && (isOwnDeanStep || isOwnManagedRoomStep);
+    let status = APPROVAL_RECORD_STATUS.WAITING;
+
+    if (autoApprove) {
+      status = APPROVAL_RECORD_STATUS.APPROVED;
+    } else if (submit && !pendingAssigned) {
+      status = APPROVAL_RECORD_STATUS.PENDING;
+      pendingAssigned = true;
+    }
+
+    return {
+      id: `lvl_${level.levelNumber}_${level.roleId}`,
+      workflowId: level.workflowId || null,
+      levelNumber: level.levelNumber,
+      roleId: level.roleId,
+      roleLabel: level.roleLabel,
+      customManagerUid: level.customManagerUid || null,
+      customManagerName: level.customManagerName || null,
+      status,
+      approvedByUid: autoApprove ? requestor.uid || null : null,
+      approvedByName: autoApprove ? requestor.name || 'Dean Requestor' : null,
+      approvedAt: autoApprove ? automaticApprovalTime : null,
+      remarks: autoApprove ? 'Automatically approved because the dean submitted this request.' : null,
+      // The requester signature already lives on the reservation/user profile.
+      // Do not duplicate a large Base64 image inside every approval record.
+      signatureUrl: null,
+      autoApproved: autoApprove,
+    };
+  });
 }
 
 export async function createRoomReservation(payload, { draft = false } = {}) {
@@ -290,6 +357,7 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
   if (!draft && payload.roomId && payload.dateOfActivity && payload.timeStart && payload.timeEnd) {
     await checkReservationTimeConflict({
       roomDocId: payload.roomId, // roomId should be the Firestore document ID
+      roomCode: payload.room || payload.designatedVenue || '',
       dateOfActivity: payload.dateOfActivity,
       timeStart: payload.timeStart,
       timeEnd: payload.timeEnd,
@@ -300,7 +368,6 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
   let customManagerUid = payload.customManagerUid || null;
   let customManagerName = payload.customManagerName || null;
   let workflowSnapshot;
-  let useDeanManagedWorkflow = false;
 
   if (!customManagerUid && payload.buildingId && payload.floorId && payload.roomId) {
     try {
@@ -333,7 +400,6 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
 
   // If custom manager exists, use appropriate dean-managed workflow
   if (customManagerUid && customManagerName) {
-    useDeanManagedWorkflow = true;
     
     // Determine which dean-managed workflow to use based on reservation type
     const deanManagedType = isAcademic 
@@ -412,19 +478,48 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     workflowSnapshot = await getWorkflowSnapshot(approvalType);
   }
 
-  const approvalRecords = buildApprovalRecords(workflowSnapshot, !draft);
+  // Resolve the role from the authoritative Firestore user profile. This keeps
+  // self-approval correct even when an older UI build did not send requestorRole.
+  let requestorRole = payload.requestorRole || payload.createdByRole || '';
+  if (payload.createdByUid) {
+    try {
+      const requestorSnap = await getDoc(doc(db, COLLECTIONS.USERS, payload.createdByUid));
+      if (requestorSnap.exists()) {
+        const requestorProfile = requestorSnap.data();
+        requestorRole = requestorProfile.role || requestorProfile.roleValue || requestorRole;
+      }
+    } catch (err) {
+      console.warn('Could not verify requester role for workflow self-approval:', err?.message || err);
+    }
+  }
+
+  const approvalRecords = buildApprovalRecords(workflowSnapshot, !draft, {
+    uid: payload.createdByUid,
+    name: payload.requestedBy || payload.requestor,
+    role: requestorRole,
+    signatureUrl: payload.requestorSignatureUrl || payload.signatureUrl,
+  });
+  const hasPendingApproval = approvalRecords.some((record) => record.status === APPROVAL_RECORD_STATUS.PENDING);
+  const initialStatus = draft
+    ? RESERVATION_STATUS.DRAFT
+    : hasPendingApproval
+      ? RESERVATION_STATUS.IN_PROGRESS
+      : RESERVATION_STATUS.APPROVED;
   const ref = doc(reservationsCollection());
 
   const reservation = {
     type: approvalType,
-    status: draft ? RESERVATION_STATUS.DRAFT : RESERVATION_STATUS.IN_PROGRESS,
+    status: initialStatus,
     title: payload.activity?.trim() || payload.title?.trim() || 'Room Reservation',
     department: payload.nameOfOrg?.trim() || payload.department?.trim() || '',
     college: payload.college?.trim() || '', // Added college field for filtering
     requestor: payload.requestedBy?.trim() || payload.requestor?.trim() || '',
     requestorEmail: payload.requestorEmail || null,
     createdByUid: payload.createdByUid || null,
-    signatureUrl: payload.signatureUrl || payload.requestorSignatureUrl || null,
+    requestorRole: requestorRole || null,
+    // Store the requester image once. Previously both fields held the same Base64
+    // value and could push the Firestore document over its 1 MiB limit.
+    signatureUrl: null,
     requestorSignatureUrl: payload.requestorSignatureUrl || payload.signatureUrl || null,
     nameOfOrg: payload.nameOfOrg?.trim() || '',
     activity: payload.activity?.trim() || '',
@@ -450,6 +545,8 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     workflowSnapshot,
     approvalRecords,
     rejectReason: null,
+    approvedAt: initialStatus === RESERVATION_STATUS.APPROVED ? serverTimestamp() : null,
+    roomBlocked: initialStatus === RESERVATION_STATUS.APPROVED,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -572,7 +669,7 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
           roleLabel: pendingRecord.roleLabel || 'Approver',
           link: linkPath,
         });
-      } catch (err) {
+      } catch {
         console.info('Note: Submission confirmation email skipped until "sendReservationSubmittedEmail" is deployed.');
       }
     }
@@ -613,7 +710,7 @@ async function notifyNextApprovers(reservationId, pendingRecord, reservationData
             roleLabel: pendingRecord.roleLabel || 'Approver',
             link: linkPath,
           });
-        } catch (emailErr) {
+        } catch {
           // Graceful fallback if Cloud Function is not yet deployed to GCP
           console.info('Note: Email notification skipped until "sendApprovalPendingEmail" is deployed via `firebase deploy --only functions`. In-app notifications remain fully active.');
         }
@@ -683,7 +780,7 @@ async function notifyRequestorStatus({ requestorUid, requestorEmail, title, resT
         remarks: remarks || '',
         link: linkPath,
       });
-    } catch (emailErr) {
+    } catch {
       console.info('Note: Decision email notification skipped until "sendReservationDecisionEmail" is deployed via `firebase deploy --only functions`. In-app notifications remain fully active.');
     }
   }
@@ -703,14 +800,30 @@ export async function submitDraftReservation(reservationId) {
     ? data.workflowSnapshot
     : await getWorkflowSnapshot(data.type);
 
-  const approvalRecords = buildApprovalRecords(workflowSnapshot, true);
+  let requestorRole = data.requestorRole || data.createdByRole || '';
+  if (!requestorRole && data.createdByUid) {
+    const requestorSnap = await getDoc(doc(db, COLLECTIONS.USERS, data.createdByUid));
+    requestorRole = requestorSnap.exists() ? requestorSnap.data().role || requestorSnap.data().roleValue || '' : '';
+  }
+
+  const approvalRecords = buildApprovalRecords(workflowSnapshot, true, {
+    uid: data.createdByUid,
+    name: data.requestedBy || data.requestor,
+    role: requestorRole,
+    signatureUrl: data.requestorSignatureUrl || data.signatureUrl,
+  });
+  const hasPendingApproval = approvalRecords.some((record) => record.status === APPROVAL_RECORD_STATUS.PENDING);
+  const submittedStatus = hasPendingApproval ? RESERVATION_STATUS.IN_PROGRESS : RESERVATION_STATUS.APPROVED;
 
   await setDoc(
     ref,
     {
-      status: RESERVATION_STATUS.IN_PROGRESS,
+      status: submittedStatus,
+      requestorRole: requestorRole || null,
       workflowSnapshot,
       approvalRecords,
+      approvedAt: submittedStatus === RESERVATION_STATUS.APPROVED ? serverTimestamp() : null,
+      roomBlocked: submittedStatus === RESERVATION_STATUS.APPROVED,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -736,6 +849,27 @@ export async function processApprovalAction({
   }
 
   let notificationToTrigger = null;
+
+  // Before the final signature, re-check the room slot. This both prevents an
+  // approved reservation from being double-booked and supports older requests
+  // whose room/date fields were stored in a different display format.
+  if (action === 'approve') {
+    const preflightSnap = await getDoc(reservationRef(reservationId));
+    if (!preflightSnap.exists()) throw new Error('Reservation not found.');
+    const preflight = preflightSnap.data();
+    const pendingRecords = (preflight.approvalRecords || [])
+      .filter((record) => record.status === APPROVAL_RECORD_STATUS.PENDING || record.status === APPROVAL_RECORD_STATUS.WAITING);
+    if (pendingRecords.length === 1) {
+      await checkReservationTimeConflict({
+        roomDocId: preflight.roomDocId || preflight.roomId || preflight.room,
+        roomCode: preflight.room || preflight.designatedVenue,
+        dateOfActivity: preflight.dateOfActivity,
+        timeStart: preflight.timeStart,
+        timeEnd: preflight.timeEnd,
+        excludeReservationId: reservationId,
+      });
+    }
+  }
 
   await runTransaction(db, async (transaction) => {
     const ref = reservationRef(reservationId);
@@ -772,7 +906,7 @@ export async function processApprovalAction({
         approvedByName: approverName,
         approvedAt: now,
         remarks: remarks.trim() || null,
-        signatureUrl: signatureUrl || pending.signatureUrl || null,
+        signatureUrl: null,
       };
       for (let i = pendingIndex + 1; i < records.length; i += 1) {
         if (records[i].status === APPROVAL_RECORD_STATUS.WAITING) {
@@ -808,7 +942,7 @@ export async function processApprovalAction({
       approvedByName: approverName,
       approvedAt: now,
       remarks: remarks.trim() || null,
-      signatureUrl: signatureUrl || pending.signatureUrl || null,
+      signatureUrl: null,
     };
 
     // Persist signature to user profile for future requests
@@ -822,6 +956,8 @@ export async function processApprovalAction({
       transaction.update(ref, {
         approvalRecords: records,
         status: RESERVATION_STATUS.APPROVED,
+        approvedAt: serverTimestamp(),
+        roomBlocked: true,
         updatedAt: serverTimestamp(),
       });
 
@@ -933,6 +1069,7 @@ export async function deleteRoomReservation(reservationId) {
  */
 export async function checkReservationTimeConflict({
   roomDocId,
+  roomCode = '',
   dateOfActivity,
   timeStart,
   timeEnd,
@@ -942,19 +1079,19 @@ export async function checkReservationTimeConflict({
     return; // Skip validation if required fields are missing
   }
 
-  // Convert DD/MM/YYYY to YYYY-MM-DD for comparison
-  let isoDate = dateOfActivity;
-  if (dateOfActivity.includes('/')) {
-    const parts = dateOfActivity.split('/');
-    if (parts.length === 3) {
-      isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-  }
+  const isoDate = normalizeReservationDate(dateOfActivity);
 
   // Convert time strings to minutes for comparison
   const toMinutes = (timeStr) => {
     if (!timeStr) return 0;
-    const [hours, minutes] = timeStr.split(':').map(Number);
+    const raw = String(timeStr).trim().toLowerCase();
+    const isPm = raw.includes('pm');
+    const isAm = raw.includes('am');
+    const [hourPart, minutePart = '0'] = raw.replace(/[^\d:]/g, '').split(':');
+    let hours = Number(hourPart) || 0;
+    const minutes = Number(minutePart) || 0;
+    if (isPm && hours < 12) hours += 12;
+    if (isAm && hours === 12) hours = 0;
     return hours * 60 + minutes;
   };
 
@@ -965,15 +1102,16 @@ export async function checkReservationTimeConflict({
   try {
     const reservationsQuery = query(
       reservationsCollection(),
-      where('roomDocId', '==', roomDocId),
-      where('dateOfActivity', '==', dateOfActivity),
-      where('status', '==', RESERVATION_STATUS.APPROVED)
+      where('status', 'in', [RESERVATION_STATUS.APPROVED, 'approved', 'APPROVED'])
     );
 
     const reservationsSnapshot = await getDocs(reservationsQuery);
     const existingReservations = reservationsSnapshot.docs
       .map(mapReservationDoc)
-      .filter(r => !excludeReservationId || r.id !== excludeReservationId);
+      .filter((r) => (!excludeReservationId || r.id !== excludeReservationId)
+        && isApprovedReservation(r)
+        && reservationMatchesRoom(r, roomDocId, roomCode)
+        && normalizeReservationDate(r.dateOfActivity) === isoDate);
 
     // Check for reservation overlaps
     for (const existing of existingReservations) {
@@ -1066,20 +1204,9 @@ export async function fetchApprovedReservationsForRoom(roomId, optionalRoomCode 
   const snapshot = await getDocs(q);
   const allApproved = snapshot.docs
     .map(mapReservationDoc)
-    .filter((r) => r.status === RESERVATION_STATUS.APPROVED || r.status === 'Approved' || r.status === 'approved');
-  const targetId = String(roomId || '').trim().toLowerCase();
-  const targetCode = String(optionalRoomCode || '').trim().toLowerCase();
+    .filter(isApprovedReservation);
 
-  const matched = allApproved.filter((res) => {
-    const rRoomId = String(res.roomId || '').trim().toLowerCase();
-    const rRoomDocId = String(res.roomDocId || '').trim().toLowerCase();
-    const rRoom = String(res.room || '').trim().toLowerCase();
-    const rVenue = String(res.designatedVenue || '').trim().toLowerCase();
-
-    const matchId = targetId && (rRoomId === targetId || rRoomDocId === targetId || rRoom === targetId);
-    const matchCode = targetCode && (rRoom === targetCode || rRoomId === targetCode || rRoomDocId === targetCode || rVenue.includes(targetCode));
-    return matchId || matchCode;
-  });
+  const matched = allApproved.filter((res) => reservationMatchesRoom(res, roomId, optionalRoomCode));
 
   matched.sort((a, b) => String(a.dateOfActivity || '').localeCompare(String(b.dateOfActivity || '')));
   return matched;
@@ -1109,20 +1236,9 @@ export function subscribeApprovedReservationsForRoom(roomId, onData, onError, op
     (snap) => {
       const allApproved = snap.docs
         .map(mapReservationDoc)
-        .filter((r) => r.status === RESERVATION_STATUS.APPROVED || r.status === 'Approved' || r.status === 'approved');
-      const targetId = String(roomId || '').trim().toLowerCase();
-      const targetCode = String(optionalRoomCode || '').trim().toLowerCase();
+        .filter(isApprovedReservation);
 
-      const matched = allApproved.filter((res) => {
-        const rRoomId = String(res.roomId || '').trim().toLowerCase();
-        const rRoomDocId = String(res.roomDocId || '').trim().toLowerCase();
-        const rRoom = String(res.room || '').trim().toLowerCase();
-        const rVenue = String(res.designatedVenue || '').trim().toLowerCase();
-
-        const matchId = targetId && (rRoomId === targetId || rRoomDocId === targetId || rRoom === targetId);
-        const matchCode = targetCode && (rRoom === targetCode || rRoomId === targetCode || rRoomDocId === targetCode || rVenue.includes(targetCode));
-        return matchId || matchCode;
-      });
+      const matched = allApproved.filter((res) => reservationMatchesRoom(res, roomId, optionalRoomCode));
 
       matched.sort((a, b) => String(a.dateOfActivity || '').localeCompare(String(b.dateOfActivity || '')));
       onData(matched);

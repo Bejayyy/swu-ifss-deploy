@@ -263,11 +263,12 @@ export function AppProvider({ children }) {
         ...r,
         createdByUid: firebaseUser?.uid || r.createdByUid,
         requestorEmail: r.requestorEmail || firebaseUser?.email,
+        requestorRole: r.requestorRole || profile?.role || profile?.roleValue || '',
       },
       { draft },
     );
     return created;
-  }, [firebaseUser]);
+  }, [firebaseUser, profile]);
 
   const updateRequest = useCallback(async (id, updates) => {
     await updateRoomReservation(id, updates);

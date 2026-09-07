@@ -707,6 +707,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
           customManagerName: tRoom?.managedByName || tFloor?.managedByName || prefill.roomManagerName || null,
           requestorEmail: profile?.email,
           createdByUid: profile?.uid,
+          requestorRole: profile?.role,
         },
         { draft: isDraft },
       );

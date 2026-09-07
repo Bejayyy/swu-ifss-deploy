@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Printer, Edit3, MapPin, Upload, Trash2, CheckCircle, FileText, Check, Clock, X, AlertTriangle } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -128,6 +128,7 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [isDragging, setIsDragging] = useState(false);
   const [fetchedSignatures, setFetchedSignatures] = useState({});
+  const selfApprovalAttemptedRef = useRef(new Set());
 
   useEffect(() => {
     if (fromState || fromList) {
@@ -210,6 +211,46 @@ export default function ReservationRequestDetails({ defaultType = 'non-academic'
       }
     }
   }, [profile]);
+
+  // Backward compatibility for reservations created before dean self-approval
+  // was applied during submission. A dean must never approve their own request.
+  useEffect(() => {
+    if (!request?.id || !profile?.uid) return;
+    const profileRole = String(profile.role || profile.roleValue || '').trim().toLowerCase().replace(/_/g, '-');
+    const isDean = profileRole === 'dean' || profileRole === 'college-dean' || profileRole.endsWith('-dean');
+    const isOwnRequest = request.createdByUid === profile.uid;
+    if (!isDean || !isOwnRequest) return;
+
+    const pendingDeanStep = (request.approvalRecords || request.approvalSteps || []).find((record) => {
+      const roleId = String(record.roleId || '').trim().toLowerCase().replace(/_/g, '-');
+      const roleLabel = String(record.roleLabel || '').trim().toLowerCase();
+      const isStandardDeanStep = roleId !== 'room-manager-dean'
+        && (roleId === 'dean' || roleLabel === 'dean' || roleLabel === 'college dean');
+      const isOwnRoomManagerStep = roleId === 'room-manager-dean'
+        && (record.customManagerUid || request.customManagerUid) === profile.uid;
+      return record.status === 'Pending' && (isStandardDeanStep || isOwnRoomManagerStep);
+    });
+
+    if (!pendingDeanStep || selfApprovalAttemptedRef.current.has(request.id)) return;
+    selfApprovalAttemptedRef.current.add(request.id);
+
+    approveReservation(request.id, {
+      action: 'approve',
+      remarks: 'Automatically approved because the dean submitted this request.',
+      approverUid: profile.uid,
+      approverName: profile.displayName || profile.name || request.requestedBy || 'Dean Requestor',
+      approverRole: pendingDeanStep.roleId,
+      signatureUrl: getSavedSignature(profile) || request.requestorSignatureUrl || request.signatureUrl || null,
+    })
+      .then(() => fetchRoomReservation(request.id))
+      .then((updatedRequest) => {
+        if (updatedRequest) setRequest(updatedRequest);
+      })
+      .catch((err) => {
+        selfApprovalAttemptedRef.current.delete(request.id);
+        console.error('Failed to apply automatic dean self-approval:', err);
+      });
+  }, [request, profile, approveReservation]);
 
   if (loading) {
     return (
