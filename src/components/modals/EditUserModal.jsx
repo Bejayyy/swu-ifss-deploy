@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { USER_STATUS, INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { requiresCollege, requiresDepartment, formatCollegeName } from '../../constants/colleges';
+import { requiresCollege, requiresDepartment } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
@@ -52,7 +52,7 @@ export default function EditUserModal({
     lastName: initialNames.lastName,
     email: user?.email || '',
     department: user?.department || '',
-    college: user?.college || user?.department || '',
+    college: user?.collegeCode || user?.college || user?.department || '',
     roleValue: user?.roleValue || roleOptions[0]?.value || 'dean',
     status: user?.status === 'Inactive' ? USER_STATUS.INACTIVE : USER_STATUS.ACTIVE,
     useCustomAccess: Boolean(user?.permissions?.length || user?.navKeys?.length),
@@ -69,7 +69,21 @@ export default function EditUserModal({
   // Subscribe to colleges from Firestore
   useEffect(() => {
     return subscribeColleges(
-      (data) => setColleges(data),
+      (data) => {
+        setColleges(data);
+        setForm((current) => {
+          const currentCollege = String(current.college || '').trim();
+          const matched = data.find((college) =>
+            college.id === user?.collegeId ||
+            String(college.code || '').toLowerCase() === String(user?.collegeCode || currentCollege).toLowerCase() ||
+            String(college.name || '').toLowerCase() === currentCollege.toLowerCase()
+          );
+          const liveCollegeCode = matched?.code || '';
+          return current.college !== liveCollegeCode
+            ? { ...current, college: liveCollegeCode }
+            : current;
+        });
+      },
       (err) => console.error('Error loading colleges:', err)
     );
   }, []);
@@ -128,8 +142,10 @@ export default function EditUserModal({
         middleName: mn,
         lastName: ln,
         email: form.email.trim(),
-        department: showCollegeField ? formatCollegeName(form.college) : '',
-        college: showCollegeField ? formatCollegeName(form.college) : '',
+        department: showCollegeField ? form.college.trim().toUpperCase() : '',
+        college: showCollegeField ? form.college.trim().toUpperCase() : '',
+        collegeCode: showCollegeField ? form.college.trim().toUpperCase() : '',
+        collegeId: showCollegeField ? (colleges.find((college) => college.code === form.college)?.id || '') : '',
         roleValue: form.roleValue,
         status: form.status,
         permissions: form.useCustomAccess ? form.permissions : [],
@@ -265,7 +281,7 @@ export default function EditUserModal({
                     value={form.college}
                     onChange={(e) => set('college', e.target.value)}
                     options={colleges.map((college) => ({
-                      value: college.name || college.code,
+                      value: college.code,
                       label: `${college.name} (${college.code || college.name})`,
                     }))}
                     placeholder="Select College"

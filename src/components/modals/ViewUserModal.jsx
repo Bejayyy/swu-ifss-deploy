@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Shield, Building2, KeyRound, CheckCircle2, XCircle, Pencil, Eye, Save } from 'lucide-react';
 import { USER_STATUS, INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { requiresCollege, formatCollegeName } from '../../constants/colleges';
+import { requiresCollege } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
@@ -57,7 +57,7 @@ export default function ViewUserModal({
     lastName: initialNames.lastName,
     email: user?.email || '',
     department: user?.department || '',
-    college: user?.college || user?.department || '',
+    college: user?.collegeCode || user?.college || user?.department || '',
     roleValue: user?.roleValue || roleOptions[0]?.value || 'dean',
     status: user?.status === 'Inactive' ? USER_STATUS.INACTIVE : USER_STATUS.ACTIVE,
     useCustomAccess: Boolean(user?.permissions?.length || user?.navKeys?.length),
@@ -72,7 +72,21 @@ export default function ViewUserModal({
 
   useEffect(() => {
     return subscribeColleges(
-      (data) => setColleges(data),
+      (data) => {
+        setColleges(data);
+        setForm((current) => {
+          const storedCollege = String(current.college || '').trim();
+          const matched = data.find((college) =>
+            college.id === user?.collegeId ||
+            String(college.code || '').toLowerCase() === String(user?.collegeCode || storedCollege).toLowerCase() ||
+            String(college.name || '').toLowerCase() === storedCollege.toLowerCase()
+          );
+          const liveCollegeCode = matched?.code || '';
+          return current.college !== liveCollegeCode
+            ? { ...current, college: liveCollegeCode }
+            : current;
+        });
+      },
       (err) => console.error('Error loading colleges:', err)
     );
   }, []);
@@ -127,8 +141,10 @@ export default function ViewUserModal({
         middleName: form.middleName ? form.middleName.trim() : '',
         lastName: form.lastName.trim(),
         email: form.email.trim(),
-        department: showCollegeField ? formatCollegeName(form.college) : '',
-        college: showCollegeField ? formatCollegeName(form.college) : '',
+        department: showCollegeField ? form.college.trim().toUpperCase() : '',
+        college: showCollegeField ? form.college.trim().toUpperCase() : '',
+        collegeCode: showCollegeField ? form.college.trim().toUpperCase() : '',
+        collegeId: showCollegeField ? (colleges.find((college) => String(college.code).toUpperCase() === form.college.trim().toUpperCase())?.id || '') : '',
         roleValue: form.roleValue,
         status: form.status,
         permissions: form.useCustomAccess ? form.permissions : [],

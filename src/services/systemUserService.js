@@ -8,7 +8,9 @@ import {
   where,
   doc,
   getDoc,
+  getDocs,
   deleteDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
@@ -50,6 +52,8 @@ function mapStaffUserDoc(u, roleDefinitions = {}) {
     roleValue: u.role || 'user',
     department: u.department || u.college || '',
     college: u.college || '',
+    collegeCode: u.collegeCode || u.college || '',
+    collegeId: u.collegeId || '',
     status: u.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive',
     initials: u.initials || getInitials(u.displayName || u.name, u.email),
     permissions: u.permissions || [],
@@ -133,11 +137,45 @@ export function formatDeanOptionLabel(dean) {
   return parts.join(' · ');
 }
 
+async function syncDeanCollegeAssignment(uid, email, displayName, roleValue, collegeCode, collegeId) {
+  const collegesSnap = await getDocs(collection(db, COLLECTIONS.COLLEGES));
+  const normalizedCode = String(collegeCode || '').trim().toUpperCase();
+
+  for (const collegeDoc of collegesSnap.docs) {
+    const data = collegeDoc.data() || {};
+    const isCurrentDean = data.deanUid === uid;
+    const isTarget = roleValue === ROLES.DEAN && (
+      (collegeId && collegeDoc.id === collegeId) ||
+      (normalizedCode && String(data.code || '').trim().toUpperCase() === normalizedCode)
+    );
+
+    if (isTarget) {
+      await updateDoc(collegeDoc.ref, {
+        deanUid: uid,
+        deanEmail: String(email || '').trim().toLowerCase(),
+        deanName: displayName,
+        assignedDean: displayName,
+        updatedAt: serverTimestamp(),
+      });
+    } else if (isCurrentDean) {
+      await updateDoc(collegeDoc.ref, {
+        deanUid: null,
+        deanEmail: null,
+        deanName: null,
+        assignedDean: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
+}
+
 export async function createStaffUserByEmailInvite({
   name,
   email,
   department,
   college,
+  collegeCode,
+  collegeId,
   roleValue,
   permissions = [],
   navKeys = [],
@@ -199,8 +237,10 @@ export async function createStaffUserByEmailInvite({
     displayName: formattedName,
     role: roleValue,
     status: USER_STATUS.ACTIVE,
-    department: shouldIncludeDepartment ? (department?.trim() || '') : '',
-    college: shouldIncludeCollege ? (college?.trim() || '') : '',
+    department: shouldIncludeDepartment ? ((collegeCode || department)?.trim() || '') : '',
+    college: shouldIncludeCollege ? ((collegeCode || college)?.trim() || '') : '',
+    collegeCode: shouldIncludeCollege ? ((collegeCode || college)?.trim().toUpperCase() || '') : '',
+    collegeId: shouldIncludeCollege ? (collegeId || '') : '',
     initials: getInitials(formattedName, normalized),
     authProviders: ['password'],
     mustSetPassword: true,
@@ -216,6 +256,7 @@ export async function createStaffUserByEmailInvite({
   if (navKeys?.length) payload.navKeys = navKeys;
 
   await setDoc(doc(db, COLLECTIONS.USERS, uid), payload, { merge: true });
+  await syncDeanCollegeAssignment(uid, normalized, formattedName, roleValue, payload.collegeCode, payload.collegeId);
   
   // Send welcome email via Cloud Function
   try {
@@ -241,6 +282,8 @@ export async function updateStaffUser({
   email,
   department,
   college,
+  collegeCode,
+  collegeId,
   roleValue,
   status,
   permissions = [],
@@ -256,8 +299,10 @@ export async function updateStaffUser({
   const patch = {
     displayName: formattedName,
     email: email?.trim() ? normalizeEmail(email) : undefined, // Update email if provided
-    department: shouldIncludeDepartment ? (department?.trim() || '') : '',
-    college: shouldIncludeCollege ? (college?.trim() || '') : '',
+    department: shouldIncludeDepartment ? ((collegeCode || department)?.trim() || '') : '',
+    college: shouldIncludeCollege ? ((collegeCode || college)?.trim() || '') : '',
+    collegeCode: shouldIncludeCollege ? ((collegeCode || college)?.trim().toUpperCase() || '') : '',
+    collegeId: shouldIncludeCollege ? (collegeId || '') : '',
     role: roleValue,
     status: status || USER_STATUS.ACTIVE,
     initials: getInitials(formattedName, email || ''),
@@ -269,7 +314,51 @@ export async function updateStaffUser({
   // Remove undefined values
   Object.keys(patch).forEach(key => patch[key] === undefined && delete patch[key]);
 
-  await updateDoc(doc(db, COLLECTIONS.USERS, uid), patch);
+  const collegesSnap = await getDocs(collection(db, COLLECTIONS.COLLEGES));
+  const targetCollege = roleValue === ROLES.DEAN
+    ? collegesSnap.docs.find((collegeDoc) => {
+      const data = collegeDoc.data() || {};
+      return (patch.collegeId && collegeDoc.id === patch.collegeId) ||
+        (patch.collegeCode && String(data.code || '').trim().toUpperCase() === patch.collegeCode);
+    })
+    : null;
+
+  if (roleValue === ROLES.DEAN && !targetCollege) {
+    throw new Error('The selected college no longer exists. Select a college from College Inventory and try again.');
+  }
+
+  if (targetCollege) {
+    patch.collegeId = targetCollege.id;
+    patch.collegeCode = String(targetCollege.data().code || '').trim().toUpperCase();
+    patch.college = patch.collegeCode;
+    patch.department = patch.collegeCode;
+  }
+
+  const batch = writeBatch(db);
+  batch.update(doc(db, COLLECTIONS.USERS, uid), patch);
+
+  collegesSnap.docs.forEach((collegeDoc) => {
+    const data = collegeDoc.data() || {};
+    if (targetCollege && collegeDoc.id === targetCollege.id) {
+      batch.update(collegeDoc.ref, {
+        deanUid: uid,
+        deanEmail: patch.email || normalizeEmail(email),
+        deanName: formattedName,
+        assignedDean: formattedName,
+        updatedAt: serverTimestamp(),
+      });
+    } else if (data.deanUid === uid) {
+      batch.update(collegeDoc.ref, {
+        deanUid: null,
+        deanEmail: null,
+        deanName: null,
+        assignedDean: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
+
+  await batch.commit();
 }
 
 export function getDefaultAccessForRole(roleValue, roleDefinitions = {}) {

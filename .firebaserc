@@ -1,6 +1,7 @@
 {
   "projects": {
-    "swu-ifss": "swu-ifss"
+    "default": "valicheck-1009b",
+    "swu-ifss": "valicheck-1009b"
   },
   "targets": {},
   "etags": {}

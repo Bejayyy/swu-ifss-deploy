@@ -15,7 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { requiresCollege, formatCollegeName } from '../../constants/colleges';
+import { requiresCollege } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 import { subscribeColleges } from '../../services/collegeService';
@@ -333,16 +333,18 @@ export default function AddUserModal({
           email: normEmail,
           name: fullName,
           status: 'Active',
-          college: showCollege ? formatCollegeName(u.college) : '',
-          department: showCollege ? formatCollegeName(u.college) : '',
+          college: showCollege ? u.college.trim().toUpperCase() : '',
+          collegeCode: showCollege ? u.college.trim().toUpperCase() : '',
+          collegeId: showCollege ? (colleges.find((c) => String(c.code).toUpperCase() === u.college.trim().toUpperCase())?.id || '') : '',
+          department: showCollege ? u.college.trim().toUpperCase() : '',
           permissions: u.useCustomAccess ? u.permissions : [],
           navKeys: u.useCustomAccess ? u.navKeys : [],
         });
       }
 
       try {
-        await onSave(payload);
-        onClose();
+        const saved = await onSave(payload);
+        if (saved !== false) onClose();
       } catch (err) {
         setError(err.message || 'Failed to add user(s).');
       }
@@ -375,8 +377,10 @@ export default function AddUserModal({
           email: u.email.trim().toLowerCase(),
           role: u.role,
           status: 'Active',
-          college: showCollege ? formatCollegeName(u.college) : '',
-          department: showCollege ? formatCollegeName(u.college) : '',
+          college: showCollege ? u.college.trim().toUpperCase() : '',
+          collegeCode: showCollege ? u.college.trim().toUpperCase() : '',
+          collegeId: showCollege ? (colleges.find((c) => String(c.code).toUpperCase() === u.college.trim().toUpperCase())?.id || '') : '',
+          department: showCollege ? u.college.trim().toUpperCase() : '',
           useCustomAccess: false,
           permissions: def.permissions || [],
           navKeys: def.navKeys || [],
@@ -384,8 +388,8 @@ export default function AddUserModal({
       });
 
       try {
-        await onSave(payload);
-        onClose();
+        const saved = await onSave(payload);
+        if (saved !== false) onClose();
       } catch (err) {
         setError(err.message || 'Failed to add bulk users.');
       }

@@ -28,6 +28,7 @@ export const USER_STATUS = {
 
 export const COLLECTIONS = {
   USERS: 'users',
+  COLLEGES: 'colleges',
   PERMISSIONS: 'permissions',
   REGISTRAR_MANAGEMENT: 'registrar_management',
   BUILDINGS: 'buildings',

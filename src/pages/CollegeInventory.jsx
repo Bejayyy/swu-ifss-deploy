@@ -158,8 +158,13 @@ export default function CollegeInventory() {
     const code = (college.code || '').trim().toUpperCase();
     const name = (college.name || '').trim().toLowerCase();
 
+    const explicitlyAssignedDean = deansList.find((dean) =>
+      college.deanUid && (dean.uid === college.deanUid || dean.id === college.deanUid)
+    );
+    if (explicitlyAssignedDean) return explicitlyAssignedDean;
+
     return deansList.find((d) => {
-      const userDept = (d.college || d.department || '').trim();
+      const userDept = (d.collegeCode || d.college || d.department || '').trim();
       const userDeptUpper = userDept.toUpperCase();
       const userDeptLower = userDept.toLowerCase();
 

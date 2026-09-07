@@ -27,7 +27,7 @@ import {
   getRoleOptionsFromDefinitions,
   saveRoleDefinition,
 } from '../services/roleDefinitionService';
-import { formatCollegeName } from '../constants/colleges';
+import { subscribeColleges } from '../services/collegeService';
 import { compareNewestFirst } from '../utils/recordSort';
 
 const roleStyle = (role) => {
@@ -45,6 +45,7 @@ export default function SystemAdministration() {
 
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
+  const [colleges, setColleges] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -87,8 +88,32 @@ export default function SystemAdministration() {
     return unsub;
   }, [roleValues, roleDefinitions]);
 
+  useEffect(() => subscribeColleges(setColleges, (err) => {
+    console.error('Failed to load colleges for User Management:', err);
+  }), []);
+
+  const getUserCollegeLabel = (user) => {
+    const college = colleges.find((item) =>
+      item.id === user.collegeId ||
+      String(item.code || '').trim().toUpperCase() === String(user.collegeCode || user.college || '').trim().toUpperCase()
+    );
+    return college ? `${college.name} (${college.code})` : 'Unassigned';
+  };
+
   const addUser = async (formOrArray) => {
     const usersToAdd = Array.isArray(formOrArray) ? formOrArray : [formOrArray];
+    const confirmed = await showConfirm({
+      title: usersToAdd.length > 1 ? 'Create user accounts?' : 'Create user account?',
+      message: usersToAdd.length > 1
+        ? `Create ${usersToAdd.length} user accounts and email each user a temporary password?`
+        : `Create the account for ${usersToAdd[0]?.name || usersToAdd[0]?.email} and email the temporary password?`,
+      confirmText: usersToAdd.length > 1 ? 'Create users' : 'Create user',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return false;
+
     setIsLoading(true);
     let successCount = 0;
     let failCount = 0;
@@ -108,6 +133,8 @@ export default function SystemAdministration() {
             email: form.email,
             department: form.department,
             college: form.college,
+            collegeCode: form.collegeCode,
+            collegeId: form.collegeId,
             roleValue: form.role,
             permissions: form.permissions,
             navKeys: form.navKeys,
@@ -144,6 +171,7 @@ export default function SystemAdministration() {
     }
 
     setIsLoading(false);
+    return failCount === 0;
   };
 
   const saveUserEdits = async (payload) => {
@@ -654,7 +682,7 @@ export default function SystemAdministration() {
                             )}
                           </td>
                           <td className="py-3 px-4 font-medium" style={{ color: '#2B3235', opacity: 0.8 }}>
-                            {formatCollegeName(u.department || u.college) || '—'}
+                            {getUserCollegeLabel(u)}
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center justify-center gap-1.5">

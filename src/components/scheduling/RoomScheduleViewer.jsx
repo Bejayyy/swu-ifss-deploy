@@ -21,6 +21,7 @@ import {
 export default function RoomScheduleViewer({ 
   roomCode, 
   sectionName = null, // Current Section being scheduled (e.g. 'BSMT1-A1')
+  relatedSectionEntries = [], // Entries from all sections selected for combined plotting
   teacher = null, // Current Teacher being scheduled (e.g. { name: 'James Isidro', email: '...' })
   roomType = null,
   rotationCycle = 'all', // 'all' | 'week_a' | 'week_b'
@@ -157,7 +158,15 @@ export default function RoomScheduleViewer({
     });
 
     // 2. Section Blocks (This section has class in OTHER rooms)
-    sectionEntries.forEach((entry) => {
+    const visibleSectionEntries = [...sectionEntries, ...(relatedSectionEntries || [])].filter((entry, index, entries) => {
+      const entryKey = entry.combinedGroupId || entry.originalId || entry.id || `${entry.section || entry.sectionName}-${entry.day}-${entry.startHour}-${entry.endHour}-${entry.courseCode}`;
+      return entries.findIndex((candidate) => {
+        const candidateKey = candidate.combinedGroupId || candidate.originalId || candidate.id || `${candidate.section || candidate.sectionName}-${candidate.day}-${candidate.startHour}-${candidate.endHour}-${candidate.courseCode}`;
+        return candidateKey === entryKey;
+      }) === index;
+    });
+
+    visibleSectionEntries.forEach((entry) => {
       const eRoomNorm = normalizeRoom(entry.roomCode || entry.room || entry.roomId || entry.roomName || '');
       if (eRoomNorm === currentRoomNorm || seenIds.has(entry.id)) {
         return;
@@ -174,7 +183,7 @@ export default function RoomScheduleViewer({
         course: entry.courseCode || entry.title || '',
         instructor: entry.instructor || '',
         type: 'SectionBusy',
-        section: entry.section || sectionName,
+        section: entry.section || entry.sectionName || sectionName,
         program: entry.program || entry.programCode || '',
         roomCode: entry.roomCode || 'Other Room',
         rotationCycle: entry.rotationCycle || entry.weekCycle || 'all',
@@ -218,7 +227,7 @@ export default function RoomScheduleViewer({
     }
 
     return all;
-  }, [roomEntries, sectionEntries, teacherEntries, roomCode, currentRoomNorm, sectionName, isTeacherTba, cleanTeacherName]);
+  }, [roomEntries, sectionEntries, relatedSectionEntries, teacherEntries, roomCode, currentRoomNorm, sectionName, isTeacherTba, cleanTeacherName]);
 
   // Group blocks by day
   const blocksByDay = useMemo(() => {

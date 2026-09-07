@@ -124,6 +124,17 @@ function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
 }
 
+function toCollegeAcronym(value) {
+  const ignoredWords = new Set(['and', 'of', 'the']);
+  return String(value || '')
+    .trim()
+    .split(/[^a-zA-Z0-9]+/)
+    .filter((word) => word && !ignoredWords.has(word.toLowerCase()))
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+}
+
 export default function CourseSchedulingNew() {
   const { state: navigationState } = useLocation();
   const { profile } = useAuth();
@@ -392,21 +403,25 @@ export default function CourseSchedulingNew() {
     }));
   }, [staffUsers]);
 
-  // Auto-select first dean if none selected
+  // Registrars may browse all deans, so default them to the first available
+  // account. A dean must always remain scoped to their own account.
   useEffect(() => {
-    if (!selectedDeanUid && deansByCollege.length > 0) {
+    if (isRegistrar && !selectedDeanUid && deansByCollege.length > 0) {
       const firstDean = deansByCollege[0]?.deans[0];
       if (firstDean) {
         setSelectedDeanUid(firstDean.uid);
         setExpandedColleges(prev => ({ ...prev, [deansByCollege[0].key]: true }));
       }
     }
-  }, [deansByCollege, selectedDeanUid]);
+  }, [deansByCollege, isRegistrar, selectedDeanUid]);
 
-  // If current user is dean, auto-select themselves
+  // Keep a dean locked to their own scheduling data even if staff subscriptions
+  // arrive in a different order during initial page load.
   useEffect(() => {
-    if (isDean && profile?.uid && !selectedDeanUid) {
-      setSelectedDeanUid(profile.uid);
+    if (isDean && profile?.uid) {
+      if (selectedDeanUid !== profile.uid) {
+        setSelectedDeanUid(profile.uid);
+      }
       // Find and expand their college
       const myCollege = deansByCollege.find(c => 
         c.deans.some(d => d.uid === profile.uid)
@@ -474,9 +489,11 @@ export default function CourseSchedulingNew() {
 
     if (!activeCollegeCode) return null;
     const clean = String(activeCollegeCode).trim().toUpperCase();
+    const profileCollegeAcronym = toCollegeAcronym(activeCollegeCode);
     return colleges.find(
       (c) =>
         String(c.code || '').trim().toUpperCase() === clean ||
+        String(c.code || '').trim().toUpperCase() === profileCollegeAcronym ||
         String(c.name || '').trim().toLowerCase() === String(activeCollegeCode).trim().toLowerCase() ||
         String(c.name || '').trim().toUpperCase().includes(clean) ||
         clean.includes(String(c.name || '').trim().toUpperCase()) ||
@@ -631,7 +648,9 @@ export default function CourseSchedulingNew() {
 
     setLoadingDeanSections(true);
 
-    const deanCollegeCode = selectedDean?.college || selectedDean?.department || (isDean ? (profile?.college || profile?.department) : '') || '';
+    // program_sections stores the canonical college code. Prefer the resolved
+    // college record instead of a profile's free-text college/department name.
+    const deanCollegeCode = activeCollegeCodeStr || selectedDean?.college || selectedDean?.department || (isDean ? (profile?.college || profile?.department) : '') || '';
     const programCodes = activeProgramCodesKey ? activeProgramCodesKey.split(',') : [];
 
     return subscribeDeanSections(

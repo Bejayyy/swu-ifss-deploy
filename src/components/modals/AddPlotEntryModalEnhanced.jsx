@@ -428,6 +428,20 @@ export default function AddPlotEntryModalEnhanced({
     );
   }, [semester, scheduleMode, schoolYearId]);
 
+  const targetSectionPlotEntries = useMemo(() => {
+    const targetSections = new Set(
+      (selectedCombinedSections.length > 0 ? selectedCombinedSections : [selectedSection])
+        .filter(Boolean)
+        .map((name) => String(name).trim().toUpperCase())
+    );
+    if (targetSections.size <= 1) return sectionPlotEntries;
+    return (allSemesterEntries || []).filter((entry) => [
+      entry.section,
+      entry.sectionName,
+      ...(Array.isArray(entry.combinedSections) ? entry.combinedSections : []),
+    ].filter(Boolean).some((name) => targetSections.has(String(name).trim().toUpperCase())));
+  }, [selectedCombinedSections, selectedSection, sectionPlotEntries, allSemesterEntries]);
+
   // Open floor accordion state
   const [openFloors, setOpenFloors] = useState({});
 
@@ -655,13 +669,21 @@ export default function AddPlotEntryModalEnhanced({
     }
 
     const cu = getCourseUnitBreakdown(course);
+    const courseIdNorm = String(course.id || course.courseId || '').trim();
     const codeNorm = String(course.code || '').trim().toUpperCase();
     const titleNorm = String(course.title || '').trim().toUpperCase();
 
-    const matchingEntries = dedupeLogicalScheduleEntries((sectionPlotEntries || []).filter((e) => {
+    const matchingEntries = dedupeLogicalScheduleEntries((targetSectionPlotEntries || []).filter((e) => {
+      const entryCourseId = String(e.courseId || '').trim();
       const eCode = String(e.courseCode || '').trim().toUpperCase();
       const eTitle = String(e.title || '').trim().toUpperCase();
-      return (codeNorm && eCode === codeNorm) || (titleNorm && eTitle === titleNorm);
+
+      // IDs and course codes are authoritative. Titles are not unique (for
+      // example, different course codes can both be named "Programming 1").
+      if (courseIdNorm && entryCourseId) return courseIdNorm === entryCourseId;
+      if (codeNorm && eCode) return codeNorm === eCode;
+      if (courseIdNorm || entryCourseId || codeNorm || eCode) return false;
+      return Boolean(titleNorm && eTitle && titleNorm === eTitle);
     }));
 
     let plottedLecHours = 0;
@@ -754,7 +776,7 @@ export default function AddPlotEntryModalEnhanced({
       // Natural order by course code
       return (a.code || '').localeCompare(b.code || '');
     });
-  }, [courses, courseSearch, sectionPlotEntries]);
+  }, [courses, courseSearch, targetSectionPlotEntries]);
 
   // Get teachers for selected course
   const availableTeachers = useMemo(() => {
@@ -1286,7 +1308,7 @@ export default function AddPlotEntryModalEnhanced({
       remaining: Math.round(Math.max(0, required - resulting) * 10) / 10,
       excess: Math.round(Math.max(0, resulting - required) * 10) / 10,
     };
-  }, [selectedCourse, selectedType, sectionPlotEntries, editingEntryId, initial, totalPlottedHours, targetHours]);
+  }, [selectedCourse, selectedType, targetSectionPlotEntries, editingEntryId, initial, totalPlottedHours, targetHours]);
 
   const otherType = useMemo(() => {
     if (!courseUnits?.isCombined) return null;
@@ -1301,7 +1323,7 @@ export default function AddPlotEntryModalEnhanced({
     if (completedTypes.includes(otherType)) return false;
     if (!availableTypes.includes(otherType)) return false;
 
-    // Check if the other component is already plotted in sectionPlotEntries
+    // Check if the other component is already plotted in any selected section.
     if (selectedCourse) {
       const status = getCourseScheduleStatus(selectedCourse);
       if (otherType === 'Lecture' && status.lecDone) return false;
@@ -1309,7 +1331,7 @@ export default function AddPlotEntryModalEnhanced({
     }
 
     return true;
-  }, [otherType, completedTypes, availableTypes, selectedCourse, sectionPlotEntries]);
+  }, [otherType, completedTypes, availableTypes, selectedCourse, targetSectionPlotEntries]);
 
   // Helper to parse day from entry
   const parseDayIndex = (d, dateStr, dayLabelStr) => {
@@ -1960,6 +1982,14 @@ export default function AddPlotEntryModalEnhanced({
       setError('Please select a course type.');
       return;
     }
+    if (step === 3 && selectedCourse) {
+      const status = getCourseScheduleStatus(selectedCourse);
+      const selectedComponentDone = selectedType === 'Laboratory' ? status.labDone : status.lecDone;
+      if (selectedComponentDone) {
+        setError(`${selectedType} is already fully plotted for one or more selected sections.`);
+        return;
+      }
+    }
 
     if (step === 6) {
       if (selectedDaySlots.length === 0) {
@@ -2091,6 +2121,7 @@ export default function AddPlotEntryModalEnhanced({
           day: slot.day,
           dayLabel: finalDayLabel,
           title: selectedCourse.title,
+          courseId: selectedCourse.id || selectedCourse.courseId || null,
           courseCode: selectedCourse.code,
           units: selectedCourse.units ?? null,
           lecUnits: selectedCourse.lecUnits ?? null,
@@ -3120,6 +3151,7 @@ export default function AddPlotEntryModalEnhanced({
               <RoomScheduleViewer
                 roomCode=""
                 sectionName={selectedSection}
+                relatedSectionEntries={targetSectionPlotEntries}
                 rotationCycle={allowOjtRotation ? rotationCycle : 'all'}
                 scheduleMode={scheduleMode}
                 semester={semester}
@@ -3401,14 +3433,19 @@ export default function AddPlotEntryModalEnhanced({
                   const reqUnits = isLab ? courseUnits.numLab : courseUnits.numLec;
                   const reqHours = isLab ? courseUnits.targetLabHours : courseUnits.targetLecHours;
                   const isSelected = selectedType === type;
+                  const courseStatus = getCourseScheduleStatus(selectedCourse);
+                  const isAlreadyPlotted = isLab ? courseStatus.labDone : courseStatus.lecDone;
 
                   return (
                     <button
                       key={type}
                       type="button"
-                      onClick={() => handleTypeSelect(type)}
+                      onClick={() => !isAlreadyPlotted && handleTypeSelect(type)}
+                      disabled={isAlreadyPlotted}
                       className={`p-6 rounded-2xl border-2 transition-all text-left cursor-pointer ${
-                        isSelected
+                        isAlreadyPlotted
+                          ? 'border-emerald-300 bg-emerald-50/70 opacity-75 cursor-not-allowed'
+                          : isSelected
                           ? 'border-[#7A0808] bg-red-50/80 shadow-md ring-2 ring-[#7A0808]/20'
                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                       }`}
@@ -3425,7 +3462,11 @@ export default function AddPlotEntryModalEnhanced({
                           : 'Specialized lab or practical hands-on room.'}
                       </p>
                       <div className="text-[11px] font-semibold text-[#7A0808]">
-                        Required Weekly Duration: <span className="font-black">{reqHours} Hours / Week</span>
+                        {isAlreadyPlotted ? (
+                          <span className="font-black text-emerald-800">Already plotted in one or more selected sections</span>
+                        ) : (
+                          <>Required Weekly Duration: <span className="font-black">{reqHours} Hours / Week</span></>
+                        )}
                       </div>
                     </button>
                   );
