@@ -50,7 +50,16 @@ const COURSE_TYPES = ['Lecture', 'Laboratory']; // Only Lecture and Laboratory
 const dedupeLogicalScheduleEntries = (entries = []) => {
   const seen = new Set();
   return entries.filter((entry) => {
-    const logicalId = entry.combinedGroupId || entry.originalId || entry.id;
+    const parallelSlotId = entry.parallelGroupId
+      ? [
+          entry.parallelGroupId,
+          entry.type,
+          entry.day ?? entry.date,
+          entry.startHour ?? entry.startTime,
+          entry.endHour ?? entry.endTime,
+        ].join('::')
+      : null;
+    const logicalId = parallelSlotId || entry.combinedGroupId || entry.originalId || entry.id;
     const fallbackId = [
       entry.courseCode || entry.course,
       entry.type,
@@ -281,9 +290,40 @@ export default function AddPlotEntryModalEnhanced({
   const [editingEntryId, setEditingEntryId] = useState(initial?.id || initial?.entryId || null);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [selectedTeacher, setSelectedTeacher] = useState(() => {
-    if (initial?.instructor) return { name: initial.instructor };
+    if (Array.isArray(initial?.instructors) && initial.instructors.length > 0) return initial.instructors[0];
+    if (initial?.instructor) return { uid: initial.instructorUid || null, name: initial.instructor, email: initial.instructorEmail || '' };
     return null;
   });
+  const [additionalTeachers, setAdditionalTeachers] = useState(() => (
+    Array.isArray(initial?.instructors) ? initial.instructors.slice(1) : []
+  ));
+  const selectedTeachers = useMemo(() => {
+    if (!selectedTeacher || selectedTeacher.name === 'TBA (To Be Assigned)') return [];
+    return [selectedTeacher, ...additionalTeachers];
+  }, [selectedTeacher, additionalTeachers]);
+
+  const teacherIdentity = (teacher) => String(teacher?.uid || teacher?.email || teacher?.name || '').trim().toLowerCase();
+  const selectTBA = () => {
+    setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+    setAdditionalTeachers([]);
+  };
+  const toggleSelectedTeacher = (teacher) => {
+    const identity = teacherIdentity(teacher);
+    const current = selectedTeachers;
+    if (current.some((item) => teacherIdentity(item) === identity)) {
+      const remaining = current.filter((item) => teacherIdentity(item) !== identity);
+      setSelectedTeacher(remaining[0] || null);
+      setAdditionalTeachers(remaining.slice(1));
+    } else if (current.length === 0) {
+      setSelectedTeacher(teacher);
+      setAdditionalTeachers([]);
+    } else {
+      setAdditionalTeachers((items) => [...items, teacher]);
+    }
+  };
+  useEffect(() => {
+    if (!selectedTeacher || selectedTeacher.name === 'TBA (To Be Assigned)') setAdditionalTeachers([]);
+  }, [selectedTeacher]);
   const [selectedType, setSelectedType] = useState(() => {
     if (initial?.type) return initial.type;
     if (initialType) return initialType;
@@ -294,6 +334,11 @@ export default function AddPlotEntryModalEnhanced({
   const [selectedRoom, setSelectedRoom] = useState(
     initialRoom || (initial?.roomCode ? { roomCode: initial.roomCode, name: initial.roomCode, id: initial.roomCode } : null)
   );
+  const [selectedRooms, setSelectedRooms] = useState(() => {
+    const room = initialRoom || (initial?.roomCode ? { roomCode: initial.roomCode, name: initial.roomCode, id: initial.roomCode } : null);
+    return room ? [room] : [];
+  });
+  const [parallelRoomAssignments, setParallelRoomAssignments] = useState(() => initial?.parallelRoomAssignments || {});
   const [viewDetailsRoom, setViewDetailsRoom] = useState(null); // Track room for detailed preview modal
   
   // Multi-day and time state
@@ -328,6 +373,8 @@ export default function AddPlotEntryModalEnhanced({
   // OJT Rotation & Combined Sections States
   const [rotationCycle, setRotationCycle] = useState(initial?.rotationCycle || initial?.weekCycle || 'all'); // 'all' | 'week_a' | 'week_b'
   const [partnerSection, setPartnerSection] = useState(initial?.partnerSection || '');
+  const [weekASections, setWeekASections] = useState(() => initial?.rotationCycle === 'week_a' && initialSection ? [initialSection] : []);
+  const [weekBSections, setWeekBSections] = useState(() => initial?.rotationCycle === 'week_b' && initialSection ? [initialSection] : []);
   const [autoMirrorPartner, setAutoMirrorPartner] = useState(true);
   const [sectionCombinationMode, setSectionCombinationMode] = useState(() => {
     if (initial?.sectionCombinationMode) return initial.sectionCombinationMode;
@@ -339,9 +386,9 @@ export default function AddPlotEntryModalEnhanced({
     return [initialSection || selectedSection || ''];
   });
   const [selectedParallelSections, setSelectedParallelSections] = useState(() => {
-    if (Array.isArray(initial?.parallelSections) && initial.parallelSections.length > 0) return initial.parallelSections.slice(0, 4);
+    if (Array.isArray(initial?.parallelSections) && initial.parallelSections.length > 0) return initial.parallelSections;
     if (String(initial?.sectionCombinationMode || '').includes('parallel') && Array.isArray(initial?.combinedSections)) {
-      return initial.combinedSections.slice(0, 4);
+      return initial.combinedSections;
     }
     return [initialSection || selectedSection || ''];
   });
@@ -351,6 +398,98 @@ export default function AddPlotEntryModalEnhanced({
     }
     return [initialSection || selectedSection || ''];
   });
+  const mergeGroups = useMemo(() => {
+    const groups = [];
+    for (let index = 0; index < selectedMergedSections.length; index += 2) {
+      groups.push(selectedMergedSections.slice(index, index + 2));
+    }
+    return groups;
+  }, [selectedMergedSections]);
+  const getParallelUnitCount = (sectionNames) => {
+    const selected = new Set(sectionNames);
+    const groupedNames = new Set(mergeGroups.flat());
+    const selectedGroups = mergeGroups.filter((group) => group.some((name) => selected.has(name))).length;
+    return selectedGroups + sectionNames.filter((name) => !groupedNames.has(name)).length;
+  };
+  const parallelUnitCount = getParallelUnitCount(selectedParallelSections);
+  const parallelSelectionUnits = useMemo(() => {
+    const completedGroups = mergeGroups.filter((group) => group.length === 2);
+    const groupedNames = new Set(completedGroups.flat());
+    return [
+      ...completedGroups.map((names, index) => ({ key: `merge-${index}`, names, mergeIndex: index })),
+      ...mergeableSections
+        .filter((section) => !groupedNames.has(section.name))
+        .map((section) => ({ key: `section-${section.name}`, names: [section.name], section })),
+    ];
+  }, [mergeGroups, mergeableSections]);
+  const selectedParallelUnits = useMemo(() => {
+    const selected = new Set(selectedParallelSections);
+    return parallelSelectionUnits.filter((unit) => unit.names.every((name) => selected.has(name)));
+  }, [parallelSelectionUnits, selectedParallelSections]);
+  const requiresMultipleRooms = sectionCombinationMode.includes('parallel') && selectedParallelUnits.length > 1;
+  const requiredRoomCount = requiresMultipleRooms ? selectedParallelUnits.length : 1;
+
+  useEffect(() => {
+    setSelectedRooms((current) => current.slice(0, requiredRoomCount));
+    setParallelRoomAssignments((current) => {
+      const validKeys = new Set(selectedParallelUnits.map((unit) => unit.key));
+      return Object.fromEntries(Object.entries(current).filter(([key]) => validKeys.has(key)));
+    });
+  }, [requiredRoomCount, selectedParallelUnits]);
+
+  useEffect(() => {
+    // Keep the room the user most recently clicked as the timetable preview.
+    // Only fall back to the first selected room when the previewed room was removed.
+    setSelectedRoom((current) => {
+      if (selectedRooms.length === 0) return null;
+      return current && selectedRooms.some((room) => roomIdentity(room) === roomIdentity(current))
+        ? current
+        : selectedRooms[0];
+    });
+  }, [selectedRooms]);
+
+  const roomIdentity = (room) => String(room?.docId || room?.id || room?.roomCode || room?.name || '').trim();
+  const toggleRoomSelection = (room) => {
+    const identity = roomIdentity(room);
+    if (!requiresMultipleRooms) {
+      setSelectedRooms([room]);
+      setSelectedRoom(room);
+      setParallelRoomAssignments({});
+      return;
+    }
+    setSelectedRooms((current) => {
+      const exists = current.some((item) => roomIdentity(item) === identity);
+      if (exists) {
+        setParallelRoomAssignments((assignments) => Object.fromEntries(
+          Object.entries(assignments).filter(([, roomId]) => roomId !== identity)
+        ));
+        const remaining = current.filter((item) => roomIdentity(item) !== identity);
+        setSelectedRoom((previewed) => roomIdentity(previewed) === identity ? (remaining[0] || null) : previewed);
+        return remaining;
+      }
+      if (current.length >= requiredRoomCount) return current;
+      setSelectedRoom(room);
+      return [...current, room];
+    });
+  };
+
+  const roomAssignmentsComplete = !requiresMultipleRooms || (
+    selectedRooms.length === requiredRoomCount
+    && selectedParallelUnits.every((unit) => parallelRoomAssignments[unit.key])
+    && new Set(Object.values(parallelRoomAssignments)).size === requiredRoomCount
+  );
+
+  useEffect(() => {
+    if (sectionCombinationMode !== 'merge_parallel') return;
+    setSelectedParallelSections((current) => {
+      const next = new Set(current);
+      mergeGroups.forEach((group) => {
+        if (group.some((name) => next.has(name))) group.forEach((name) => next.add(name));
+      });
+      const expanded = Array.from(next);
+      return expanded.length === current.length && expanded.every((name, index) => name === current[index]) ? current : expanded;
+    });
+  }, [mergeGroups, sectionCombinationMode]);
 
   useEffect(() => {
     if (!allowOjtRotation) {
@@ -360,6 +499,28 @@ export default function AddPlotEntryModalEnhanced({
     }
   }, [allowOjtRotation]);
 
+  useEffect(() => {
+    if (partnerSection && !mergeableSections.some((section) => section.name === partnerSection)) {
+      setPartnerSection('');
+      setWeekASections([]);
+      setWeekBSections([]);
+    }
+  }, [partnerSection, mergeableSections]);
+
+  useEffect(() => {
+    const valid = new Set(mergeableSections.map((section) => section.name));
+    setWeekASections((current) => current.filter((name) => valid.has(name)));
+    setWeekBSections((current) => current.filter((name) => valid.has(name)));
+  }, [mergeableSections]);
+
+  const rotationPairs = useMemo(() => {
+    const count = Math.min(weekASections.length, weekBSections.length);
+    return Array.from({ length: count }, (_, index) => ({
+      weekA: weekASections[index],
+      weekB: weekBSections[index],
+    }));
+  }, [weekASections, weekBSections]);
+
   // Keep selectedCombinedSections locked to primary selectedSection and valid within mergeableSections
   useEffect(() => {
     if (selectedSection) {
@@ -367,7 +528,7 @@ export default function AddPlotEntryModalEnhanced({
         const validNames = new Set(mergeableSections.map((s) => s.name));
         const filtered = prev.filter((name) => validNames.has(name) && name !== selectedSection);
         const next = [selectedSection, ...filtered];
-        return sectionCombinationMode.includes('parallel') ? next.slice(0, 4) : next;
+        return next;
       });
     }
   }, [selectedSection, mergeableSections, sectionCombinationMode]);
@@ -388,7 +549,7 @@ export default function AddPlotEntryModalEnhanced({
     setSelectedParallelSections((current) => [
       selectedSection,
       ...current.filter((name) => name !== selectedSection && validNames.has(name)),
-    ].slice(0, 4));
+    ]);
   }, [selectedSection, mergeableSections]);
 
   useEffect(() => {
@@ -396,11 +557,11 @@ export default function AddPlotEntryModalEnhanced({
     if (sectionCombinationMode === 'merge') {
       setSelectedCombinedSections(selectedMergedSections);
     } else if (sectionCombinationMode === 'parallel') {
-      setSelectedCombinedSections(selectedParallelSections.slice(0, 4));
+      setSelectedCombinedSections(selectedParallelSections);
     } else if (sectionCombinationMode === 'merge_parallel') {
       setSelectedCombinedSections(Array.from(new Set([
         ...selectedMergedSections,
-        ...selectedParallelSections.slice(0, 4),
+        ...selectedParallelSections,
       ])));
     }
   }, [sectionCombinationMode, selectedMergedSections, selectedParallelSections, selectedSection]);
@@ -664,6 +825,7 @@ export default function AddPlotEntryModalEnhanced({
         isFullyPlotted: false,
         isPartiallyPlotted: false,
         matchingEntries: [],
+        sectionBreakdown: [],
         remainingType: null,
       };
     }
@@ -686,20 +848,51 @@ export default function AddPlotEntryModalEnhanced({
       return Boolean(titleNorm && eTitle && titleNorm === eTitle);
     }));
 
-    let plottedLecHours = 0;
-    let plottedLabHours = 0;
-
-    matchingEntries.forEach((e) => {
+    const sumEntryHours = (entries) => {
+      let lec = 0;
+      let lab = 0;
+      entries.forEach((e) => {
       const sH = e.startHour ?? parseTimeToHour(e.startTime || '08:00');
       const eH = e.endHour ?? parseTimeToHour(e.endTime || '09:00');
       const duration = Math.max(0, eH - sH);
       const eType = String(e.type || '').toLowerCase();
       if (eType.includes('lab')) {
-        plottedLabHours += duration;
+          lab += duration;
       } else {
-        plottedLecHours += duration;
+          lec += duration;
       }
+      });
+      return {
+        lec: Math.round(lec * 10) / 10,
+        lab: Math.round(lab * 10) / 10,
+      };
+    };
+
+    const selectedSectionNames = Array.from(new Set(
+      (selectedCombinedSections.length > 0 ? selectedCombinedSections : [selectedSection])
+        .filter(Boolean)
+    ));
+    const sectionBreakdown = selectedSectionNames.map((sectionName) => {
+      const normalizedSection = String(sectionName).trim().toUpperCase();
+      const entries = dedupeLogicalScheduleEntries(matchingEntries.filter((entry) => [
+        entry.section,
+        entry.sectionName,
+        ...(Array.isArray(entry.combinedSections) ? entry.combinedSections : []),
+      ].filter(Boolean).some((name) => String(name).trim().toUpperCase() === normalizedSection)));
+      const hours = sumEntryHours(entries);
+      return { sectionName, entries, plottedLecHours: hours.lec, plottedLabHours: hours.lab };
     });
+
+    const aggregateHours = sumEntryHours(matchingEntries);
+    // For a merged/parallel selection, progress is complete only when every
+    // selected section has independently completed that component. Using the
+    // minimum prevents one section's hours from being credited to another.
+    let plottedLecHours = sectionBreakdown.length > 1
+      ? Math.min(...sectionBreakdown.map((item) => item.plottedLecHours))
+      : aggregateHours.lec;
+    let plottedLabHours = sectionBreakdown.length > 1
+      ? Math.min(...sectionBreakdown.map((item) => item.plottedLabHours))
+      : aggregateHours.lab;
 
     plottedLecHours = Math.round(plottedLecHours * 10) / 10;
     plottedLabHours = Math.round(plottedLabHours * 10) / 10;
@@ -712,22 +905,23 @@ export default function AddPlotEntryModalEnhanced({
     let isFullyPlotted = false;
     let isPartiallyPlotted = false;
     let remainingType = null;
+    const anySectionProgress = sectionBreakdown.some((item) => item.plottedLecHours > 0 || item.plottedLabHours > 0);
 
     if (cu.isCombined) {
       const lecDone = targetLec > 0 ? plottedLecHours >= targetLec : true;
       const labDone = targetLab > 0 ? plottedLabHours >= targetLab : true;
       isFullyPlotted = (plottedLecHours >= targetLec) && (plottedLabHours >= targetLab);
-      isPartiallyPlotted = (plottedLecHours > 0 || plottedLabHours > 0) && !isFullyPlotted;
+      isPartiallyPlotted = anySectionProgress && !isFullyPlotted;
       if (isPartiallyPlotted) {
         remainingType = plottedLabHours < targetLab ? 'Laboratory' : 'Lecture';
       }
     } else if (cu.isLabOnly) {
       isFullyPlotted = targetLab > 0 ? plottedLabHours >= targetLab : plottedLabHours > 0;
-      isPartiallyPlotted = plottedLabHours > 0 && !isFullyPlotted;
+      isPartiallyPlotted = anySectionProgress && !isFullyPlotted;
       remainingType = 'Laboratory';
     } else {
       isFullyPlotted = targetLec > 0 ? plottedLecHours >= targetLec : plottedLecHours > 0;
-      isPartiallyPlotted = plottedLecHours > 0 && !isFullyPlotted;
+      isPartiallyPlotted = anySectionProgress && !isFullyPlotted;
       remainingType = 'Lecture';
     }
 
@@ -743,8 +937,41 @@ export default function AddPlotEntryModalEnhanced({
       isFullyPlotted,
       isPartiallyPlotted,
       matchingEntries,
+      sectionBreakdown,
       remainingType,
     };
+  };
+
+  const renderMergedSectionProgress = (status, courseUnits) => {
+    if (!status?.sectionBreakdown || status.sectionBreakdown.length <= 1) return null;
+    if (!status.sectionBreakdown.some((item) => item.plottedLecHours > 0 || item.plottedLabHours > 0)) return null;
+
+    return (
+      <div className="mt-2 space-y-1 rounded-xl border border-amber-200 bg-white/80 p-2">
+        <p className="text-[9px] font-black uppercase tracking-wide text-amber-900">Schedule by selected section</p>
+        {status.sectionBreakdown.map((item) => {
+          const hasLec = item.plottedLecHours > 0;
+          const hasLab = item.plottedLabHours > 0;
+          const componentText = hasLec && hasLab
+            ? `Lecture ${item.plottedLecHours}h + Laboratory ${item.plottedLabHours}h`
+            : hasLec
+              ? `Lecture only (${item.plottedLecHours}h)`
+              : hasLab
+                ? `Laboratory only (${item.plottedLabHours}h)`
+                : 'No Lecture or Laboratory plotted';
+          const completed = (!courseUnits.targetLecHours || item.plottedLecHours >= courseUnits.targetLecHours)
+            && (!courseUnits.targetLabHours || item.plottedLabHours >= courseUnits.targetLabHours);
+          return (
+            <div key={item.sectionName} className="flex flex-wrap items-center justify-between gap-1 text-[9px]">
+              <span className="font-black text-gray-900">{item.sectionName}</span>
+              <span className={`rounded-md border px-1.5 py-0.5 font-bold ${completed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : hasLec || hasLab ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                {componentText}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   // Filtered and sorted courses:
@@ -999,6 +1226,17 @@ export default function AddPlotEntryModalEnhanced({
     return assignedRooms.some((code) => String(code || '').trim().toUpperCase() === selectedCode);
   }, [selectedRoom, assignedRooms, deanUid, deanName]);
 
+  const isRoomBudgeted = useCallback((room) => {
+    if (!room) return false;
+    const managerUid = room.effectiveManagerUid || room.managedBy || '';
+    const managerName = String(room.effectiveManagerName || room.managedByName || '').trim().toLowerCase();
+    const currentDeanName = String(deanName || '').trim().toLowerCase();
+    if ((deanUid && String(managerUid) === String(deanUid)) || (currentDeanName && managerName === currentDeanName)) return true;
+    const code = String(room.roomCode || room.name || room.id || '').trim().toUpperCase();
+    return (assignedRooms || []).some((assigned) => String(assigned || '').trim().toUpperCase() === code);
+  }, [assignedRooms, deanUid, deanName]);
+  const allSelectedRoomsAreBudgeted = selectedRooms.length > 0 && selectedRooms.every(isRoomBudgeted);
+
   const selectedRoomApprover = useMemo(() => {
     if (!selectedRoom || selectedRoomIsBudgeted) return null;
     const managerUid = selectedRoom.effectiveManagerUid || selectedRoom.managedBy || '';
@@ -1249,7 +1487,10 @@ export default function AddPlotEntryModalEnhanced({
     const found = [];
 
     for (const entry of allSemesterEntries || []) {
-      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) continue;
+      if ((activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId))
+        || (initial?.editEntryIds || []).some((id) => [entry.id, entry.originalId, entry.combinedGroupId].includes(id))
+        || (initial?.scheduleGroupId && entry.scheduleGroupId === initial.scheduleGroupId)
+        || (initial?.parallelGroupId && entry.parallelGroupId === initial.parallelGroupId)) continue;
       const entrySection = String(entry.section || entry.sectionName || '').trim().toUpperCase();
       const entrySections = new Set([
         entrySection,
@@ -1291,7 +1532,10 @@ export default function AddPlotEntryModalEnhanced({
     const alreadyPlotted = (status.matchingEntries || []).reduce((sum, entry) => {
       const entryIsLab = String(entry.type || '').toLowerCase().includes('lab');
       if (entryIsLab !== selectedIsLab) return sum;
-      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) return sum;
+      if ((activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId))
+        || (initial?.editEntryIds || []).some((id) => [entry.id, entry.originalId, entry.combinedGroupId].includes(id))
+        || (initial?.scheduleGroupId && entry.scheduleGroupId === initial.scheduleGroupId)
+        || (initial?.parallelGroupId && entry.parallelGroupId === initial.parallelGroupId)) return sum;
       const start = entry.startHour ?? parseTimeToHour(entry.startTime || '');
       const end = entry.endHour ?? parseTimeToHour(entry.endTime || '');
       return sum + Math.max(0, (Number(end) || 0) - (Number(start) || 0));
@@ -1352,15 +1596,21 @@ export default function AddPlotEntryModalEnhanced({
         .filter(Boolean)
         .map((name) => String(name).trim().toUpperCase())
     );
-    const tName = selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? String(selectedTeacher.name).trim().toLowerCase() : '';
-    const tEmail = selectedTeacher?.email ? String(selectedTeacher.email).trim().toLowerCase() : '';
+    const selectedTeacherIdentities = selectedTeachers.map((teacher) => ({
+      name: String(teacher.name || '').trim().toLowerCase(),
+      email: String(teacher.email || '').trim().toLowerCase(),
+      uid: String(teacher.uid || '').trim(),
+    }));
 
     const activeEditId = editingEntryId || initial?.id || initial?.entryId;
     const initialCourseCodeNorm = String(initial?.courseCode || initial?.title || selectedCourse?.code || '').trim().toUpperCase();
 
     allSemesterEntries.forEach((entry) => {
       // 1. Exclude the exact entry being edited by ID
-      if (activeEditId && (entry.id === activeEditId || entry.originalId === activeEditId || entry.combinedGroupId === activeEditId)) {
+      if ((activeEditId && (entry.id === activeEditId || entry.originalId === activeEditId || entry.combinedGroupId === activeEditId))
+        || (initial?.editEntryIds || []).some((id) => [entry.id, entry.originalId, entry.combinedGroupId].includes(id))
+        || (initial?.scheduleGroupId && entry.scheduleGroupId === initial.scheduleGroupId)
+        || (initial?.parallelGroupId && entry.parallelGroupId === initial.parallelGroupId)) {
         return;
       }
 
@@ -1419,15 +1669,20 @@ export default function AddPlotEntryModalEnhanced({
       }
 
       // 3. Teacher is occupied
-      if (!isOccupied && (tName || tEmail)) {
+      if (!isOccupied && selectedTeacherIdentities.length > 0) {
         const inst = String(entry.instructor || '').trim().toLowerCase();
         const instEmail = String(entry.instructorEmail || '').trim().toLowerCase();
-        if (
-          (tName && (inst === tName || inst.includes(tName) || tName.includes(inst))) ||
-          (tEmail && instEmail === tEmail)
-        ) {
+        const entryNames = [inst, ...(entry.instructorNames || []).map((name) => String(name).trim().toLowerCase())];
+        const entryEmails = [instEmail, ...(entry.instructorEmails || []).map((email) => String(email).trim().toLowerCase())];
+        const entryUids = [String(entry.instructorUid || ''), ...(entry.instructorUids || []).map(String)];
+        const busyTeacher = selectedTeacherIdentities.find((teacher) =>
+          (teacher.uid && entryUids.includes(teacher.uid)) ||
+          (teacher.email && entryEmails.includes(teacher.email)) ||
+          (teacher.name && entryNames.some((name) => name && (name === teacher.name || name.includes(teacher.name) || teacher.name.includes(name))))
+        );
+        if (busyTeacher) {
           isOccupied = true;
-          reason = `Teacher ${selectedTeacher.name} Busy (${entry.courseCode || entry.title || 'Class'})`;
+          reason = `Teacher ${busyTeacher.name} Busy (${entry.courseCode || entry.title || 'Class'})`;
         }
       }
 
@@ -1441,7 +1696,7 @@ export default function AddPlotEntryModalEnhanced({
     });
 
     return map;
-  }, [allSemesterEntries, selectedRoom, selectedSection, selectedCombinedSections, selectedTeacher, editingEntryId, initial, isEditMode, selectedCourse, dayIndex, rotationCycle]);
+  }, [allSemesterEntries, selectedRoom, selectedSection, selectedCombinedSections, selectedTeachers, editingEntryId, initial, isEditMode, selectedCourse, dayIndex, rotationCycle]);
 
   // Generates start time dropdown options with occupied slots disabled
   const getStartTimeOptions = useCallback((daysToCheck) => {
@@ -1671,7 +1926,10 @@ export default function AddPlotEntryModalEnhanced({
 
     const teacherDocs = (allSemesterEntries || []).filter((e) => {
       const activeEditId = editingEntryId || initial?.id || initial?.entryId;
-      if (activeEditId && (e.id === activeEditId || e.originalId === activeEditId || e.combinedGroupId === activeEditId)) return false;
+      if ((activeEditId && (e.id === activeEditId || e.originalId === activeEditId || e.combinedGroupId === activeEditId))
+        || (initial?.editEntryIds || []).some((id) => [e.id, e.originalId, e.combinedGroupId].includes(id))
+        || (initial?.scheduleGroupId && e.scheduleGroupId === initial.scheduleGroupId)
+        || (initial?.parallelGroupId && e.parallelGroupId === initial.parallelGroupId)) return false;
       if (isEditMode && initial?.courseCode) {
         const eCode = String(e.courseCode || e.title || '').trim().toUpperCase();
         const initCode = String(initial.courseCode || initial.title || '').trim().toUpperCase();
@@ -1704,11 +1962,14 @@ export default function AddPlotEntryModalEnhanced({
       const inst = String(e.instructor || '').trim().toLowerCase();
       const instEmail = String(e.instructorEmail || '').trim().toLowerCase();
       const instUid = String(e.instructorUid || '').trim();
-      if ((!inst && !instUid) || inst.includes('tba') || inst.includes('to be assigned')) return false;
+      const instructorNames = [inst, ...(e.instructorNames || []).map((name) => String(name).trim().toLowerCase())].filter(Boolean);
+      const instructorEmails = [instEmail, ...(e.instructorEmails || []).map((email) => String(email).trim().toLowerCase())].filter(Boolean);
+      const instructorUids = [instUid, ...(e.instructorUids || []).map((uid) => String(uid).trim())].filter(Boolean);
+      if ((instructorNames.length === 0 && instructorUids.length === 0) || instructorNames.every((name) => name.includes('tba') || name.includes('to be assigned'))) return false;
 
-      const matchesUid = tUid && instUid && instUid === tUid;
-      const matchesName = tName && (inst === tName || inst.includes(tName) || tName.includes(inst));
-      const matchesEmail = tEmail && (instEmail === tEmail || inst.includes(tEmail));
+      const matchesUid = tUid && instructorUids.includes(tUid);
+      const matchesName = tName && instructorNames.some((name) => name === tName || name.includes(tName) || tName.includes(name));
+      const matchesEmail = tEmail && instructorEmails.includes(tEmail);
       return matchesUid || matchesName || matchesEmail;
     });
 
@@ -1749,15 +2010,23 @@ export default function AddPlotEntryModalEnhanced({
   };
 
   const selectedTeacherConflict = useMemo(() => {
-    return getTeacherConflictStatus(selectedTeacher);
-  }, [selectedTeacher, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, selectedCombinedSections, selectedParallelSections, selectedCourse, sectionCombinationMode, dayIndex]);
+    const checks = selectedTeachers.map((teacher) => ({ teacher, status: getTeacherConflictStatus(teacher) }));
+    return {
+      hasConflict: checks.some((check) => check.status.hasConflict),
+      conflicts: checks.flatMap((check) => check.status.conflicts.map((conflict) => ({ ...conflict, teacherName: check.teacher.name }))),
+      teacherNames: checks.filter((check) => check.status.hasConflict).map((check) => check.teacher.name),
+    };
+  }, [selectedTeachers, selectedDaySlots, allSemesterEntries, editingEntryId, isEditMode, initial, selectedSection, selectedCombinedSections, selectedParallelSections, selectedCourse, sectionCombinationMode, dayIndex]);
 
   const getRoomConflictStatus = useCallback((room) => {
     const roomCode = String(room?.roomCode || room?.name || room?.id || '').replace(/[\s\-_]/g, '').toUpperCase();
     if (!roomCode || selectedDaySlots.length === 0) return { hasConflict: false, conflicts: [] };
     const activeEditId = editingEntryId || initial?.id || initial?.entryId;
     const conflicts = (allSemesterEntries || []).filter((entry) => {
-      if (activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId)) return false;
+      if ((activeEditId && [entry.id, entry.originalId, entry.combinedGroupId].includes(activeEditId))
+        || (initial?.editEntryIds || []).some((id) => [entry.id, entry.originalId, entry.combinedGroupId].includes(id))
+        || (initial?.scheduleGroupId && entry.scheduleGroupId === initial.scheduleGroupId)
+        || (initial?.parallelGroupId && entry.parallelGroupId === initial.parallelGroupId)) return false;
       const entryRoom = String(entry.roomCode || entry.room || entry.roomId || '').replace(/[\s\-_]/g, '').toUpperCase();
       if (entryRoom !== roomCode) return false;
       const entryCycle = String(entry.rotationCycle || entry.weekCycle || 'all').toLowerCase();
@@ -1769,6 +2038,7 @@ export default function AddPlotEntryModalEnhanced({
     });
     return { hasConflict: conflicts.length > 0, conflicts };
   }, [selectedDaySlots, allSemesterEntries, editingEntryId, initial, rotationCycle]);
+  const selectedRoomsHaveConflicts = selectedRooms.some((room) => getRoomConflictStatus(room).hasConflict);
 
   // Allows freely clicking between any steps in the stepper header
   const handleStepClick = (targetStepId) => {
@@ -1800,8 +2070,10 @@ export default function AddPlotEntryModalEnhanced({
       }
     }
     const targetStepIndex = stepConfig.findIndex((item) => item.id === targetStepId);
-    if (step === 4 && targetStepIndex > currentStepIndex && !selectedRoom) {
-      setError('Please select a room before continuing to the next step.');
+    if (step === 4 && targetStepIndex > currentStepIndex && (!selectedRoom || !roomAssignmentsComplete)) {
+      setError(requiresMultipleRooms
+        ? `Select ${requiredRoomCount} rooms and assign one different room to every parallel unit.`
+        : 'Please select a room before continuing to the next step.');
       return;
     }
     setStep(targetStepId);
@@ -1899,6 +2171,8 @@ export default function AddPlotEntryModalEnhanced({
       setEditingEntryId(null);
       setSelectedBuilding(null);
       setSelectedRoom(null);
+      setSelectedRooms([]);
+      setParallelRoomAssignments({});
       setSelectedDays([]);
       setCombinedStartTime('');
       setCombinedEndTime('');
@@ -1951,6 +2225,8 @@ export default function AddPlotEntryModalEnhanced({
     setSelectedTeacher(null);
     setSelectedBuilding(null);
     setSelectedRoom(null);
+    setSelectedRooms([]);
+    setParallelRoomAssignments({});
     setSelectedDays([]);
     setCombinedStartTime('');
     setCombinedEndTime('');
@@ -1968,6 +2244,21 @@ export default function AddPlotEntryModalEnhanced({
       if (!selectedCourse) {
         setError('Please select a course to continue.');
         return;
+      }
+      if (sectionCombinationMode.includes('merge') && (selectedMergedSections.length < 2 || mergeGroups.some((group) => group.length !== 2))) {
+        setError('Complete every merge group by selecting exactly two sections for each color-coded pair.');
+        return;
+      }
+      if (sectionCombinationMode.includes('parallel') && parallelUnitCount > 4) {
+        setError('Parallel classes support a maximum of four units. Each completed merged pair counts as one unit.');
+        return;
+      }
+      if (allowOjtRotation && (weekASections.length > 0 || weekBSections.length > 0)) {
+        if (weekASections.length === 0 || weekASections.length !== weekBSections.length) {
+          setError('Week A and Week B must contain the same number of sections so every section has one partner.');
+          return;
+        }
+        setRotationCycle('week_a');
       }
       // Auto-set type if course is lecture-only or lab-only
       const cu = getCourseUnitBreakdown(selectedCourse);
@@ -2027,7 +2318,11 @@ export default function AddPlotEntryModalEnhanced({
         setError('Please select a room from the left floor list.');
         return;
       }
-      if (!selectedRoomIsBudgeted && !nonBudgetedRoomReason.trim()) {
+      if (!roomAssignmentsComplete) {
+        setError(`Select ${requiredRoomCount} rooms and assign one different room to every parallel unit.`);
+        return;
+      }
+      if (!allSelectedRoomsAreBudgeted && !nonBudgetedRoomReason.trim()) {
         setError('Please explain why this non-assigned room is required.');
         return;
       }
@@ -2043,7 +2338,7 @@ export default function AddPlotEntryModalEnhanced({
 
     if (step === 2) {
       if (selectedTeacherConflict.hasConflict) {
-        setError(`Cannot proceed: ${selectedTeacher?.name || 'Selected teacher'} has a schedule conflict.`);
+        setError(`Cannot proceed: ${selectedTeacherConflict.teacherNames.join(', ') || 'A selected teacher'} has a schedule conflict.`);
         return;
       }
     }
@@ -2070,19 +2365,19 @@ export default function AddPlotEntryModalEnhanced({
       return;
     }
 
-    if (!selectedCourse || !selectedBuilding || !selectedRoom || selectedDaySlots.length === 0) {
+    if (!selectedCourse || !selectedBuilding || !selectedRoom || !roomAssignmentsComplete || selectedDaySlots.length === 0) {
       setError('Please complete all schedule details.');
       return;
     }
 
     const hardConflicts = roomConflicts.filter((c) => c.conflictType !== 'teacher');
-    if (hardConflicts.length > 0) {
+    if (hardConflicts.length > 0 || selectedRoomsHaveConflicts) {
       setError('Cannot save schedule: Room or section schedule conflict detected. Please select an available time slot or room.');
       return;
     }
 
     if (selectedTeacherConflict.hasConflict) {
-      setError(`Cannot save schedule: ${selectedTeacher.name} has a schedule conflict. Please choose another faculty member or select TBA in Step 4.`);
+      setError(`Cannot save schedule: ${selectedTeacherConflict.teacherNames.join(', ')} has a schedule conflict. Remove the unavailable teacher or choose TBA.`);
       return;
     }
 
@@ -2109,6 +2404,14 @@ export default function AddPlotEntryModalEnhanced({
       const approvalSubmissionId = !selectedRoomIsBudgeted
         ? `schedule_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
         : null;
+      const parallelGroupId = requiresMultipleRooms
+        ? `parallel_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+        : null;
+      // Every weekday created by one submission belongs to one logical weekly
+      // schedule. Keeping this ID on each Firestore document lets edit mode
+      // reopen all of the course's days instead of only the clicked block.
+      const scheduleGroupId = initial?.scheduleGroupId
+        || `schedule_group_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
       // Save schedule blocks for each plotted day
       for (const slot of selectedDaySlots) {
@@ -2128,9 +2431,13 @@ export default function AddPlotEntryModalEnhanced({
           labUnits: selectedCourse.labUnits ?? null,
           lecHours: courseUnits.targetLecHours,
           labHours: courseUnits.targetLabHours,
-          instructor: selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? selectedTeacher.name : 'TBA',
+          instructor: selectedTeachers.length > 0 ? selectedTeachers.map((teacher) => teacher.name).join(', ') : 'TBA',
           instructorUid: selectedTeacher?.uid || null,
           instructorEmail: selectedTeacher?.email || null,
+          instructors: selectedTeachers,
+          instructorNames: selectedTeachers.map((teacher) => teacher.name),
+          instructorUids: selectedTeachers.map((teacher) => teacher.uid).filter(Boolean),
+          instructorEmails: selectedTeachers.map((teacher) => teacher.email).filter(Boolean),
           type: selectedType,
           startHour: slot.startHour,
           endHour: slot.endHour,
@@ -2143,7 +2450,15 @@ export default function AddPlotEntryModalEnhanced({
           section: selectedSection || 'Section 1',
           sectionCombinationMode: isCombined ? sectionCombinationMode : 'none',
           mergedSections: sectionCombinationMode.includes('merge') ? selectedMergedSections : [],
-          parallelSections: sectionCombinationMode.includes('parallel') ? selectedParallelSections.slice(0, 4) : [],
+          parallelSections: sectionCombinationMode.includes('parallel') ? selectedParallelSections : [],
+          parallelUnitCount: sectionCombinationMode.includes('parallel') ? parallelUnitCount : 0,
+          // Firestore does not support arrays nested directly inside arrays.
+          // Store every merge pair as an object so its sections array is valid.
+          mergeGroups: sectionCombinationMode.includes('merge')
+            ? mergeGroups
+                .filter((group) => group.length > 1)
+                .map((group, index) => ({ id: `merge-${index + 1}`, sections: group }))
+            : [],
           partnerSection: partnerSection || null,
           rotationCycle: allowOjtRotation ? (rotationCycle || 'all') : 'all',
           isCombinedSection: isCombined,
@@ -2159,6 +2474,7 @@ export default function AddPlotEntryModalEnhanced({
           roomManagerName: selectedRoom?.effectiveManagerName || selectedRoom?.managedByName || null,
           roomManagerDepartment: selectedRoomApprover?.department || null,
           approvalSubmissionId,
+          scheduleGroupId,
         };
 
         // If auto-mirror partner is checked and partner is selected for rotation
@@ -2169,9 +2485,13 @@ export default function AddPlotEntryModalEnhanced({
             dayLabel: finalDayLabel,
             title: selectedCourse.title,
             courseCode: selectedCourse.code,
-            instructor: selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' ? selectedTeacher.name : 'TBA',
+            instructor: selectedTeachers.length > 0 ? selectedTeachers.map((teacher) => teacher.name).join(', ') : 'TBA',
             instructorUid: selectedTeacher?.uid || null,
             instructorEmail: selectedTeacher?.email || null,
+            instructors: selectedTeachers,
+            instructorNames: selectedTeachers.map((teacher) => teacher.name),
+            instructorUids: selectedTeachers.map((teacher) => teacher.uid).filter(Boolean),
+            instructorEmails: selectedTeachers.map((teacher) => teacher.email).filter(Boolean),
             type: selectedType,
             startHour: slot.startHour,
             endHour: slot.endHour,
@@ -2199,7 +2519,66 @@ export default function AddPlotEntryModalEnhanced({
           mainPayload.partnerSection = partnerSection;
         }
 
-        await onSave(mainPayload);
+        if (allowOjtRotation && rotationPairs.length > 0 && !isEditMode) {
+          for (const pair of rotationPairs) {
+            await onSave({
+              ...mainPayload,
+              section: pair.weekA,
+              isCombinedSection: false,
+              combinedSections: [pair.weekA],
+              sectionCombinationMode: 'none',
+              rotationCycle: 'week_a',
+              partnerSection: pair.weekB,
+              reciprocalEntry: {
+                ...mainPayload,
+                id: null,
+                section: pair.weekB,
+                isCombinedSection: false,
+                combinedSections: [pair.weekB],
+                sectionCombinationMode: 'none',
+                rotationCycle: 'week_b',
+                partnerSection: pair.weekA,
+              },
+            });
+          }
+        } else if (requiresMultipleRooms) {
+          // A parallel unit occupies its own physical room. Persist one entry per
+          // unit so every room timetable and every section timetable is accurate.
+          for (const unit of selectedParallelUnits) {
+            const assignedRoomId = parallelRoomAssignments[unit.key];
+            const assignedRoom = selectedRooms.find((room) => roomIdentity(room) === assignedRoomId);
+            if (!assignedRoom) throw new Error(`Assign a room to ${unit.names.join(' + ')}.`);
+            const budgeted = isRoomBudgeted(assignedRoom);
+            const unitApprovalId = !budgeted
+              ? `schedule_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+              : null;
+            await onSave({
+              ...mainPayload,
+              id: null,
+              section: unit.names[0],
+              combinedSections: unit.names,
+              isCombinedSection: unit.names.length > 1,
+              roomCode: assignedRoom.roomCode || assignedRoom.id || assignedRoom.name,
+              roomId: assignedRoom.docId || assignedRoom.id || assignedRoom.roomCode,
+              floorId: assignedRoom.effectiveFloorId || assignedRoom.floorId || null,
+              floor: assignedRoom.effectiveFloorNumber || assignedRoom.floorNumber || assignedRoom.floor || null,
+              approvalStatus: budgeted ? 'approved' : 'pending',
+              approved: budgeted,
+              usedNonBudgetedRoom: !budgeted,
+              nonBudgetedRoomReason: !budgeted ? nonBudgetedRoomReason.trim() : null,
+              roomManagerUid: assignedRoom.effectiveManagerUid || assignedRoom.managedBy || null,
+              roomManagerName: assignedRoom.effectiveManagerName || assignedRoom.managedByName || null,
+              approvalSubmissionId: unitApprovalId,
+              parallelGroupId,
+              parallelRoomAssignments: Object.fromEntries(selectedParallelUnits.map((parallelUnit) => {
+                const room = selectedRooms.find((item) => roomIdentity(item) === parallelRoomAssignments[parallelUnit.key]);
+                return [parallelUnit.names.join(' + '), room?.roomCode || room?.name || room?.id || ''];
+              })),
+            });
+          }
+        } else {
+          await onSave(mainPayload);
+        }
       }
 
       if (isEditMode) {
@@ -2214,6 +2593,8 @@ export default function AddPlotEntryModalEnhanced({
         setSelectedType(nextTargetType);
         setSelectedBuilding(null);
         setSelectedRoom(null);
+        setSelectedRooms([]);
+        setParallelRoomAssignments({});
         setSelectedDays([]);
         setCombinedStartTime('');
         setCombinedEndTime('');
@@ -2418,7 +2799,7 @@ export default function AddPlotEntryModalEnhanced({
                                 ? `Merged (${selectedCombinedSections.length} sections)`
                                 : sectionCombinationMode === 'parallel'
                                   ? `Parallel (${selectedCombinedSections.length}/4 sections)`
-                                  : `Merged ${selectedMergedSections.length} + Parallel ${selectedParallelSections.length}/4`}
+                                  : `Merged ${mergeGroups.filter((group) => group.length > 1).length} group(s) + Parallel ${parallelUnitCount}/4 units`}
                             </span>
                           )}
                         </div>
@@ -2427,33 +2808,29 @@ export default function AddPlotEntryModalEnhanced({
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-4">
+                      <div className={`grid grid-cols-2 gap-1.5 ${allowParallelClasses ? 'lg:grid-cols-4' : ''}`}>
                         {[
                           { value: 'none', label: 'Normal Class', allowed: true },
                           { value: 'merge', label: 'Enable Merge', allowed: true },
                           { value: 'parallel', label: 'Enable Parallel', allowed: allowParallelClasses },
                           { value: 'merge_parallel', label: 'Enable Merge + Parallel', allowed: allowParallelClasses },
-                        ].map((option) => {
+                        ].filter((option) => option.allowed).map((option) => {
                           const active = sectionCombinationMode === option.value;
                           return (
                             <button
                               key={option.value}
                               type="button"
-                              disabled={!option.allowed}
                               onClick={() => {
-                                if (!option.allowed) return;
                                 setSectionCombinationMode(option.value);
                                 setSelectedCombinedSections([selectedSection]);
                                 setSelectedMergedSections([selectedSection]);
                                 setSelectedParallelSections([selectedSection]);
                               }}
-                              title={!option.allowed ? 'Enable Allow Parallel Classes in College Inventory first.' : option.label}
+                              title={option.label}
                               className={`rounded-lg border px-3 py-2 text-[10px] font-black transition-all ${
                                 active
                                   ? 'border-[#7A0808] bg-[#7A0808] text-white shadow-2xs'
-                                  : option.allowed
-                                    ? 'cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-[#7A0808] hover:text-[#7A0808]'
-                                    : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60'
+                                  : 'cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-[#7A0808] hover:text-[#7A0808]'
                               }`}
                             >
                               {option.label}
@@ -2462,12 +2839,6 @@ export default function AddPlotEntryModalEnhanced({
                         })}
                       </div>
 
-                      {!allowParallelClasses && (
-                        <p className="text-[9px] font-semibold text-gray-400">
-                          Parallel modes are disabled for this college. A Registrar can enable them in College Inventory.
-                        </p>
-                      )}
-
                       {sectionCombinationMode !== 'none' && (
                         <div className="space-y-3 border-t border-gray-200 pt-2.5">
                           {(sectionCombinationMode === 'merge_parallel'
@@ -2475,14 +2846,14 @@ export default function AddPlotEntryModalEnhanced({
                                 {
                                   key: 'merge',
                                   title: '1. Select Sections to Merge',
-                                  help: `Combine smaller ${activeYearLevel} sections into one class.`,
+                                  help: `Select sections in pairs. Every completed pair becomes one color-coded merged unit.`,
                                   selected: selectedMergedSections,
                                   setSelected: setSelectedMergedSections,
                                 },
                                 {
                                   key: 'parallel',
                                   title: '2. Select Sections for Parallel Class',
-                                  help: 'Choose up to four sections that share the teacher and time with the merged class.',
+                                  help: 'Choose up to four units. A complete merged pair counts as only one unit.',
                                   selected: selectedParallelSections,
                                   setSelected: setSelectedParallelSections,
                                 },
@@ -2491,7 +2862,7 @@ export default function AddPlotEntryModalEnhanced({
                               ? [{
                                   key: 'merge',
                                   title: 'Select Sections to Merge',
-                                  help: `Combine any applicable ${activeYearLevel} sections into one class.`,
+                                  help: `Select sections in pairs. Multiple merged pairs are allowed.`,
                                   selected: selectedMergedSections,
                                   setSelected: setSelectedMergedSections,
                                 }]
@@ -2509,16 +2880,49 @@ export default function AddPlotEntryModalEnhanced({
                                 <p className="mt-0.5 text-[9px] text-gray-500">{group.help}</p>
                               </div>
                               <div className="flex flex-wrap gap-1.5">
-                                {mergeableSections.map((sec) => {
+                                {group.key === 'parallel' ? parallelSelectionUnits.map((unit) => {
+                                  const isPrimaryUnit = unit.names.includes(selectedSection);
+                                  const isChecked = unit.names.every((name) => group.selected.includes(name));
+                                  const nextSelection = Array.from(new Set([...group.selected, ...unit.names]));
+                                  const reachedLimit = !isChecked && getParallelUnitCount(nextSelection) > 4;
+                                  const themes = [
+                                    'border-red-300 bg-red-50 text-[#7A0808]',
+                                    'border-amber-300 bg-amber-50 text-amber-900',
+                                    'border-emerald-300 bg-emerald-50 text-emerald-900',
+                                    'border-blue-300 bg-blue-50 text-blue-900',
+                                  ];
+                                  return (
+                                    <button
+                                      key={`parallel-${unit.key}`}
+                                      type="button"
+                                      disabled={isPrimaryUnit || reachedLimit}
+                                      onClick={() => group.setSelected((current) => (
+                                        isChecked
+                                          ? current.filter((name) => !unit.names.includes(name))
+                                          : Array.from(new Set([...current, ...unit.names]))
+                                      ))}
+                                      title={isPrimaryUnit ? 'Primary active unit (cannot be deselected)' : reachedLimit ? 'Maximum of four parallel units reached' : `${isChecked ? 'Remove' : 'Add'} ${unit.names.join(' + ')}`}
+                                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-all ${
+                                        isChecked
+                                          ? 'border-[#7A0808] bg-[#7A0808] text-white shadow-2xs'
+                                          : reachedLimit
+                                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60'
+                                            : unit.names.length > 1
+                                              ? `${themes[unit.mergeIndex % themes.length]} cursor-pointer`
+                                              : 'cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      <span>{unit.names.join(' + ')}</span>
+                                      {unit.names.length > 1 && <span className={`rounded px-1 text-[8px] font-black uppercase ${isChecked ? 'bg-white/20 text-white' : 'bg-white/70'}`}>Merged · 1 unit</span>}
+                                      {unit.names.length === 1 && <span className={`text-[9px] font-normal ${isChecked ? 'text-white/80' : 'text-gray-400'}`}>({unit.section?.studentCount || unit.section?.studentsPerSection || 40} stds)</span>}
+                                    </button>
+                                  );
+                                }) : mergeableSections.map((sec) => {
                                   const isPrimary = sec.name === selectedSection;
                                   const isChecked = group.selected.includes(sec.name);
-                                  const reachedLimit = group.key === 'parallel' && !isChecked && group.selected.length >= 4;
-                                  const belongsToOtherGroup = sectionCombinationMode === 'merge_parallel'
-                                    && !isPrimary
-                                    && (group.key === 'merge'
-                                      ? selectedParallelSections.includes(sec.name)
-                                      : selectedMergedSections.includes(sec.name));
-                                  const isDisabled = isPrimary || reachedLimit || belongsToOtherGroup;
+                                  const reachedLimit = false;
+                                  const belongsToOtherGroup = false;
+                                  const isDisabled = isPrimary || reachedLimit;
                                   return (
                                     <button
                                       key={`${group.key}-${sec.name}`}
@@ -2526,13 +2930,9 @@ export default function AddPlotEntryModalEnhanced({
                                       disabled={isDisabled}
                                       onClick={() => {
                                         if (isDisabled) return;
-                                        group.setSelected((current) => (
-                                          isChecked
-                                            ? current.filter((name) => name !== sec.name)
-                                            : group.key === 'parallel'
-                                              ? [...current, sec.name].slice(0, 4)
-                                              : [...current, sec.name]
-                                        ));
+                                        group.setSelected((current) => {
+                                          return isChecked ? current.filter((name) => name !== sec.name) : [...current, sec.name];
+                                        });
                                       }}
                                       title={isPrimary
                                         ? 'Primary active section (cannot be deselected)'
@@ -2559,8 +2959,135 @@ export default function AddPlotEntryModalEnhanced({
                                   );
                                 })}
                               </div>
+                              {group.key === 'merge' && selectedMergedSections.length > 1 && (
+                                <div className="flex flex-wrap gap-1.5 border-t border-gray-100 pt-2">
+                                  {mergeGroups.map((mergeGroup, mergeIndex) => {
+                                    const complete = mergeGroup.length === 2;
+                                    const themes = [
+                                      'border-red-300 bg-red-50 text-[#7A0808]',
+                                      'border-amber-300 bg-amber-50 text-amber-900',
+                                      'border-emerald-300 bg-emerald-50 text-emerald-900',
+                                      'border-blue-300 bg-blue-50 text-blue-900',
+                                    ];
+                                    return (
+                                      <span key={`${mergeIndex}-${mergeGroup.join('-')}`} className={`rounded-full border px-2.5 py-1 text-[9px] font-black ${complete ? themes[mergeIndex % themes.length] : 'border-gray-300 bg-gray-50 text-gray-500'}`}>
+                                        Merge {mergeIndex + 1}: {mergeGroup.join(' + ')} {complete ? '✓ One unit' : '· Select partner'}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {group.key === 'parallel' && (
+                                <p className="border-t border-gray-100 pt-2 text-[9px] font-bold text-[#7A0808]">
+                                  {parallelUnitCount}/4 parallel units selected. Complete merged pairs count as one unit each.
+                                </p>
+                              )}
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {allowOjtRotation && false && (
+                    <div className="mt-3 space-y-3 rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-wider text-purple-950">
+                            Week A / Week B Class Exchange
+                          </p>
+                          <p className="mt-1 text-[10px] text-purple-800">
+                            Enabled by the Registrar for {activeYearLevel}. Choose which week this section attends class and optionally select the reciprocal section.
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-purple-300 bg-white px-2 py-0.5 text-[9px] font-black uppercase text-purple-800">
+                          OJT alternating active
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {[
+                          { value: 'all', label: 'All Weeks', help: 'No exchange' },
+                          { value: 'week_a', label: 'Week A (Odd)', help: 'Class on odd weeks' },
+                          { value: 'week_b', label: 'Week B (Even)', help: 'Class on even weeks' },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setRotationCycle(option.value)}
+                            className={`rounded-xl border px-3 py-2 text-left transition-all ${rotationCycle === option.value ? 'border-purple-700 bg-purple-700 text-white shadow-sm' : 'border-purple-200 bg-white text-purple-900 hover:border-purple-500'}`}
+                          >
+                            <span className="block text-[10px] font-black">{option.label}</span>
+                            <span className={`block text-[9px] ${rotationCycle === option.value ? 'text-white/80' : 'text-purple-600'}`}>{option.help}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {rotationCycle !== 'all' && (
+                        <div className="grid grid-cols-1 items-center gap-2 border-t border-purple-200 pt-3 sm:grid-cols-[1fr_240px]">
+                          <div>
+                            <p className="text-[10px] font-black text-purple-950">Reciprocal partner section</p>
+                            <p className="text-[9px] text-purple-700">The partner will use the opposite Week A/Week B cycle.</p>
+                          </div>
+                          <CustomSelect
+                            size="sm"
+                            value={partnerSection}
+                            onChange={(event) => setPartnerSection(event.target.value)}
+                            options={[
+                              { value: '', label: 'None (this section only)' },
+                              ...mergeableSections
+                                .filter((section) => section.name !== selectedSection)
+                                .map((section) => ({ value: section.name, label: section.name })),
+                            ]}
+                            placeholder="Select partner section"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {allowOjtRotation && (
+                    <div className="mt-3 space-y-3 rounded-2xl border border-red-200 bg-red-50/60 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-wider text-[#7A0808]">Week A / Week B Class Exchange</p>
+                          <p className="mt-1 text-[10px] text-gray-600">Select equal groups once. Sections are paired automatically by their selected order.</p>
+                        </div>
+                        <button type="button" onClick={() => { setWeekASections([]); setWeekBSections([]); setRotationCycle('all'); }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[9px] font-black text-[#7A0808] hover:bg-red-50">Use regular weeks</button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {[
+                          { title: 'Week A (Odd Weeks)', selected: weekASections, other: weekBSections, setter: setWeekASections },
+                          { title: 'Week B (Even Weeks)', selected: weekBSections, other: weekASections, setter: setWeekBSections },
+                        ].map((group) => (
+                          <div key={group.title} className="rounded-xl border border-red-200 bg-white p-2.5">
+                            <p className="mb-2 text-[10px] font-black text-[#7A0808]">{group.title} · {group.selected.length} selected</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {mergeableSections.map((section) => {
+                                const checked = group.selected.includes(section.name);
+                                const unavailable = group.other.includes(section.name);
+                                return (
+                                  <button key={section.name} type="button" disabled={unavailable} onClick={() => {
+                                    group.setter((current) => checked ? current.filter((name) => name !== section.name) : [...current, section.name]);
+                                    setRotationCycle('week_a');
+                                  }} className={`rounded-lg border px-2 py-1 text-[10px] font-bold ${checked ? 'border-[#7A0808] bg-[#7A0808] text-white' : unavailable ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400' : 'border-gray-200 bg-white text-gray-700 hover:border-[#7A0808] hover:text-[#7A0808]'}`}>
+                                    {section.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {(weekASections.length > 0 || weekBSections.length > 0) && (
+                        <div className="border-t border-red-200 pt-2">
+                          <p className="mb-1.5 text-[9px] font-black uppercase text-[#7A0808]">Automatic partner pairs</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {rotationPairs.map((pair, index) => <span key={`${pair.weekA}-${pair.weekB}`} className="rounded-full border border-red-200 bg-white px-2 py-1 text-[9px] font-bold text-gray-800">{index + 1}. {pair.weekA} ↔ {pair.weekB}</span>)}
+                            {weekASections.length !== weekBSections.length && <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[9px] font-bold text-amber-900">Select {Math.abs(weekASections.length - weekBSections.length)} more section(s) in {weekASections.length < weekBSections.length ? 'Week A' : 'Week B'}</span>}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2683,6 +3210,8 @@ export default function AddPlotEntryModalEnhanced({
 
                           <p className="text-xs font-semibold text-gray-800 truncate mb-1.5">{course.title}</p>
 
+                          {renderMergedSectionProgress(status, cu)}
+
                           {/* Plotted Hours Breakdown */}
                           <div className="flex flex-wrap items-center gap-1.5 text-[10px] pt-1.5 border-t border-gray-200/80">
                             {cu.isCombined ? (
@@ -2766,6 +3295,7 @@ export default function AddPlotEntryModalEnhanced({
                               </span>
                             )}
                           </div>
+                          {renderMergedSectionProgress(status, cu)}
                         </button>
                       );
                     }
@@ -3158,7 +3688,7 @@ export default function AddPlotEntryModalEnhanced({
                 deanUid={deanUid}
                 currentTimeSlots={selectedDaySlots}
                 isEditMode={isEditMode}
-                ignoreEntryIds={editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : [])}
+                ignoreEntryIds={initial?.editEntryIds?.length ? initial.editEntryIds : (editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : []))}
                 initialCourse={selectedCourse?.code || initial?.courseCode || ''}
                 onTimeSelect={(clickedDay, startHour, endHour) => {
                   const hasBlockOnDay = selectedDaySlots.some((slot) => slot.day === clickedDay);
@@ -3195,7 +3725,7 @@ export default function AddPlotEntryModalEnhanced({
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Assign a faculty member now or skip to leave as TBA (To Be Assigned).
+                    Select one or more faculty members. Every selected teacher must be available for the chosen schedule.
                   </p>
                 </div>
 
@@ -3203,7 +3733,7 @@ export default function AddPlotEntryModalEnhanced({
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' });
+                      selectTBA();
                       handleNext();
                     }}
                     className="px-3 py-1.5 rounded-xl border border-gray-300 hover:bg-gray-100 text-xs font-bold text-gray-700 transition-colors cursor-pointer"
@@ -3228,16 +3758,16 @@ export default function AddPlotEntryModalEnhanced({
                       </div>
                       <div>
                         <h4 className="text-xs font-black text-red-950 uppercase tracking-wide">
-                          Teacher Schedule Conflict: {selectedTeacher.name}
+                          Teacher Schedule Conflict: {selectedTeacherConflict.teacherNames.join(', ')}
                         </h4>
                         <p className="text-[11px] font-semibold text-red-800">
-                          {selectedTeacher.name} is already teaching another class during your selected time slot.
+                          One or more selected teachers are already teaching another class during the selected time.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' })}
+                      onClick={selectTBA}
                       className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-white text-red-800 border border-red-300 hover:bg-red-100 cursor-pointer shadow-2xs"
                     >
                       Set to TBA instead
@@ -3248,7 +3778,7 @@ export default function AddPlotEntryModalEnhanced({
                     {selectedTeacherConflict.conflicts.map((tc, idx) => (
                       <div key={idx} className="p-2.5 rounded-xl bg-white border border-red-200 text-xs flex items-center justify-between gap-2">
                         <div>
-                          <span className="font-black text-gray-900">{tc.conflictDayName}: </span>
+                          <span className="font-black text-gray-900">{tc.teacherName} · {tc.conflictDayName}: </span>
                           <span className="font-bold text-[#7A0808]">{tc.courseCode}</span>
                           <span className="text-gray-600"> (Sec: {tc.section} in Room {tc.roomCode})</span>
                         </div>
@@ -3266,17 +3796,16 @@ export default function AddPlotEntryModalEnhanced({
               )}
 
               {/* Currently Assigned Faculty Notice */}
-              {selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)' && !selectedTeacherConflict.hasConflict && (
+              {selectedTeachers.length > 0 && !selectedTeacherConflict.hasConflict && (
                 <div className="p-3 bg-red-50/90 border border-red-200 rounded-xl flex items-center justify-between gap-2 mb-3 shadow-2xs">
                   <div className="flex items-center gap-2">
                     <User size={16} className="text-[#7A0808]" />
                     <p className="text-xs text-red-950 font-bold">
-                      Currently Assigned: <span className="font-extrabold underline">{selectedTeacher.name}</span>
-                      {selectedTeacher.email ? ` (${selectedTeacher.email})` : ''}
+                      Currently Assigned: <span className="font-extrabold underline">{selectedTeachers.map((teacher) => teacher.name).join(', ')}</span>
                     </p>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#7A0808] text-white">
-                    Assigned to this Course
+                    {selectedTeachers.length} Teacher{selectedTeachers.length === 1 ? '' : 's'} Selected
                   </span>
                 </div>
               )}
@@ -3306,7 +3835,7 @@ export default function AddPlotEntryModalEnhanced({
                 {/* Default TBA Option Card */}
                 <button
                   type="button"
-                  onClick={() => setSelectedTeacher({ uid: null, name: 'TBA (To Be Assigned)', email: '' })}
+                  onClick={selectTBA}
                   className={`text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
                     !selectedTeacher || selectedTeacher?.name === 'TBA (To Be Assigned)'
                       ? 'border-2 border-gray-400 bg-gray-100 shadow-2xs'
@@ -3325,31 +3854,19 @@ export default function AddPlotEntryModalEnhanced({
                 </button>
 
                 {displayedTeachers.map((teacher) => {
-                  const isSelected = Boolean(
-                    selectedTeacher &&
-                      selectedTeacher.name !== 'TBA (To Be Assigned)' &&
-                      (
-                        (teacher.uid && selectedTeacher.uid === teacher.uid) ||
-                        (teacher.email && selectedTeacher.email && teacher.email.toLowerCase() === selectedTeacher.email.toLowerCase()) ||
-                        (teacher.name && selectedTeacher.name && (
-                          teacher.name.toLowerCase().trim() === selectedTeacher.name.toLowerCase().trim() ||
-                          teacher.name.toLowerCase().includes(selectedTeacher.name.toLowerCase().trim()) ||
-                          selectedTeacher.name.toLowerCase().includes(teacher.name.toLowerCase().trim())
-                        ))
-                      )
-                  );
+                  const isSelected = selectedTeachers.some((item) => teacherIdentity(item) === teacherIdentity(teacher));
                   const isPreAssigned = selectedCourse?.assignedTeacherUid === teacher.uid;
                   const teacherStatus = getTeacherConflictStatus(teacher);
 
                   return (
                     <div
                       key={teacher.uid}
-                      onClick={teacherStatus.hasConflict ? undefined : () => setSelectedTeacher(teacher)}
-                      aria-disabled={teacherStatus.hasConflict}
-                      title={teacherStatus.hasConflict ? `${teacher.name} is unavailable during the selected time.` : `Select ${teacher.name}`}
+                      onClick={teacherStatus.hasConflict && !isSelected ? undefined : () => toggleSelectedTeacher(teacher)}
+                      aria-disabled={teacherStatus.hasConflict && !isSelected}
+                      title={isSelected ? `Remove ${teacher.name}` : teacherStatus.hasConflict ? `${teacher.name} is unavailable during the selected time.` : `Select ${teacher.name}`}
                       className={`text-left px-3.5 py-3 rounded-xl border transition-all flex flex-col justify-between ${
                         teacherStatus.hasConflict
-                          ? 'cursor-not-allowed border-gray-300 bg-gray-100 opacity-60 grayscale'
+                          ? 'cursor-not-allowed border-red-200 bg-red-50/60'
                           : isSelected
                             ? 'cursor-pointer border-2 border-[#7A0808] bg-red-50/90 shadow-md ring-2 ring-red-100'
                             : 'cursor-pointer border-gray-200 hover:border-[#7A0808] hover:bg-gray-50'
@@ -3364,7 +3881,12 @@ export default function AddPlotEntryModalEnhanced({
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1 flex-wrap">
-                            <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center ${isSelected ? 'border-[#7A0808] bg-[#7A0808] text-white' : 'border-gray-300 bg-white'}`}>
+                                {isSelected && <Check size={11} />}
+                              </span>
+                              <p className="font-bold text-xs text-gray-900 truncate">{teacher.name}</p>
+                            </div>
                             <div className="flex items-center gap-1">
                               {isSelected && !teacherStatus.hasConflict && (
                                 <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-[#7A0808] text-white flex items-center gap-0.5 shadow-2xs">
@@ -3389,6 +3911,24 @@ export default function AddPlotEntryModalEnhanced({
                           <p className="text-[10px] text-gray-500 truncate">{teacher.email}</p>
                         </div>
                       </div>
+
+                      {teacherStatus.hasConflict && (
+                        <div className="mt-2 space-y-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-[9.5px] text-red-900">
+                          <p className="font-black">Conflicts with:</p>
+                          {teacherStatus.conflicts.slice(0, 3).map((conflict, conflictIndex) => (
+                            <p key={`${conflict.id || conflict.courseCode}-${conflict.conflictDay}-${conflictIndex}`} className="leading-4">
+                              <span className="font-bold">{conflict.courseCode || 'Class'}</span>
+                              {' • '}{conflict.section || 'Other section'}
+                              {' • '}{conflict.conflictDayName || SCHEDULE_DAYS[conflict.conflictDay]}
+                              {' • '}{formatScheduleHour(conflict.start)}–{formatScheduleHour(conflict.end)}
+                              {conflict.roomCode ? ` • Room ${conflict.roomCode}` : ''}
+                            </p>
+                          ))}
+                          {teacherStatus.conflicts.length > 3 && (
+                            <p className="font-bold text-red-700">+{teacherStatus.conflicts.length - 3} more conflict(s)</p>
+                          )}
+                        </div>
+                      )}
 
                       {/* View Schedule Button */}
                       <div className="flex items-center justify-between gap-1 pt-2 mt-2 border-t border-gray-100/90">
@@ -3536,6 +4076,8 @@ export default function AddPlotEntryModalEnhanced({
                               setShowAllAvailableRooms(event.target.checked);
                               setSelectedBuilding(null);
                               setSelectedRoom(null);
+                              setSelectedRooms([]);
+                              setParallelRoomAssignments({});
                             }}
                             className="h-3.5 w-3.5 cursor-pointer accent-[#7A0808]"
                           />
@@ -3608,6 +4150,8 @@ export default function AddPlotEntryModalEnhanced({
                           onClick={() => {
                             setSelectedBuilding(building);
                             setSelectedRoom(null); // Reset room when building changes
+                            setSelectedRooms([]);
+                            setParallelRoomAssignments({});
                           }}
                           className="text-left px-3.5 py-3 rounded-xl border border-gray-200 hover:border-[#7A0808] hover:bg-red-50/50 transition-all shadow-2xs group cursor-pointer"
                         >
@@ -3643,6 +4187,8 @@ export default function AddPlotEntryModalEnhanced({
                         onClick={() => {
                           setSelectedBuilding(null);
                           setSelectedRoom(null);
+                          setSelectedRooms([]);
+                          setParallelRoomAssignments({});
                         }}
                         className="text-xs font-bold text-[#7A0808] hover:underline flex items-center gap-1 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 cursor-pointer"
                       >
@@ -3666,6 +4212,8 @@ export default function AddPlotEntryModalEnhanced({
                             setShowAllAvailableRooms(event.target.checked);
                             setSelectedBuilding(null);
                             setSelectedRoom(null);
+                            setSelectedRooms([]);
+                            setParallelRoomAssignments({});
                           }}
                           className="h-3.5 w-3.5 cursor-pointer accent-[#7A0808]"
                         />
@@ -3673,12 +4221,48 @@ export default function AddPlotEntryModalEnhanced({
                       </label>
                     </div>
 
-                    {selectedRoom && (
-                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
-                        <CheckCircle2 size={14} /> Selected Room: {selectedRoom.roomCode}
-                      </span>
-                    )}
                   </div>
+
+                  {requiresMultipleRooms && (
+                    <div className="mb-4 rounded-xl border border-[#D9A3A3] bg-[#FFF8F8] p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-black text-[#7A0808]">Assign each parallel unit to a room</p>
+                          <p className="text-[10px] text-gray-500">
+                            {selectedParallelUnits.length} parallel units require {requiredRoomCount} different rooms. A merged group counts as one unit.
+                          </p>
+                        </div>
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-black ${roomAssignmentsComplete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-[#D9A3A3] bg-white text-[#7A0808]'}`}>
+                          {Object.keys(parallelRoomAssignments).length}/{requiredRoomCount} assigned
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        {selectedParallelUnits.map((unit, index) => (
+                          <label key={unit.key} className="rounded-lg border border-red-100 bg-white p-2">
+                            <span className="mb-1 block text-[10px] font-black text-gray-700">
+                              Unit {index + 1}: {unit.names.join(' + ')}{unit.names.length > 1 ? ' (Merged)' : ''}
+                            </span>
+                            <select
+                              value={parallelRoomAssignments[unit.key] || ''}
+                              onChange={(event) => setParallelRoomAssignments((current) => ({ ...current, [unit.key]: event.target.value }))}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-800 outline-none focus:border-[#7A0808]"
+                            >
+                              <option value="">Select room</option>
+                              {selectedRooms.map((room) => {
+                                const identity = roomIdentity(room);
+                                const assignedElsewhere = Object.entries(parallelRoomAssignments).some(([key, roomId]) => key !== unit.key && roomId === identity);
+                                return (
+                                  <option key={identity} value={identity} disabled={assignedElsewhere}>
+                                    {room.roomCode || room.name || room.id}{assignedElsewhere ? ' — already assigned' : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {showAllAvailableRooms && (
                     <div className="mb-4 rounded-xl border border-[#D9A3A3] bg-[#FFF5F5] p-3">
@@ -3724,6 +4308,14 @@ export default function AddPlotEntryModalEnhanced({
                         </h4>
                         <span className="text-[10px] text-gray-400 font-semibold">Click room to view grid</span>
                       </div>
+
+                      {selectedRooms.length > 0 && (
+                        <div className="flex justify-end">
+                          <span className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                            <CheckCircle2 size={14} /> Selected Rooms: {selectedRooms.length}/{requiredRoomCount}
+                          </span>
+                        </div>
+                      )}
 
                       {availableFloors.length === 0 ? (
                         <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center">
@@ -3776,7 +4368,7 @@ export default function AddPlotEntryModalEnhanced({
                                       </p>
                                     ) : (
                                       floorData.rooms.map((room) => {
-                                        const isSelected = selectedRoom?.roomCode === room.roomCode;
+                                        const isSelected = selectedRooms.some((item) => roomIdentity(item) === roomIdentity(room));
                                         const roomStatus = getRoomConflictStatus(room);
                                         const roomCode = String(room.roomCode || room.name || room.id || '').trim().toUpperCase();
                                         const isRegistrarAssigned = assignedRooms.some(
@@ -3793,11 +4385,11 @@ export default function AddPlotEntryModalEnhanced({
                                             role="button"
                                             tabIndex={roomStatus.hasConflict ? -1 : 0}
                                             aria-disabled={roomStatus.hasConflict}
-                                            onClick={() => !roomStatus.hasConflict && setSelectedRoom(room)}
+                                            onClick={() => !roomStatus.hasConflict && toggleRoomSelection(room)}
                                             onKeyDown={(e) => {
                                               if (!roomStatus.hasConflict && (e.key === 'Enter' || e.key === ' ')) {
                                                 e.preventDefault();
-                                                setSelectedRoom(room);
+                                                toggleRoomSelection(room);
                                               }
                                             }}
                                             title={roomStatus.hasConflict ? 'Unavailable: this room already has a schedule during the preferred time.' : 'Available during the preferred time'}
@@ -4236,7 +4828,7 @@ export default function AddPlotEntryModalEnhanced({
                               deanUid={deanUid}
                               currentTimeSlots={selectedDaySlots}
                               isEditMode={isEditMode}
-                              ignoreEntryIds={editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : [])}
+                              ignoreEntryIds={initial?.editEntryIds?.length ? initial.editEntryIds : (editingEntryId ? [editingEntryId] : (initial?.id ? [initial.id] : []))}
                               initialCourse={selectedCourse?.code || initial?.courseCode || initial?.title || ''}
                               onConflictsChange={setRoomConflicts}
                             />
@@ -4355,13 +4947,13 @@ export default function AddPlotEntryModalEnhanced({
                     </span>
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)'
+                        selectedTeachers.length > 0
                           ? 'bg-blue-50 text-blue-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {selectedTeacher?.name && selectedTeacher.name !== 'TBA (To Be Assigned)'
-                        ? 'Assigned'
+                      {selectedTeachers.length > 0
+                        ? `${selectedTeachers.length} Assigned`
                         : 'TBA'}
                     </span>
                   </div>
@@ -4370,13 +4962,13 @@ export default function AddPlotEntryModalEnhanced({
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-xs"
                       style={{ background: '#7A0808' }}
                     >
-                      {selectedTeacher?.name?.charAt(0)?.toUpperCase() || 'T'}
+                      {selectedTeachers[0]?.name?.charAt(0)?.toUpperCase() || 'T'}
                     </div>
                     <div>
                       <p className="font-bold text-sm text-gray-900">
-                        {selectedTeacher?.name || 'TBA (To Be Assigned)'}
+                        {selectedTeachers.length > 0 ? selectedTeachers.map((teacher) => teacher.name).join(', ') : 'TBA (To Be Assigned)'}
                       </p>
-                      <p className="text-xs text-gray-500">{selectedTeacher?.email || 'Faculty will be assigned later'}</p>
+                      <p className="text-xs text-gray-500">{selectedTeachers.length > 0 ? selectedTeachers.map((teacher) => teacher.email).filter(Boolean).join(', ') : 'Faculty will be assigned later'}</p>
                     </div>
                   </div>
                 </div>
@@ -4477,12 +5069,12 @@ export default function AddPlotEntryModalEnhanced({
                 disabled={
                   saving ||
                   (step === 6 && (selectedDaySlots.length === 0 || sectionTimeConflicts.length > 0 || overlappingPreferredSlots.length > 0 || componentHoursProgress.resulting > componentHoursProgress.required)) ||
-                  (step === 4 && (!selectedRoom || selectedDaySlots.length === 0 || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0)) ||
+                  (step === 4 && (!selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || selectedDaySlots.length === 0 || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0)) ||
                   (step === 2 && selectedTeacherConflict.hasConflict)
                 }
                 className={`btn-maroon flex items-center gap-2 text-xs transition-all cursor-pointer ${
                   (step === 6 && (selectedDaySlots.length === 0 || sectionTimeConflicts.length > 0 || overlappingPreferredSlots.length > 0 || componentHoursProgress.resulting > componentHoursProgress.required)) ||
-                  (step === 4 && (!selectedRoom || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0 || selectedDaySlots.length === 0)) ||
+                  (step === 4 && (!selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0 || selectedDaySlots.length === 0)) ||
                   (step === 2 && selectedTeacherConflict.hasConflict)
                     ? 'opacity-50 cursor-not-allowed bg-red-950/70 border border-red-800'
                     : ''
@@ -4498,10 +5090,14 @@ export default function AddPlotEntryModalEnhanced({
                     ? 'Select a preferred day and time to proceed'
                     : step === 4 && !selectedRoom
                     ? 'Select a room before continuing'
+                    : step === 4 && !roomAssignmentsComplete
+                    ? `Select and assign ${requiredRoomCount} different rooms`
+                    : step === 4 && selectedRoomsHaveConflicts
+                    ? 'Cannot proceed: one of the selected rooms is occupied'
                     : step === 4 && roomConflicts.filter((c) => c.conflictType !== 'teacher').length > 0
                     ? 'Cannot proceed: Room or section schedule conflict detected'
                     : step === 2 && selectedTeacherConflict.hasConflict
-                    ? `Cannot proceed: ${selectedTeacher?.name || 'Selected teacher'} has a schedule conflict`
+                    ? `Cannot proceed: ${selectedTeacherConflict.teacherNames.join(', ') || 'A selected teacher'} has a schedule conflict`
                     : step === 4 && selectedDaySlots.length === 0
                     ? 'Please select schedule day(s) and time to proceed'
                     : undefined
@@ -4513,7 +5109,7 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
-                disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                disabled={saving || !selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || selectedDaySlots.length === 0}
                 className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md font-bold"
               >
                 {saving ? 'Saving Changes...' : 'Save Changes'}
@@ -4523,7 +5119,7 @@ export default function AddPlotEntryModalEnhanced({
                 <button
                   type="button"
                   onClick={() => handleSubmit(false)}
-                  disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                  disabled={saving || !selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || selectedDaySlots.length === 0}
                   className="btn-outline flex items-center gap-1.5 text-xs text-gray-700 hover:bg-gray-100 cursor-pointer"
                   title={`Save ${selectedType} schedule only and exit`}
                 >
@@ -4533,7 +5129,7 @@ export default function AddPlotEntryModalEnhanced({
                 <button
                   type="button"
                   onClick={() => handleSubmit(true)}
-                  disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                  disabled={saving || !selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || selectedDaySlots.length === 0}
                   className="btn-maroon flex items-center gap-2 text-xs cursor-pointer shadow-md font-bold"
                   title={`Save ${selectedType} and continue to configure ${otherType}`}
                 >
@@ -4544,7 +5140,7 @@ export default function AddPlotEntryModalEnhanced({
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
-                disabled={saving || !selectedRoom || selectedDaySlots.length === 0}
+                disabled={saving || !selectedRoom || !roomAssignmentsComplete || selectedRoomsHaveConflicts || selectedDaySlots.length === 0}
                 className="btn-maroon flex items-center gap-2 text-xs cursor-pointer font-bold"
               >
                 {saving

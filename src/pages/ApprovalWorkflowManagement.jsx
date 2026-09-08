@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Edit2, Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import Layout from '../components/Layout';
 import { CategoryFilterTabs } from '../components/FilterControls';
@@ -13,7 +13,43 @@ import {
 } from '../services/approvalWorkflowService';
 import { APPROVAL_TYPES } from '../constants/approvalWorkflow';
 
-function WorkflowTable({ levels, onEdit, onDelete, onMoveUp, onMoveDown, onAdd }) {
+const APPROVAL_WORKFLOW_TYPES = [
+  APPROVAL_TYPES.ACADEMIC,
+  APPROVAL_TYPES.NON_ACADEMIC,
+  APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC,
+  APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC,
+];
+
+const sortWorkflowLevels = (levels) => [...levels].sort((a, b) => {
+  const levelDifference = Number(a.levelNumber || 0) - Number(b.levelNumber || 0);
+  if (levelDifference !== 0) return levelDifference;
+  const createdDifference = Number(a.createdAt?.seconds || 0) - Number(b.createdAt?.seconds || 0);
+  if (createdDifference !== 0) return createdDifference;
+  return String(a.id).localeCompare(String(b.id));
+});
+
+function WorkflowTable({ levels, onEdit, onDelete, onMoveUp, onMoveDown, onReorder, onAdd }) {
+  const [draggedId, setDraggedId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
+  const dropLevel = (targetId) => {
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    const reordered = [...levels];
+    const from = reordered.findIndex((level) => level.id === draggedId);
+    const to = reordered.findIndex((level) => level.id === targetId);
+    if (from >= 0 && to >= 0) {
+      const [moved] = reordered.splice(from, 1);
+      reordered.splice(to, 0, moved);
+      onReorder(reordered);
+    }
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
@@ -36,11 +72,28 @@ function WorkflowTable({ levels, onEdit, onDelete, onMoveUp, onMoveDown, onAdd }
               </tr>
             ) : (
               levels.map((level, index) => (
-                <tr key={level.id} className="border-b border-gray-50 hover:bg-gray-50/40">
+                <tr
+                  key={level.id}
+                  draggable
+                  onDragStart={(event) => {
+                    setDraggedId(level.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', level.id);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    setDragOverId(level.id);
+                  }}
+                  onDragLeave={() => setDragOverId((current) => current === level.id ? null : current)}
+                  onDrop={(event) => { event.preventDefault(); dropLevel(level.id); }}
+                  onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
+                  className={`border-b border-gray-50 transition-all ${draggedId === level.id ? 'opacity-40 bg-red-50' : dragOverId === level.id ? 'bg-red-50 border-t-2 border-t-[#7A0808]' : 'hover:bg-gray-50/40'}`}
+                >
                   <td className="py-3 px-5">
                     <div className="flex items-center gap-2">
-                      <GripVertical size={14} className="text-gray-300" />
-                      <span className="text-sm font-bold text-dark">{level.levelNumber}</span>
+                      <GripVertical size={16} className="cursor-grab text-gray-400 active:cursor-grabbing" />
+                      <span className="text-sm font-bold text-dark">{index + 1}</span>
                     </div>
                   </td>
                   <td className="py-3 px-5 text-sm font-semibold text-dark">{level.roleLabel || level.roleId}</td>
@@ -81,10 +134,34 @@ export default function ApprovalWorkflowManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modal, setModal] = useState(null);
+  const normalizingRef = useRef(false);
+  const lastNormalizationSignatureRef = useRef('');
 
   useEffect(() => {
     seedDefaultWorkflowsIfEmpty().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (loading || normalizingRef.current || workflows.length === 0) return;
+    const inconsistentGroups = APPROVAL_WORKFLOW_TYPES.map((approvalType) => ({
+      approvalType,
+      levels: sortWorkflowLevels(workflows.filter((workflow) => workflow.approvalType === approvalType)),
+    })).filter(({ levels }) => levels.some((level, index) => Number(level.levelNumber) !== index + 1));
+
+    if (inconsistentGroups.length === 0) return;
+    const signature = inconsistentGroups.map(({ approvalType, levels }) => `${approvalType}:${levels.map((level) => `${level.id}@${level.levelNumber}`).join(',')}`).join('|');
+    if (lastNormalizationSignatureRef.current === signature) return;
+    lastNormalizationSignatureRef.current = signature;
+    normalizingRef.current = true;
+    Promise.all(inconsistentGroups.map(({ approvalType, levels }) => (
+      reorderWorkflowLevels(approvalType, levels.map((level) => level.id))
+    )))
+      .catch((err) => {
+        lastNormalizationSignatureRef.current = '';
+        setError(err.message || 'Failed to normalize workflow rankings.');
+      })
+      .finally(() => { normalizingRef.current = false; });
+  }, [workflows, loading]);
 
   useEffect(() => {
     setLoading(true);
@@ -103,19 +180,19 @@ export default function ApprovalWorkflowManagement() {
   }, []);
 
   const academicLevels = useMemo(
-    () => workflows.filter((w) => w.approvalType === APPROVAL_TYPES.ACADEMIC).sort((a, b) => a.levelNumber - b.levelNumber),
+    () => sortWorkflowLevels(workflows.filter((w) => w.approvalType === APPROVAL_TYPES.ACADEMIC)),
     [workflows],
   );
   const nonAcademicLevels = useMemo(
-    () => workflows.filter((w) => w.approvalType === APPROVAL_TYPES.NON_ACADEMIC).sort((a, b) => a.levelNumber - b.levelNumber),
+    () => sortWorkflowLevels(workflows.filter((w) => w.approvalType === APPROVAL_TYPES.NON_ACADEMIC)),
     [workflows],
   );
   const deanManagedAcademicLevels = useMemo(
-    () => workflows.filter((w) => w.approvalType === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC).sort((a, b) => a.levelNumber - b.levelNumber),
+    () => sortWorkflowLevels(workflows.filter((w) => w.approvalType === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC)),
     [workflows],
   );
   const deanManagedNonAcademicLevels = useMemo(
-    () => workflows.filter((w) => w.approvalType === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC).sort((a, b) => a.levelNumber - b.levelNumber),
+    () => sortWorkflowLevels(workflows.filter((w) => w.approvalType === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC)),
     [workflows],
   );
 
@@ -240,6 +317,7 @@ export default function ApprovalWorkflowManagement() {
             onDelete={handleDelete}
             onMoveUp={(id) => moveLevel(id, 'up')}
             onMoveDown={(id) => moveLevel(id, 'down')}
+            onReorder={reorder}
             onAdd={() => setModal({ mode: 'add', approvalType: tab, nextLevelNumber: currentLevels.length + 1 })}
           />
 

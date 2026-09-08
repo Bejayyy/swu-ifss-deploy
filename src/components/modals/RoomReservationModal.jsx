@@ -18,7 +18,6 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { COLLECTIONS } from '../../firebase/constants';
 import DatePicker from '../ui/DatePicker';
-import TimePicker from '../ui/TimePicker';
 import CustomSelect from '../ui/CustomSelect';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
@@ -97,6 +96,11 @@ const formatHourDisplay = (h) => {
   const ampm = hrs >= 12 ? 'PM' : 'AM';
   const displayH = hrs % 12 || 12;
   return `${displayH}:${mins} ${ampm}`;
+};
+
+const hourToTimeValue = (hour) => {
+  const totalMinutes = Math.round(hour * 60);
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
 };
 
 const getDayIndexFromDate = (dateStr) => {
@@ -329,6 +333,78 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
     );
     return () => unsub();
   }, [targetRoomDocId]);
+
+  const occupiedIntervalsForSelectedDate = useMemo(() => {
+    if (!form.dateOfActivity) return [];
+    const requestedDay = getDayIndexFromDate(form.dateOfActivity);
+    let normalizedDate = form.dateOfActivity;
+    if (normalizedDate.includes('/')) {
+      const [day, month, year] = normalizedDate.split('/');
+      normalizedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    const intervals = [];
+
+    roomCourseSchedules.forEach((schedule) => {
+      let scheduleDay = Number(schedule.day);
+      if (!Number.isInteger(scheduleDay) || scheduleDay < 0 || scheduleDay > 6) {
+        const names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        scheduleDay = names.indexOf(String(schedule.date || schedule.dayLabel || '').toLowerCase().trim());
+      }
+      if (scheduleDay !== requestedDay) return;
+      const start = typeof schedule.startHour === 'number' ? schedule.startHour : timeStringToHour(schedule.startTime);
+      const end = typeof schedule.endHour === 'number' ? schedule.endHour : timeStringToHour(schedule.endTime);
+      if (end > start) intervals.push({ start, end, type: 'Class' });
+    });
+
+    roomApprovedReservations.forEach((reservation) => {
+      let reservationDate = reservation.dateOfActivity || '';
+      if (reservationDate.includes('/')) {
+        const [day, month, year] = reservationDate.split('/');
+        reservationDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      }
+      if (reservationDate !== normalizedDate) return;
+      const start = timeStringToHour(reservation.timeStart);
+      const end = timeStringToHour(reservation.timeEnd);
+      if (end > start) intervals.push({ start, end, type: 'Reservation' });
+    });
+
+    roomMaintenanceSchedules.forEach((maintenance) => {
+      if (maintenance.status === 'cancelled' || maintenance.status === 'completed') return;
+      if (!maintenance.startDate || !maintenance.endDate || normalizedDate < maintenance.startDate || normalizedDate > maintenance.endDate) return;
+      const quickFix = maintenance.durationType === 'hours' || maintenance.isQuickFix || maintenance.maintenanceType === 'quick_fix';
+      if (quickFix) {
+        const start = timeStringToHour(maintenance.startTime) || 8;
+        const end = timeStringToHour(maintenance.endTime) || start + (parseFloat(maintenance.durationHours || maintenance.estimatedDurationHours) || 2);
+        intervals.push({ start, end, type: 'Maintenance' });
+      } else {
+        intervals.push({ start: 6, end: 20, type: 'Maintenance' });
+      }
+    });
+
+    return intervals;
+  }, [form.dateOfActivity, roomCourseSchedules, roomApprovedReservations, roomMaintenanceSchedules]);
+
+  const reservationStartOptions = useMemo(() => Array.from({ length: 28 }, (_, index) => {
+    const hour = 6 + (index * 0.5);
+    const occupied = occupiedIntervalsForSelectedDate.some((interval) => Math.max(hour, interval.start) < Math.min(hour + 0.5, interval.end));
+    return { value: hourToTimeValue(hour), label: formatHourDisplay(hour), disabled: occupied };
+  }), [occupiedIntervalsForSelectedDate]);
+
+  const reservationEndOptions = useMemo(() => {
+    const start = timeStringToHour(form.timeStart);
+    return Array.from({ length: 28 }, (_, index) => {
+      const hour = 6.5 + (index * 0.5);
+      const occupied = !form.timeStart || hour <= start || occupiedIntervalsForSelectedDate.some((interval) => Math.max(start, interval.start) < Math.min(hour, interval.end));
+      return { value: hourToTimeValue(hour), label: formatHourDisplay(hour), disabled: occupied };
+    });
+  }, [form.timeStart, occupiedIntervalsForSelectedDate]);
+
+  useEffect(() => {
+    if (form.timeStart && reservationStartOptions.find((option) => option.value === form.timeStart)?.disabled) {
+      set('timeStart', '');
+      set('timeEnd', '');
+    }
+  }, [form.dateOfActivity, reservationStartOptions]);
 
   // Real-time instant in-memory conflict detection
   useEffect(() => {
@@ -907,13 +983,30 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {},
               <label className="form-label">
                 Time Start <span className="text-red-600">*</span>
               </label>
-              <TimePicker value={form.timeStart} onChange={(val) => set('timeStart', val)} required />
+              <CustomSelect
+                value={form.timeStart}
+                onChange={(event) => {
+                  set('timeStart', event.target.value);
+                  set('timeEnd', '');
+                }}
+                options={reservationStartOptions}
+                placeholder={form.dateOfActivity ? 'Select start time' : 'Select a date first'}
+                disabled={!form.dateOfActivity || !form.room}
+                required
+              />
             </div>
             <div>
               <label className="form-label">
                 Time End <span className="text-red-600">*</span>
               </label>
-              <TimePicker value={form.timeEnd} onChange={(val) => set('timeEnd', val)} required />
+              <CustomSelect
+                value={form.timeEnd}
+                onChange={(event) => set('timeEnd', event.target.value)}
+                options={reservationEndOptions}
+                placeholder={form.timeStart ? 'Select end time' : 'Select start time first'}
+                disabled={!form.timeStart}
+                required
+              />
             </div>
             
             {/* Real-Time Instant Schedule Conflict Warning */}

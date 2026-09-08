@@ -11,22 +11,29 @@ function expandGeneralEducationAssignments(course) {
     : [];
   if (!course.generalEducationProviderCode || assignments.length === 0) return [];
 
+  const seenAssignments = new Set();
   return assignments.flatMap((assignment) => {
     const collegeCode = String(assignment.collegeCode || '').trim().toUpperCase();
     const programCodes = Array.isArray(assignment.programCodes) ? assignment.programCodes : [];
-    return programCodes.filter(Boolean).map((programCode) => ({
-      ...course,
-      id: `${course.id}__ge__${collegeCode}__${String(programCode).trim().toUpperCase()}`,
-      sourceCourseId: course.id,
-      collegeCode,
-      programCode: String(programCode).trim().toUpperCase(),
-      yearLevel: assignment.yearLevel || course.yearLevel || '1st Year',
-      semester: assignment.semester || course.semester || '1st Semester',
-      requiresServiceCollege: true,
-      lecServiceCollege: Number(course.lecUnits || 0) > 0 ? course.generalEducationProviderCode : null,
-      labServiceCollege: Number(course.labUnits || 0) > 0 ? course.generalEducationProviderCode : null,
-      isGeneralEducationAssignment: true,
-    }));
+    return programCodes.filter(Boolean).flatMap((programCode) => {
+      const normalizedProgram = String(programCode).trim().toUpperCase();
+      const assignmentKey = `${collegeCode}__${normalizedProgram}`;
+      if (!collegeCode || !normalizedProgram || seenAssignments.has(assignmentKey)) return [];
+      seenAssignments.add(assignmentKey);
+      return [{
+        ...course,
+        id: `${course.id}__ge__${assignmentKey}`,
+        sourceCourseId: course.id,
+        collegeCode,
+        programCode: normalizedProgram,
+        yearLevel: assignment.yearLevel || course.yearLevel || '1st Year',
+        semester: assignment.semester || course.semester || '1st Semester',
+        requiresServiceCollege: true,
+        lecServiceCollege: Number(course.lecUnits || 0) > 0 ? course.generalEducationProviderCode : null,
+        labServiceCollege: Number(course.labUnits || 0) > 0 ? course.generalEducationProviderCode : null,
+        isGeneralEducationAssignment: true,
+      }];
+    });
   });
 }
 
@@ -53,6 +60,7 @@ export function subscribeCollegeCourses(collegeCode, onData, onError, options = 
         course,
         ...expandGeneralEducationAssignments(course),
       ]);
+      const seenCourseIds = new Set();
       const filtered = expandedCourses.reduce((result, c) => {
         const cCode = c.collegeCode || c.college || '';
         const pCode = c.programCode || '';
@@ -72,7 +80,8 @@ export function subscribeCollegeCourses(collegeCode, onData, onError, options = 
           )
         );
 
-        if (isOwnedCourse || isServiceAssignment) {
+        if ((isOwnedCourse || isServiceAssignment) && !seenCourseIds.has(c.id)) {
+          seenCourseIds.add(c.id);
           result.push({
             ...c,
             isServiceAssignment: isServiceAssignment && !isOwnedCourse,
@@ -160,7 +169,7 @@ export function subscribeServiceCollegeCourses(serviceCollegeCode, onData, onErr
         course,
         ...expandGeneralEducationAssignments(course),
       ]);
-      const serviceCourses = expandedCourses.filter((c) => {
+      const matchingServiceCourses = expandedCourses.filter((c) => {
         const lecSvc = c.lecServiceCollege || '';
         const labSvc = c.labServiceCollege || '';
         return (
@@ -168,6 +177,9 @@ export function subscribeServiceCollegeCourses(serviceCollegeCode, onData, onErr
           (labSvc && (isCollegeMatch(serviceCollegeCode, labSvc) || String(serviceCollegeCode).toUpperCase() === String(labSvc).toUpperCase()))
         );
       });
+      const serviceCourses = Array.from(
+        new Map(matchingServiceCourses.map((course) => [course.id, course])).values()
+      );
 
       onData(serviceCourses);
     },

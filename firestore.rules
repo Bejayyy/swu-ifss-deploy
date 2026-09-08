@@ -217,6 +217,34 @@ service cloud.firestore {
           allow create, update, delete: if isDeveloper() || (isPhinmaedEmail() && (
             isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
           ));
+          // A service-college dean plots an authorized shared subject inside
+          // the mother dean's section. The writer identity and service college
+          // must both match the authenticated dean's own user document.
+          allow create: if isDean()
+            && isPhinmaedEmail()
+            && request.resource.data.plottedBy == request.auth.uid
+            && request.resource.data.serviceCollege != null
+            && (
+              request.resource.data.serviceCollege == userDoc().data.college
+              || request.resource.data.serviceCollege == userDoc().data.department
+            );
+          allow update: if isDean()
+            && isPhinmaedEmail()
+            && resource.data.plottedBy == request.auth.uid
+            && request.resource.data.plottedBy == resource.data.plottedBy
+            && request.resource.data.serviceCollege == resource.data.serviceCollege
+            && (
+              resource.data.serviceCollege == userDoc().data.college
+              || resource.data.serviceCollege == userDoc().data.department
+            );
+          allow delete: if isDean()
+            && isPhinmaedEmail()
+            && resource.data.plottedBy == request.auth.uid
+            && resource.data.serviceCollege != null
+            && (
+              resource.data.serviceCollege == userDoc().data.college
+              || resource.data.serviceCollege == userDoc().data.department
+            );
           // The recorded room-owning dean may only decide a pending schedule
           // that explicitly targets their immutable UID.
           allow update: if isDean()

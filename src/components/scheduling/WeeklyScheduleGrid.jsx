@@ -70,6 +70,31 @@ export default function WeeklyScheduleGrid({
   const dayDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i).getDate());
   const weekLabel = formatWeekRange(weekStart);
   const gridHeight = gridTotalHeightPx();
+  // Room schedules and the main course timetable both need expanded,
+  // content-aware blocks. Course Scheduling identifies its grid by hiding the
+  // redundant section name because the active section is already in its header.
+  const isRoomSchedule = Boolean(roomType) || hideSectionNameInBlocks;
+  const visualCellHeight = useMemo(() => {
+    if (!isRoomSchedule) return SCHEDULE_CELL_HEIGHT;
+
+    // Every block must stay proportional to its real start/end time, so grow
+    // the shared 30-minute row height based on the most text-heavy room entry.
+    // This lets content expand without overlapping the following time slot.
+    const requiredCellHeight = (blocks || []).reduce((largest, block) => {
+      const durationSlots = Math.max(1, Math.round(((block.end || 0) - (block.start || 0)) * 2));
+      const titleLines = Math.min(3, Math.max(1, Math.ceil(String(block.title || '').length / 24)));
+      const detailText = `${block.course || ''}${block.instructor ? ` ${block.instructor}` : ''}`;
+      const detailLines = detailText ? Math.min(2, Math.max(1, Math.ceil(detailText.length / 28))) : 0;
+      const sectionLines = block.section || block.sectionName || block.program ? 1 : 0;
+      const roomLines = block.roomCode ? 1 : 0;
+      const timeLines = 1;
+      const badgeAllowance = block.approvalStatus === 'pending' || block.rotationCycle === 'week_a' || block.rotationCycle === 'week_b' ? 12 : 0;
+      const desiredBlockHeight = 16 + (titleLines * 14) + (detailLines * 12) + (sectionLines * 12) + (roomLines * 11) + (timeLines * 12) + badgeAllowance;
+      return Math.max(largest, Math.ceil(desiredBlockHeight / durationSlots));
+    }, 54);
+
+    return Math.min(96, Math.max(54, requiredCellHeight));
+  }, [blocks, isRoomSchedule]);
 
   const [drag, setDrag] = useState(null);
   const dragRef = useRef(null);
@@ -442,7 +467,10 @@ export default function WeeklyScheduleGrid({
         </div>
       )}
 
-      <div className={`w-full rounded-xl border border-gray-300 ${drag?.active ? 'select-none' : ''}`}>
+      <div
+        className={`w-full rounded-xl border border-gray-300 ${drag?.active ? 'select-none' : ''}`}
+        style={{ '--cell-height': `${visualCellHeight}px` }}
+      >
         <div className="w-full">
           {/* Header Row */}
           <div
@@ -615,7 +643,7 @@ export default function WeeklyScheduleGrid({
                       return (
                         <div
                           key={sched.id}
-                          className={`absolute inset-x-0 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center cursor-pointer hover:z-20 hover:shadow-md hover:brightness-95 transition-all group ${
+                          className={`absolute inset-x-0 pointer-events-auto overflow-hidden print:p-0.5 print:border print:border-black flex flex-col justify-center ${isRoomSchedule ? 'items-center text-center' : ''} cursor-pointer hover:z-20 hover:shadow-md hover:brightness-95 transition-all group ${
                             isNonCourse ? 'print:hidden' : ''
                           }`}
                           onClick={(e) => {
@@ -630,12 +658,12 @@ export default function WeeklyScheduleGrid({
                             background: colors.bg,
                             border: `1.5px solid ${colors.border}`,
                             boxSizing: 'border-box',
-                            padding: '5px',
+                            padding: isRoomSchedule ? '7px' : '5px',
                             borderRadius: '3px',
                           }}
                         >
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            <p className="text-[10px] font-black truncate print:text-[8px] print:leading-tight" style={{ color: colors.text }}>{sched.title}</p>
+                          <div className={`flex items-center gap-1 mb-0.5 ${isRoomSchedule ? 'w-full flex-wrap justify-center' : 'justify-between'}`}>
+                            <p className={`${isRoomSchedule ? 'text-[11px] leading-[1.25] whitespace-normal break-words line-clamp-3' : 'text-[10px] truncate'} font-black print:text-[8px] print:leading-tight`} style={{ color: colors.text }}>{sched.title}</p>
                             {sched.approvalStatus === 'pending' && (
                               <span className="shrink-0 rounded border border-amber-400 bg-amber-100 px-1 text-[7px] font-black uppercase text-amber-900">
                                 Pending
@@ -652,13 +680,13 @@ export default function WeeklyScheduleGrid({
                               </span>
                             )}
                           </div>
-                          <p className="text-[9px] font-semibold truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                          <p className={`${isRoomSchedule ? 'text-[9px] leading-[1.3] whitespace-normal break-words line-clamp-2' : 'text-[9px] truncate'} font-semibold print:text-[7px] print:leading-tight`} style={{ color: colors.text }}>
                             {sched.course}{sched.instructor ? ` · ${sched.instructor}` : ''}
                           </p>
                           {!hideSectionNameInBlocks && (sched.section || sched.sectionName || sched.program) && (
                             <div className="text-[9px] font-bold opacity-90 print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
-                              <div className="flex items-center gap-1 min-w-0">
-                                <span className="truncate">Sec: {sched.section || sched.sectionName || sched.program}</span>
+                              <div className={`flex items-center gap-1 min-w-0 ${isRoomSchedule ? 'justify-center' : ''}`}>
+                                <span className={isRoomSchedule ? 'whitespace-normal break-words leading-[1.25]' : 'truncate'}>Sec: {sched.section || sched.sectionName || sched.program}</span>
                                 {sched.isCombinedSection && (() => {
                                   const mode = sched.sectionCombinationMode || 'merge';
                                   const label = mode === 'parallel'
@@ -696,8 +724,8 @@ export default function WeeklyScheduleGrid({
                               })()}
                             </div>
                           )}
-                          {sched.roomCode && <p className="text-[9px] truncate print:text-[7px] print:leading-tight" style={{ color: colors.text }}>{sched.roomCode}</p>}
-                          <p className="text-[9px] print:text-[7px] print:leading-tight" style={{ color: colors.text }}>
+                          {sched.roomCode && <p className={`${isRoomSchedule ? 'text-[9px] leading-[1.25]' : 'text-[9px] truncate'} print:text-[7px] print:leading-tight`} style={{ color: colors.text }}>{sched.roomCode}</p>}
+                          <p className={`${isRoomSchedule ? 'mt-0.5 text-[9px] font-bold leading-[1.25]' : 'text-[9px]'} print:text-[7px] print:leading-tight`} style={{ color: colors.text }}>
                             {formatScheduleHour(sched.start)} - {formatScheduleHour(sched.end)}
                           </p>
                           <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-md bg-white/90 px-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-auto">

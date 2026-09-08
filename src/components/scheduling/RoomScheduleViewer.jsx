@@ -134,6 +134,7 @@ export default function RoomScheduleViewer({
 
     // 1. Room Blocks (Class taking place in this room)
     roomEntries.forEach((entry) => {
+      if (seenIds.has(entry.id)) return;
       seenIds.add(entry.id);
       all.push({
         id: `room-${entry.id}`,
@@ -202,6 +203,9 @@ export default function RoomScheduleViewer({
         if (seenIds.has(entry.id) || (eRoomNorm === currentRoomNorm && entry.section === sectionName)) {
           return;
         }
+        // Combined and parallel schedules are intentionally copied into each
+        // participating section. Render the shared entry only once.
+        seenIds.add(entry.id);
 
         all.push({
           id: `teacher-${entry.id}`,

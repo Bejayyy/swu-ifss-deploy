@@ -353,6 +353,9 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         sectionCombinationMode: e.sectionCombinationMode || ((e.combinedSections && e.combinedSections.length > 1) ? 'merge' : 'none'),
         mergedSections: e.mergedSections || [],
         parallelSections: e.parallelSections || [],
+        parallelGroupId: e.parallelGroupId || null,
+        scheduleGroupId: e.scheduleGroupId || null,
+        parallelRoomAssignments: e.parallelRoomAssignments || null,
         yearLevel: e.yearLevel || '',
         semester: e.semester || '',
         program: e.program || e.programCode || '',
@@ -441,6 +444,18 @@ function matchSemesterHelper(entrySem, targetSem) {
   if (is2nd(s1) && is2nd(s2)) return true;
   if (isSum(s1) && isSum(s2)) return true;
   return false;
+}
+
+function dedupeLogicalScheduleEntries(entries) {
+  const unique = new Map();
+  (entries || []).forEach((entry) => {
+    // Merged/parallel schedules use the same entry ID in each section copy.
+    // Include the owning dean so an unlikely legacy ID collision across deans
+    // does not merge unrelated schedules.
+    const key = `${entry.deanUid || entry._sourceDeanUid || ''}:${entry.id}`;
+    if (!unique.has(key)) unique.set(key, entry);
+  });
+  return Array.from(unique.values());
 }
 
 /**
@@ -607,7 +622,18 @@ export function subscribeAllPlotEntriesForSection(
         return true;
       });
 
-      if (onData) onData(filtered);
+      // A merged/parallel entry is copied to every participating section with
+      // the same document ID. Prefer the copy stored under the section being
+      // viewed and emit the logical schedule only once.
+      const uniqueEntries = new Map();
+      filtered
+        .sort((a, b) => Number(b._sourceSection === section) - Number(a._sourceSection === section))
+        .forEach((entry) => {
+          const logicalKey = `${entry._sourceDeanUid || entry.deanUid || ''}:${entry.id}`;
+          if (!uniqueEntries.has(logicalKey)) uniqueEntries.set(logicalKey, entry);
+        });
+
+      if (onData) onData(Array.from(uniqueEntries.values()));
     },
     (err) => {
       console.error('Error in subscribeAllPlotEntriesForSection:', err);
@@ -688,6 +714,8 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
   let currentSchedulesDocs = [];
   let currentProgSectionsDocs = [];
   const progSectionDocsMap = new Map();
+  const scheduleCountCache = new Map();
+  let emissionVersion = 0;
 
   const targetCollege = String(deanCollegeCode || '').trim().toUpperCase();
   const targetPrograms = Array.isArray(allowedProgramCodes)
@@ -695,6 +723,7 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
     : [];
 
   const mergeAndEmit = async () => {
+    const version = ++emissionVersion;
     try {
       const sectionMap = new Map();
 
@@ -728,7 +757,10 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
             yearNumber: pData.yearNumber || 1,
             programCode: pData.programCode || '',
             scheduleCount: 0,
-            modality: 'regular',
+            modality: pData.modality || (pData.hasOjtAlternatingModality ? 'ojt_alternating' : 'regular'),
+            hasOjtAlternatingModality: Boolean(
+              pData.hasOjtAlternatingModality || pData.modality === 'ojt_alternating'
+            ),
           });
         }
       }
@@ -765,16 +797,36 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
           sectionMap.set(sName, existing);
         } else {
           existing.modality = sData.modality || existing.modality || 'regular';
+          existing.hasOjtAlternatingModality = Boolean(
+            existing.hasOjtAlternatingModality ||
+            sData.hasOjtAlternatingModality ||
+            sData.modality === 'ojt_alternating'
+          );
           if (sData.yearLevel) existing.yearLevel = sData.yearLevel;
           if (sData.programCode) existing.programCode = sData.programCode;
         }
       }
 
-      // 3. Populate scheduleCount for sections
+      // 3. Show canonical sections immediately. Schedule counts are secondary
+      // metadata and must never block the navigation from rendering.
+      const sortSections = (sections) => sections.sort((a, b) => {
+        const yearNumA = a.yearNumber || (a.yearLevel ? parseInt(a.yearLevel, 10) : 1) || 1;
+        const yearNumB = b.yearNumber || (b.yearLevel ? parseInt(b.yearLevel, 10) : 1) || 1;
+        if (yearNumA !== yearNumB) return yearNumA - yearNumB;
+        return a.name.localeCompare(b.name);
+      });
+      const immediateSections = sortSections(Array.from(sectionMap.values()).map((section) => ({
+        ...section,
+        scheduleCount: scheduleCountCache.get(section.name) ?? section.scheduleCount ?? 0,
+      })));
+      onData(immediateSections);
+
+      // Populate counts in parallel after the section list is already visible.
       const sectionPromises = Array.from(sectionMap.values()).map(async (sec) => {
         try {
           const entriesRef = deanSectionEntriesRef(deanUid, sec.name);
           const entriesSnapshot = await getDocs(entriesRef);
+          scheduleCountCache.set(sec.name, entriesSnapshot.size);
           return {
             ...sec,
             scheduleCount: entriesSnapshot.size,
@@ -785,18 +837,7 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
       });
 
       const sections = await Promise.all(sectionPromises);
-
-      // 4. Sort by year number/level first, then by name
-      sections.sort((a, b) => {
-        const yearNumA = a.yearNumber || (a.yearLevel ? parseInt(a.yearLevel, 10) : 1) || 1;
-        const yearNumB = b.yearNumber || (b.yearLevel ? parseInt(b.yearLevel, 10) : 1) || 1;
-        if (yearNumA !== yearNumB) {
-          return yearNumA - yearNumB;
-        }
-        return a.name.localeCompare(b.name);
-      });
-
-      onData(sections);
+      if (version === emissionVersion) onData(sortSections(sections));
     } catch (err) {
       console.error('Error in mergeAndEmit sections:', err);
       if (onError) onError(err);
@@ -824,8 +865,16 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
     mergeAndEmit();
   };
 
-  // Subscribe using scoped where() queries and general collection query
-  if (targetPrograms.length > 0) {
+  // Use the narrowest available subscription. Previously the page listened by
+  // program, by college, and to the entire collection simultaneously.
+  if (targetCollege) {
+    const qCollege = query(collection(db, 'program_sections'), where('collegeCode', '==', targetCollege));
+    unsubsProgSections.push(
+      onSnapshot(qCollege, handleProgSectionsSnap, (err) =>
+        console.warn(`Note: program_sections for college ${targetCollege}:`, err?.message || err)
+      )
+    );
+  } else if (targetPrograms.length > 0) {
     targetPrograms.forEach((pCode) => {
       const q = query(collection(db, 'program_sections'), where('programCode', '==', pCode));
       unsubsProgSections.push(
@@ -834,25 +883,15 @@ export function subscribeDeanSections(deanUid, onData, onError, deanCollegeCode,
         )
       );
     });
-  }
-
-  if (targetCollege) {
-    const qCollege = query(collection(db, 'program_sections'), where('collegeCode', '==', targetCollege));
+  } else {
     unsubsProgSections.push(
-      onSnapshot(qCollege, handleProgSectionsSnap, (err) =>
-        console.warn(`Note: program_sections for college ${targetCollege}:`, err?.message || err)
+      onSnapshot(
+        collection(db, 'program_sections'),
+        handleProgSectionsSnap,
+        (err) => console.warn('Note: program_sections general subscription:', err?.message || err)
       )
     );
   }
-
-  // Also listen to the root program_sections collection so any updates are captured
-  unsubsProgSections.push(
-    onSnapshot(
-      collection(db, 'program_sections'),
-      handleProgSectionsSnap,
-      (err) => console.warn('Note: program_sections general subscription:', err?.message || err)
-    )
-  );
 
   return () => {
     unsubSchedules();
@@ -1104,7 +1143,7 @@ export function subscribePlotEntriesForRoom(
         ...doc.data(),
       }));
 
-      const matchingEntries = allDocs.filter((e) => {
+      const matchingEntries = dedupeLogicalScheduleEntries(allDocs.filter((e) => {
         // Match school year
         if (!matchSchoolYear(e, schoolYearId)) {
           return false;
@@ -1130,7 +1169,7 @@ export function subscribePlotEntriesForRoom(
         }
 
         return true;
-      });
+      }));
 
       // Sort by day and startHour
       matchingEntries.sort((a, b) => {
@@ -1199,7 +1238,7 @@ export function subscribePlotEntriesForRoomAndSection(
       }));
 
       // Filter by school year, semester, and scheduleMode
-      const relevantDocs = allDocs.filter((e) => {
+      const relevantDocs = dedupeLogicalScheduleEntries(allDocs.filter((e) => {
         if (!matchSchoolYear(e, schoolYearId)) {
           return false;
         }
@@ -1213,7 +1252,7 @@ export function subscribePlotEntriesForRoomAndSection(
           }
         }
         return true;
-      });
+      }));
 
       // 1. Room matching entries
       const roomEntries = targetRoomNorm
@@ -1320,7 +1359,7 @@ export function subscribePlotEntriesForTeacher(
         ...doc.data(),
       }));
 
-      entries = entries.filter((e) => {
+      entries = dedupeLogicalScheduleEntries(entries.filter((e) => {
         // Match school year
         if (!matchSchoolYear(e, schoolYearId)) {
           return false;
@@ -1338,7 +1377,7 @@ export function subscribePlotEntriesForTeacher(
         const isRegular = !e.scheduleMode || e.scheduleMode === 'regular';
         const matchesSemester = !semester || !e.semester || String(e.semester) === String(semester);
         return isRegular && matchesSemester;
-      });
+      }));
 
       entries.sort((a, b) => {
         const dayA = a.day ?? 0;
@@ -1380,7 +1419,7 @@ export function subscribeAllSemesterPlotEntries(
         ...doc.data(),
       }));
 
-      const relevantDocs = allDocs.filter((e) => {
+      const relevantDocs = dedupeLogicalScheduleEntries(allDocs.filter((e) => {
         if (!matchSchoolYear(e, schoolYearId)) return false;
         if (!matchSemesterHelper(e.semester, semester)) return false;
         if (scheduleMode) {
@@ -1388,7 +1427,7 @@ export function subscribeAllSemesterPlotEntries(
           if (entryMode !== scheduleMode) return false;
         }
         return true;
-      });
+      }));
 
       if (onData) onData(relevantDocs);
     },

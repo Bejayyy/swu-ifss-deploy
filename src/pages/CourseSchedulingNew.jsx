@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Calendar,
@@ -187,6 +187,8 @@ export default function CourseSchedulingNew() {
   const [curriculumCourses, setCurriculumCourses] = useState([]);
   const [showNotifyServiceModal, setShowNotifyServiceModal] = useState(false);
   const [serviceCourseReleases, setServiceCourseReleases] = useState([]);
+  const serviceSectionsCacheRef = useRef(new Map());
+  const serviceSectionsRequestRef = useRef(0);
 
   // Subscribe to service course releases for the active school year and semester
   useEffect(() => {
@@ -276,6 +278,35 @@ export default function CourseSchedulingNew() {
   const currentWeekNum = useMemo(() => {
     return getSemesterWeekNumber(weekStartDate, semesterStartStr);
   }, [weekStartDate, semesterStartStr]);
+
+  const semesterRotationWeeks = useMemo(() => {
+    const semesterStart = parseDateOnly(selectedSemesterObj?.start);
+    const semesterEnd = parseDateOnly(selectedSemesterObj?.end);
+    if (!semesterStart || !semesterEnd || semesterEnd < semesterStart) return [];
+
+    const firstMonday = new Date(semesterStart);
+    const day = firstMonday.getDay();
+    firstMonday.setDate(firstMonday.getDate() - (day === 0 ? 6 : day - 1));
+    const dateFormatter = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' });
+    const weeks = [];
+    for (let index = 0; index < 30; index += 1) {
+      const start = new Date(firstMonday);
+      start.setDate(firstMonday.getDate() + (index * 7));
+      if (start > semesterEnd) break;
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const clippedStart = start < semesterStart ? semesterStart : start;
+      const clippedEnd = end > semesterEnd ? semesterEnd : end;
+      weeks.push({
+        number: index + 1,
+        start: clippedStart,
+        end: clippedEnd,
+        cycle: (index + 1) % 2 === 1 ? 'week_a' : 'week_b',
+        dateLabel: `${dateFormatter.format(clippedStart)}–${dateFormatter.format(clippedEnd)}`,
+      });
+    }
+    return weeks;
+  }, [selectedSemesterObj?.start, selectedSemesterObj?.end]);
 
   const isSectionOnOjtThisWeek = useMemo(() => {
     if (!currentSectionObj || !currentSectionObj.modality || currentSectionObj.modality === 'regular') return false;
@@ -739,6 +770,7 @@ export default function CourseSchedulingNew() {
       ? (profile?.college || profile?.department || '')
       : (selectedDean?.college || selectedDean?.department || '');
     if (!myCol) {
+      serviceSectionsRequestRef.current += 1;
       setServiceCourses([]);
       setServiceSectionsMap({});
       setLoadingServiceSections(false);
@@ -748,39 +780,58 @@ export default function CourseSchedulingNew() {
     return subscribeServiceCollegeCourses(
       myCol,
       async (courses) => {
-        setServiceCourses(courses || []);
-        // Fetch sections for each mother college & program
-        const secMap = {};
-        for (const crs of (courses || [])) {
-          if (crs.collegeCode && crs.programCode) {
-            try {
-              const motherSecs = await getCollegeProgramSections(crs.collegeCode);
-              const matchedSecs = (motherSecs || []).filter(
-                (s) => s.programCode?.toUpperCase() === crs.programCode.toUpperCase()
-              );
-              const generated = [];
-              matchedSecs.forEach((m) => {
-                const yearNum = m.yearNumber || 1;
-                const count = Number(m.sectionCount) || 0;
-                const names = generateSectionNames(crs.programCode, yearNum, count);
-                names.forEach((name) => {
-                  generated.push({
-                    name,
-                    programCode: crs.programCode,
-                    yearNumber: yearNum,
-                    motherCollege: crs.collegeCode,
-                    hasOjtAlternatingModality: Boolean(m.hasOjtAlternatingModality),
-                  });
-                });
-              });
-              secMap[crs.id] = generated;
-            } catch (err) {
-              console.warn('Error fetching mother college sections for service course:', err);
+        const requestId = ++serviceSectionsRequestRef.current;
+        const courseList = courses || [];
+        setServiceCourses(courseList);
+
+        // Read each mother college once, in parallel. Multiple service courses
+        // commonly point to the same college, so fetching per course caused the
+        // long repeated "Loading sections" state.
+        const collegeCodes = [...new Set(
+          courseList.map((course) => String(course.collegeCode || '').trim().toUpperCase()).filter(Boolean)
+        )];
+
+        try {
+          const collegeSectionEntries = await Promise.all(collegeCodes.map(async (collegeCode) => {
+            if (serviceSectionsCacheRef.current.has(collegeCode)) {
+              return [collegeCode, serviceSectionsCacheRef.current.get(collegeCode)];
             }
-          }
+            const sections = await getCollegeProgramSections(collegeCode);
+            serviceSectionsCacheRef.current.set(collegeCode, sections || []);
+            return [collegeCode, sections || []];
+          }));
+          if (requestId !== serviceSectionsRequestRef.current) return;
+
+          const sectionsByCollege = new Map(collegeSectionEntries);
+          const secMap = {};
+          courseList.forEach((crs) => {
+            const collegeCode = String(crs.collegeCode || '').trim().toUpperCase();
+            const programCode = String(crs.programCode || '').trim().toUpperCase();
+            if (!collegeCode || !programCode) return;
+
+            const matchedSecs = (sectionsByCollege.get(collegeCode) || []).filter(
+              (section) => String(section.programCode || '').trim().toUpperCase() === programCode
+            );
+            const generated = [];
+            matchedSecs.forEach((section) => {
+              const yearNum = section.yearNumber || 1;
+              const names = generateSectionNames(programCode, yearNum, Number(section.sectionCount) || 0);
+              names.forEach((name) => generated.push({
+                name,
+                programCode,
+                yearNumber: yearNum,
+                motherCollege: crs.collegeCode,
+                hasOjtAlternatingModality: Boolean(section.hasOjtAlternatingModality),
+              }));
+            });
+            secMap[crs.id] = generated;
+          });
+          setServiceSectionsMap(secMap);
+        } catch (err) {
+          console.warn('Error fetching mother college sections for service courses:', err);
+        } finally {
+          if (requestId === serviceSectionsRequestRef.current) setLoadingServiceSections(false);
         }
-        setServiceSectionsMap(secMap);
-        setLoadingServiceSections(false);
       },
       (err) => {
         console.error('Error loading service courses:', err);
@@ -1176,16 +1227,73 @@ export default function CourseSchedulingNew() {
     const dayIdx = typeof block.day === 'number' ? block.day : WEEKDAYS.indexOf(block.date);
     const validDayIdx = dayIdx >= 0 && dayIdx <= 6 ? dayIdx : 0;
     const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[validDayIdx] : (block.date || weekDates[validDayIdx]);
+    const blockCourse = String(block.courseCode || block.course || '').trim().toUpperCase();
+    const blockType = String(block.type || 'Lecture').trim().toLowerCase();
+    const blockRoom = String(block.roomCode || block.room || '').replace(/[\s_-]/g, '').toUpperCase();
+    const blockInstructor = String(block.instructorFullName || block.instructor || '').trim().toLowerCase();
+    const blockStart = Number(block.startHour ?? block.start);
+    const blockEnd = Number(block.endHour ?? block.end);
+    const scheduleGroupId = block.scheduleGroupId || block.rawEntry?.scheduleGroupId || null;
+    const entryDayIndex = (entry) => {
+      if (typeof entry.day === 'number' && entry.day >= 0 && entry.day <= 6) return entry.day;
+      const value = String(entry.date || entry.dayLabel || '').toUpperCase();
+      return Math.max(0, WEEKDAYS.findIndex((day) => value.includes(day.toUpperCase())));
+    };
+    const belongsToSection = (entry) => {
+      const sections = [entry.section, entry.sectionName, ...(entry.combinedSections || [])]
+        .filter(Boolean)
+        .map((section) => String(section).trim().toUpperCase());
+      return sections.includes(String(selectedSection || '').trim().toUpperCase());
+    };
+    const siblingEntries = scheduleTab === 'regular'
+      ? filteredEntries.filter((entry) => {
+          if (!belongsToSection(entry)) return false;
+          if (scheduleGroupId) return entry.scheduleGroupId === scheduleGroupId;
+
+          // Older entries have no scheduleGroupId. Infer only a conservative
+          // match so unrelated plots of the same course are not pulled in.
+          const entryCourse = String(entry.courseCode || entry.course || '').trim().toUpperCase();
+          const entryType = String(entry.type || 'Lecture').trim().toLowerCase();
+          const entryRoom = String(entry.roomCode || entry.room || '').replace(/[\s_-]/g, '').toUpperCase();
+          const entryInstructor = String(entry.instructor || '').trim().toLowerCase();
+          return entryCourse === blockCourse
+            && entryType === blockType
+            && entryRoom === blockRoom
+            && entryInstructor === blockInstructor
+            && Number(entry.startHour) === blockStart
+            && Number(entry.endHour) === blockEnd;
+        })
+      : [block.rawEntry || block];
+    if (siblingEntries.length === 0) siblingEntries.push(block.rawEntry || block);
+    const editEntriesByDay = Array.from(new Map(
+      siblingEntries.map((entry) => [entryDayIndex(entry), entry])
+    ).values()).sort((a, b) => entryDayIndex(a) - entryDayIndex(b));
+    const editDays = editEntriesByDay.map(entryDayIndex);
+    const hasDifferentTimes = editEntriesByDay.some((entry) => (
+      Number(entry.startHour) !== Number(editEntriesByDay[0]?.startHour)
+      || Number(entry.endHour) !== Number(editEntriesByDay[0]?.endHour)
+    ));
+    const editDayTimes = hasDifferentTimes
+      ? Object.fromEntries(editEntriesByDay.map((entry) => [entryDayIndex(entry), {
+          startTime: hourToTimeInput(entry.startHour),
+          endTime: hourToTimeInput(entry.endHour),
+        }]))
+      : undefined;
     
     setEntryModal({
       mode: 'edit',
       id: block.id,
+      editEntries: editEntriesByDay,
       date: dayIdentifier,
       dayLabel: SCHEDULE_DAYS[validDayIdx],
       lockTimes: false,
       initial: {
         id: block.id,
         day: validDayIdx,
+        days: editDays,
+        dayTimes: editDayTimes,
+        editEntryIds: siblingEntries.map((entry) => entry.id).filter(Boolean),
+        scheduleGroupId,
         courseCode: block.courseCode || block.course,
         type: block.type,
         startTime: block.startTime || (
@@ -1207,6 +1315,8 @@ export default function CourseSchedulingNew() {
         sectionCombinationMode: block.sectionCombinationMode || (block.isCombinedSection ? 'merge' : 'none'),
         mergedSections: block.mergedSections || [],
         parallelSections: block.parallelSections || [],
+        parallelGroupId: block.parallelGroupId || block.rawEntry?.parallelGroupId || null,
+        parallelRoomAssignments: block.parallelRoomAssignments || block.rawEntry?.parallelRoomAssignments || null,
       },
       fromDrag: false,
       isServiceCollegeMode: Boolean(activeServiceAssignment),
@@ -1241,7 +1351,12 @@ export default function CourseSchedulingNew() {
         if (status.disabled) throw new Error(status.reason || 'This date is blocked.');
       }
 
-      const targetDeanUid = activeServiceAssignment?.motherDeanUid || selectedDeanUid || profile?.uid;
+      // A dean must always write their own schedules below their authenticated
+      // user document. selectedDeanUid can briefly contain a stale Registrar
+      // selection while the page is initializing, which Firestore correctly
+      // rejects as a cross-user write.
+      const targetDeanUid = activeServiceAssignment?.motherDeanUid
+        || (isDean ? profile?.uid : (selectedDeanUid || profile?.uid));
 
       const entry = {
         ...payload,
@@ -1269,12 +1384,20 @@ export default function CourseSchedulingNew() {
       const approvalTarget = isOtherDeanManagedRoom ? 'room_manager' : 'registrar';
 
       // Target sections to receive this plotted block
+      const payloadSection = entry.section || selectedSection;
       const targetSections = (entry.isCombinedSection && Array.isArray(entry.combinedSections) && entry.combinedSections.length > 0)
-        ? Array.from(new Set([selectedSection, ...entry.combinedSections]))
-        : [selectedSection];
+        ? Array.from(new Set([payloadSection, ...entry.combinedSections]))
+        : [payloadSection];
       const entryPaths = [];
 
       if (entryModal?.mode === 'edit' && entryModal.id) {
+        const editEntryForDay = (entryModal.editEntries || []).find((candidate) => {
+          const candidateDay = typeof candidate.day === 'number'
+            ? candidate.day
+            : WEEKDAYS.findIndex((day) => String(candidate.date || candidate.dayLabel || '').toUpperCase().includes(day.toUpperCase()));
+          return candidateDay === entry.day;
+        });
+        const editEntryId = editEntryForDay?.id || (entry.day === entryModal.initial?.day ? entryModal.id : null);
         for (const sec of targetSections) {
           const secEntry = {
             ...entry,
@@ -1282,8 +1405,14 @@ export default function CourseSchedulingNew() {
             isCombinedSection: targetSections.length > 1,
             combinedSections: targetSections,
           };
-          await updatePlotEntryForSection(targetDeanUid, sec, entryModal.id, secEntry);
-          entryPaths.push(`users/${targetDeanUid}/course_schedules/${sec}/entries/${entryModal.id}`);
+          if (editEntryId) {
+            await updatePlotEntryForSection(targetDeanUid, sec, editEntryId, secEntry);
+            entryPaths.push(`users/${targetDeanUid}/course_schedules/${sec}/entries/${editEntryId}`);
+          } else {
+            const newEntryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+            await addPlotEntryForSection(targetDeanUid, sec, { ...secEntry, id: newEntryId }, newEntryId);
+            entryPaths.push(`users/${targetDeanUid}/course_schedules/${sec}/entries/${newEntryId}`);
+          }
         }
       } else {
         const sharedEntryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -1899,7 +2028,7 @@ export default function CourseSchedulingNew() {
               </div>
 
               <div className="space-y-2.5">
-                {loadingDeanSections ? (
+                {loadingDeanSections && deanSections.length === 0 ? (
                   <div className="space-y-2" aria-label="Loading sections">
                     {[0, 1, 2].map((item) => (
                       <div key={item} className="animate-pulse space-y-1.5">
@@ -2127,7 +2256,7 @@ export default function CourseSchedulingNew() {
                       {/* Child: Mother College & Sections */}
                       {isExp && (
                         <div className="space-y-2 border-t border-[#F0DADA] bg-[#FFF9F9] px-3 pb-3 pt-1">
-                          {coursesForCollege.map((crs) => {
+                          {coursesForCollege.map((crs, courseIndex) => {
                             const motherCol = crs.collegeCode || 'Mother College';
                             const courseYearNumber = YEAR_LEVELS.indexOf(getCourseYearLevel(crs)) + 1;
                             const allCourseSections = serviceSectionsMap[crs.id] || [];
@@ -2140,7 +2269,7 @@ export default function CourseSchedulingNew() {
                             const compLabel = handlesLecture && handlesLaboratory ? 'Lecture & Laboratory' : (handlesLecture ? 'Lecture' : 'Laboratory');
 
                             return (
-                              <div key={crs.id} className="space-y-1.5 border-l-2 border-[#D9A3A3] pl-1">
+                              <div key={`${crs.id}-${motherCol}-${crs.programCode}-${courseIndex}`} className="space-y-1.5 border-l-2 border-[#D9A3A3] pl-1">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-black text-[#7A0808]">
                                     🏛️ {motherCol} ({crs.programCode})
@@ -2150,7 +2279,7 @@ export default function CourseSchedulingNew() {
                                   </span>
                                 </div>
 
-                                {loadingServiceSections ? (
+                                {loadingServiceSections && secList.length === 0 ? (
                                   <div className="space-y-1.5 py-1" aria-label="Loading service college sections">
                                     {[0, 1, 2].map((item) => (
                                       <div key={item} className="h-8 animate-pulse rounded-lg border border-[#F0DADA] bg-red-50/70" />
@@ -2516,8 +2645,8 @@ export default function CourseSchedulingNew() {
                       onClick={() => setCycleViewTab('week_a')}
                       className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                         cycleViewTab === 'week_a'
-                          ? 'bg-blue-600 text-white shadow-2xs'
-                          : 'text-blue-700 hover:bg-blue-50'
+                          ? 'bg-[#7A0808] text-white shadow-2xs'
+                          : 'text-[#7A0808] hover:bg-red-50'
                       }`}
                     >
                       🔵 Week A (Odd Weeks)
@@ -2527,12 +2656,42 @@ export default function CourseSchedulingNew() {
                       onClick={() => setCycleViewTab('week_b')}
                       className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                         cycleViewTab === 'week_b'
-                          ? 'bg-purple-600 text-white shadow-2xs'
-                          : 'text-purple-700 hover:bg-purple-50'
+                          ? 'bg-[#7A0808] text-white shadow-2xs'
+                          : 'text-[#7A0808] hover:bg-red-50'
                       }`}
                     >
                       🟣 Week B (Even Weeks)
                     </button>
+                  </div>
+
+                  <div className="w-full basis-full border-t border-gray-100 pt-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-[#7A0808]">Semester Week A/B Calendar</p>
+                      <div className="flex flex-wrap gap-3 text-[9px] font-bold text-gray-600">
+                        <span><strong className="text-[#7A0808]">Week A sections:</strong> School on odd weeks · OJT on even weeks</span>
+                        <span><strong className="text-[#7A0808]">Week B sections:</strong> OJT on odd weeks · School on even weeks</span>
+                      </div>
+                    </div>
+                    {semesterRotationWeeks.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+                        {semesterRotationWeeks.map((week) => {
+                          const isCurrent = week.number === currentWeekNum;
+                          const isWeekA = week.cycle === 'week_a';
+                          return (
+                            <div key={week.number} className={`rounded-lg border px-2 py-1.5 ${isCurrent ? 'border-[#7A0808] bg-red-50 ring-1 ring-[#7A0808]/20' : 'border-gray-200 bg-gray-50'}`}>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[9px] font-black text-gray-900">Week {week.number}</span>
+                                <span className="text-[8px] font-black text-[#7A0808]">{isWeekA ? 'A · ODD' : 'B · EVEN'}</span>
+                              </div>
+                              <p className="mt-0.5 text-[8px] font-medium text-gray-500">{week.dateLabel}</p>
+                              <p className="mt-1 text-[8px] leading-tight text-gray-700"><strong>A:</strong> {isWeekA ? 'School' : 'OJT'} · <strong>B:</strong> {isWeekA ? 'OJT' : 'School'}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-medium text-amber-900">Set the semester start and end dates in School Calendar to display the Week A/B date ranges.</p>
+                    )}
                   </div>
                 </div>
               )}
